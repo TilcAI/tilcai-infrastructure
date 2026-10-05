@@ -90,7 +90,18 @@ Los errores usan el envelope `tilcai-shared-v1` de `tilcai-core` (`code`, `messa
 
 ## Despliegue
 
-TilcAI y el Relayer comparten host: `RELAYER_URL=http://localhost:8080`, `API_HOST=127.0.0.1`. Para probar desde otra máquina de la LAN: `RELAYER_URL=http://192.168.1.57:8080`.
+TilcAI necesita el OpenZeppelin Relayer (con el plugin `x402`) y un Redis para el relayer.
+
+**En contenedores** (un host con Docker Compose, Google Cloud Run, AWS o Azure): imágenes,
+configuración del relayer y guía en [`deploy/`](deploy/README.md).
+
+```sh
+cp deploy/.env.example deploy/.env       # completar los secretos
+./deploy/build.sh
+docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d
+```
+
+**Sin contenedores**, TilcAI y el Relayer comparten host: `RELAYER_URL=http://localhost:8080`, `API_HOST=127.0.0.1`. Para probar desde otra máquina de la LAN: `RELAYER_URL=http://192.168.1.57:8080`.
 
 ```ini
 # /etc/systemd/system/tilcai.service (ejemplo)
@@ -119,4 +130,5 @@ src/
 contracts/evm        Foundry: TilcaiCctpRouter (desplegado en Fuji), paymaster ERC-4337 (fase 3)
 contracts/soroban    política de gasto para smart accounts y presupuesto (fase 3)
 test/unit            25 tests sin red     test/integration   relayer y e2e reales (se omiten sin credenciales)
+deploy/              imágenes Docker de TilcAI y del relayer, compose del stack y manifiestos de Cloud Run
 ```

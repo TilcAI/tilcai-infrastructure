@@ -33,6 +33,8 @@ RELAYER_FEATURES="${RELAYER_FEATURES-redis-tls-rustls}"
 
 what="${1:-all}"
 built=()
+ctx=""
+trap '[ -z "$ctx" ] || rm -rf "$ctx"' EXIT
 
 build_tilcai() {
   [ -f "$core/src/contracts.ts" ] || {
@@ -40,9 +42,7 @@ build_tilcai() {
     exit 1
   }
   # The app links tilcai-core as file:../tilcai-core, so the context needs both side by side.
-  local ctx
   ctx="$(mktemp -d)"
-  trap 'rm -rf "$ctx"' RETURN
   mkdir -p "$ctx/tilcai-core" "$ctx/tilcai-infrastructure/deploy"
   cp -r "$core/package.json" "$core/src" "$ctx/tilcai-core/"
   cp -r "$repo/package.json" "$repo/package-lock.json" "$repo/tsconfig.json" "$repo/src" \

@@ -29,8 +29,13 @@ services:
       KEYSTORE_PASSPHRASE: ${KEYSTORE_PASSPHRASE:?set KEYSTORE_PASSPHRASE in deploy/.env}
       KEYSTORE_JSON_B64: ${KEYSTORE_JSON_B64:?set KEYSTORE_JSON_B64 in deploy/.env}
       REDIS_URL: redis://redis:6379
-      # Relayers and signers are loaded from config.json on every start.
-      REPOSITORY_STORAGE_TYPE: in-memory
+      # in-memory: relayers are loaded from config.json on every start and the transaction
+      #            history is lost on restart.
+      # redis:     everything is kept in Redis; needs STORAGE_ENCRYPTION_KEY, and config.json
+      #            is only read on the first start (RESET_STORAGE_ON_START=true re-reads it).
+      REPOSITORY_STORAGE_TYPE: ${REPOSITORY_STORAGE_TYPE:-in-memory}
+      STORAGE_ENCRYPTION_KEY: ${STORAGE_ENCRYPTION_KEY:-}
+      RESET_STORAGE_ON_START: ${RESET_STORAGE_ON_START:-false}
       LOG_LEVEL: ${LOG_LEVEL:-info}
     depends_on:
       redis:
