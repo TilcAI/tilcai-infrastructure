@@ -88,7 +88,7 @@ ahí y en `relayer/config/networks/`.
 | `RELAYER_API_KEY` | sí | La misma `API_KEY` del relayer |
 | `CCTP_ROUTER_FUJI` | no | `TilcaiCctpRouter` desplegado; habilita los modos gasless |
 | `LITESTREAM_REPLICA_URL` | no | `gcs://bucket/ruta`, `s3://bucket/ruta` o `abs://…`. Vacía, la base vive solo en `/data` |
-| `TILCAI_ROLE` | no | `all` (por defecto), `api` o `worker` |
+| `TILCAI_ROLE` | no | `all` (por defecto): API y worker en un proceso. `api` y `worker` por separado solo tienen sentido en un mismo host y compartiendo el volumen `/data`; en Cloud Run usa `all` |
 | `PORT` | no | Si la plataforma lo define, la API escucha ahí |
 
 El resto de variables de `.env.example` del repositorio (`RPC_*`, `WORKER_POLL_MS`…) funcionan
@@ -248,6 +248,9 @@ Probado en local con Docker (5 de octubre de 2026), con un keystore desechable:
 - Las dos imágenes escuchan en `$PORT` y terminan limpio con SIGTERM en menos de un segundo.
 - El relayer se niega a arrancar sin keystore, con un mensaje claro.
 - TilcAI restaura su base con Litestream al arrancar con el disco vacío (réplica `file://`).
+- `TILCAI_ROLE=api` y `TILCAI_ROLE=worker` arrancan y se detienen limpio. El worker suelto se
+  cerraba nada más arrancar: quedó corregido en `src/apps/worker/main.ts`.
+- El relayer acepta el keystore montado como archivo en lugar de la variable.
 
 Sin probar:
 
