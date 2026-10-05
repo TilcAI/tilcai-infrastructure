@@ -1,0 +1,70 @@
+{
+  "relayers": [
+    {
+      "id": "avalanche-fuji-relayer",
+      "name": "Avalanche Fuji Relayer",
+      "network": "avalanche-fuji-testnet",
+      "paused": false,
+      "signer_id": "local-signer",
+      "network_type": "evm",
+      "policies": {
+        "min_balance": 0
+      }
+    },
+    {
+      "id": "stellar-example",
+      "name": "Stellar Testnet Relayer",
+      "network": "testnet",
+      "paused": false,
+      "signer_id": "local-signer",
+      "network_type": "stellar",
+      "policies": {
+        "fee_payment_strategy": "relayer",
+        "min_balance": 0
+      }
+    }
+  ],
+  "notifications": [],
+  "signers": [
+    {
+      "id": "local-signer",
+      "type": "local",
+      "config": {
+        "path": "config/keys/local-signer.json",
+        "passphrase": {
+          "type": "env",
+          "value": "KEYSTORE_PASSPHRASE"
+        }
+      }
+    }
+  ],
+  "networks": "./config/networks",
+  "plugins": [
+    {
+      "id": "x402",
+      "path": "x402/index.ts",
+      "timeout": 30,
+      "emit_logs": false,
+      "emit_traces": false,
+      "forward_logs": true,
+      "raw_response": true,
+      "allow_get_invocation": true,
+      "config": {
+        "networks": [
+          {
+            "network": "eip155:43113",
+            "type": "evm",
+            "relayer_id": "avalanche-fuji-relayer",
+            "assets": ["0x5425890298aed601595a70AB815c96711a31Bc65"]
+          },
+          {
+            "network": "stellar:testnet",
+            "type": "stellar",
+            "relayer_id": "stellar-example",
+            "assets": ["native", "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"]
+          }
+        ]
+      }
+    }
+  ]
+}

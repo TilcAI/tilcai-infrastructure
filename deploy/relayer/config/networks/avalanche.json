@@ -1,0 +1,37 @@
+{
+  "networks": [
+    {
+      "average_blocktime_ms": 3000,
+      "chain_id": 43114,
+      "explorer_urls": [
+        "https://snowscan.xyz",
+        "https://avascan.info",
+        "https://snowtrace.io"
+      ],
+      "is_testnet": false,
+      "network": "avalanche-c-chain",
+      "required_confirmations": 1,
+      "rpc_urls": [
+        "https://avalanche-c-chain-rpc.publicnode.com",
+        "https://api.avax.network/ext/bc/C/rpc"
+      ],
+      "symbol": "AVAX",
+      "type": "evm"
+    },
+    {
+      "from": "avalanche-c-chain",
+      "type": "evm",
+      "network": "avalanche-fuji-testnet",
+      "chain_id": 43113,
+      "explorer_urls": [
+        "https://avascan.info",
+        "https://testnet.snowtrace.io"
+      ],
+      "is_testnet": true,
+      "rpc_urls": [
+        "https://api.avax-test.network/ext/bc/C/rpc",
+        "https://avalanche-fuji-c-chain-rpc.publicnode.com"
+      ]
+    }
+  ]
+}
