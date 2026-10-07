@@ -1,6 +1,6 @@
 /**
  * Network and asset registry (testnet). Identifiers use CAIP-2 so they line up
- * with x402 `network` values. Addresses verified on-chain on 2026-10-02 by
+ * with x402 `network` values. CCTP and USDC addresses verified on-chain on 2026-10-02 by
  * tilcai-cctp-engine (`npm run verify`) and Circle's references:
  *   https://developers.circle.com/cctp/evm-smart-contracts
  *   https://developers.circle.com/cctp/references/stellar-contracts
@@ -22,6 +22,10 @@ export interface EvmNetwork {
   /** TilcaiCctpRouter (gasless source leg). Absent until deployed on the network. */
   cctpRouter?: `0x${string}`;
   cctpV2: { tokenMessenger: `0x${string}`; messageTransmitter: `0x${string}` };
+  /** ERC-4337 EntryPoint the smart accounts are built for (OpenZeppelin Contracts 5.7 `Account` default). */
+  erc4337: { entryPoint: `0x${string}`; version: "0.9" };
+  /** secp256r1 verification precompile (RIP-7212 / ACP-204): passkey signatures checked on-chain. */
+  p256Precompile: `0x${string}`;
 }
 
 export interface StellarNetwork {
@@ -63,6 +67,9 @@ export function networks(env: Env): NetworkRegistry {
       tokenMessenger: "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
       messageTransmitter: "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275",
     },
+    // Both verified on Fuji on 2026-10-06 (`npm run sca:preflight`).
+    erc4337: { entryPoint: "0x433709009B8330FDa32311DF1C2AFA402eD8D009", version: "0.9" },
+    p256Precompile: "0x0000000000000000000000000000000000000100",
   };
   const stellarTestnet: StellarNetwork = {
     id: "stellar:testnet",

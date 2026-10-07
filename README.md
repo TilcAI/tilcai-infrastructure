@@ -13,8 +13,9 @@ Plan y arquitectura completos: [`documentation/TILCAI_PLAN_ARQUITECTURA_BACKEND_
 | Fase 1 — pago USDC Avalanche Fuji → Stellar Testnet (CCTP V2 + CctpForwarder) | **Implementado y verificado con transferencias reales** (2026-10-02). 25 tests unitarios + 3 de integración on-chain. |
 | Origen gasless: el pagador firma EIP-3009 y el OZ Relayer envía el burn (`TilcaiCctpRouter`, Fuji `0x297ce6a2787484db4bB18A96a8F28A9881Fc163C`) | **Desplegado y verificado**: burn enviado por la cuenta del relayer; el pagador no gastó AVAX |
 | Destino gasless: el Relayer envía `mint_and_forward` y paga el XLM | Verificado (fee account = firmante del relayer) |
+| Fase SCA — emisión de cuentas abstractas para agentes y terceros (Stellar y EVM) | **En preparación**: prerrequisitos verificados (`npm run sca:preflight`), contratos base de Soroban compilados, puertos definidos. Hitos M0–M7 en [`TILCAI_FASE_SCA_EMISION_DE_CUENTAS_2026-10-06.md`](../documentation/TILCAI_FASE_SCA_EMISION_DE_CUENTAS_2026-10-06.md) |
 | Estructura de módulos de las fases 2–5 (`src/modules/*/ports.ts`) | Interfaces sin implementación |
-| Contratos | EVM: `TilcaiCctpRouter` desplegado en Fuji (4 tests Foundry). Soroban: solo esqueleto |
+| Contratos | EVM: `TilcaiCctpRouter` desplegado en Fuji (4 tests Foundry). Soroban: cuenta, verificadores y política de límite sobre OpenZeppelin `stellar-accounts` 0.7.2 (compilan, 2 tests; sin desplegar) |
 
 ## Modos de pago
 
@@ -54,6 +55,7 @@ cp .env.example .env         # completar RELAYER_API_KEY y, para pruebas, DEV_EV
 npm test                     # unitarios (sin red)
 npm run typecheck
 npm run relayer:check        # salud, auth, x402 /supported y relayer Stellar
+npm run sca:preflight        # prerrequisitos de la fase SCA: Fuji, Stellar, relayer y herramientas (solo lectura)
 npm start                    # API (127.0.0.1:8787) + worker en un proceso
 ```
 
@@ -124,11 +126,12 @@ src/
     crosschain/      FASE 1: cctp/ (encoding, decoder V2, Iris), adapters/ (viem, Soroban, submitters), service, verify
     relayer/         cliente HTTP del OpenZeppelin Relayer (transacciones Stellar, plugin x402)
     principals/ agents/ businesses/ commerce/ identity/ policies/ budgets/
-    authorization/ accounts/ signers/ payments/ receipts/   puertos de las fases 2–5
+    authorization/ signers/ payments/ receipts/             puertos de las fases 2–5
+    tenants/ accounts/                                      puertos de la fase SCA (terceros, cuentas, delegación)
     connectors/mcp  connectors/a2a  jobs/
-  apps/              api (Fastify), worker, all-in-one, cli (xpay, relayer:check)
-contracts/evm        Foundry: TilcaiCctpRouter (desplegado en Fuji), paymaster ERC-4337 (fase 3)
-contracts/soroban    política de gasto para smart accounts y presupuesto (fase 3)
+  apps/              api (Fastify), worker, all-in-one, cli (xpay, relayer:check, sca:preflight)
+contracts/evm        Foundry: TilcaiCctpRouter (desplegado en Fuji); cuenta ERC-4337, factory y router v2 (fase SCA)
+contracts/soroban    Cargo: cuenta, verificadores y política de límite (OpenZeppelin); factory y política propia (fase SCA)
 test/unit            25 tests sin red     test/integration   relayer y e2e reales (se omiten sin credenciales)
 deploy/              imágenes Docker de TilcAI y del relayer, compose del stack y manifiestos de Cloud Run
 ```
