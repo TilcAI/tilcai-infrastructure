@@ -87,6 +87,7 @@ ahí y en `relayer/config/networks/`.
 | `RELAYER_URL` | no | URL del relayer |
 | `RELAYER_API_KEY` | sí | La misma `API_KEY` del relayer |
 | `CCTP_ROUTER_FUJI` | no | `TilcaiCctpRouter` desplegado; habilita los modos gasless |
+| `VAULT_FUJI` | no | `TilcaiVault` desplegado; habilita `/v1/vault`. Su operador debe ser la cuenta del relayer `RELAYER_FUJI_ID`. Quien tenga una clave de `TILCAI_API_KEYS` puede pedir pagos hasta los límites del contrato |
 | `LITESTREAM_REPLICA_URL` | no | `gcs://bucket/ruta`, `s3://bucket/ruta` o `abs://…`. Vacía, la base vive solo en `/data` |
 | `TILCAI_ROLE` | no | `all` (por defecto): API y worker en un proceso. `api` y `worker` por separado solo tienen sentido en un mismo host y compartiendo el volumen `/data`; en Cloud Run usa `all` |
 | `PORT` | no | Si la plataforma lo define, la API escucha ahí |

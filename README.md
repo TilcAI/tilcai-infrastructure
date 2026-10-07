@@ -1,6 +1,6 @@
 # tilcai-infrastructure
 
-Backend e infraestructura de TilcAI: gateway, rieles de pago (x402 sobre Stellar y USDC crosschain con Circle CCTP V2), integración con el OpenZeppelin Relayer y, por fases, cuentas abstractas, paymasters, ERC-8004, MCP y A2A.
+Backend e infraestructura de TilcAI: gateway, rieles de pago (x402 sobre Stellar y USDC crosschain con Circle CCTP V2), vault de desembolsos en Avalanche, integración con el OpenZeppelin Relayer y, por fases, cuentas abstractas, paymasters, ERC-8004, MCP y A2A.
 
 Plan y arquitectura completos: [`documentation/TILCAI_PLAN_ARQUITECTURA_BACKEND_INFRA_2026-10-02.md`](../documentation/TILCAI_PLAN_ARQUITECTURA_BACKEND_INFRA_2026-10-02.md).
 
@@ -13,9 +13,10 @@ Plan y arquitectura completos: [`documentation/TILCAI_PLAN_ARQUITECTURA_BACKEND_
 | Fase 1 — pago USDC Avalanche Fuji → Stellar Testnet (CCTP V2 + CctpForwarder) | **Implementado y verificado con transferencias reales** (2026-10-02). 25 tests unitarios + 3 de integración on-chain. |
 | Origen gasless: el pagador firma EIP-3009 y el OZ Relayer envía el burn (`TilcaiCctpRouter`, Fuji `0x297ce6a2787484db4bB18A96a8F28A9881Fc163C`) | **Desplegado y verificado**: burn enviado por la cuenta del relayer; el pagador no gastó AVAX |
 | Destino gasless: el Relayer envía `mint_and_forward` y paga el XLM | Verificado (fee account = firmante del relayer) |
+| Vault de desembolsos: paga en USDC las compras cobradas fuera de la cadena (`TilcaiVault`, Fuji `0x841dD47Db3124839be1D878DD277e1b07D6932b6`) | **Desplegado** (2026-10-07). El relayer envía `disburse` y paga el gas; el contrato limita cada pago, el total diario y paga cada id una sola vez. 13 tests Foundry + 16 unitarios |
 | Fase SCA — emisión de cuentas abstractas para agentes y terceros (Stellar y EVM) | **En preparación**: prerrequisitos verificados (`npm run sca:preflight`), contratos base de Soroban compilados, puertos definidos. Hitos M0–M7 en [`TILCAI_FASE_SCA_EMISION_DE_CUENTAS_2026-10-06.md`](../documentation/TILCAI_FASE_SCA_EMISION_DE_CUENTAS_2026-10-06.md) |
 | Estructura de módulos de las fases 2–5 (`src/modules/*/ports.ts`) | Interfaces sin implementación |
-| Contratos | EVM: `TilcaiCctpRouter` desplegado en Fuji (4 tests Foundry). Soroban: cuenta, verificadores y política de límite sobre OpenZeppelin `stellar-accounts` 0.7.2 (compilan, 2 tests; sin desplegar) |
+| Contratos | EVM: `TilcaiCctpRouter` y `TilcaiVault` desplegados en Fuji (17 tests Foundry). Soroban: cuenta, verificadores y política de límite sobre OpenZeppelin `stellar-accounts` 0.7.2 (compilan, 2 tests; sin desplegar) |
 
 ## Modos de pago
 
@@ -56,6 +57,7 @@ npm test                     # unitarios (sin red)
 npm run typecheck
 npm run relayer:check        # salud, auth, x402 /supported y relayer Stellar
 npm run sca:preflight        # prerrequisitos de la fase SCA: Fuji, Stellar, relayer y herramientas (solo lectura)
+npm run vault -- status      # el vault en la cadena: saldo, límites, dueño y operador
 npm start                    # API (127.0.0.1:8787) + worker en un proceso
 ```
 
@@ -86,9 +88,49 @@ Todas las rutas salvo `/health` exigen `Authorization: Bearer <TILCAI_API_KEYS>`
 | POST | `/v1/crosschain/payments/:id/burn` | `{txHash}` del burn difundido por la wallet externa (también rescata un pago gasless cuyo hash se perdió) |
 | GET | `/v1/crosschain/payments/:id` | Estado detallado, `paymentState` compartido, enlaces, eventos y recibo |
 | POST | `/v1/crosschain/payments/:id/reconcile` | Ejecuta un paso de conciliación inmediatamente |
+| GET | `/v1/vault` | El vault en la cadena: saldo, límites, pausa, dueño, operador y lo comprometido en pagos en curso |
+| POST | `/v1/vault/disbursements` | Cabecera `Idempotency-Key`. `{to:"0x…", amount:"10.5", reference?:"compra-123"}` → desembolso. El relayer envía `TilcaiVault.disburse` y paga el gas |
+| GET | `/v1/vault/disbursements/:id` | Estado (`REQUESTED` → `SUBMITTED` → `CONFIRMED` \| `FAILED`), hash, enlace y eventos |
+| POST | `/v1/vault/disbursements/:id/reconcile` | Ejecuta un paso de conciliación inmediatamente |
 | GET | `/v1/relayer/status` | x402 `/supported` y relayer Stellar |
 
 Los errores usan el envelope `tilcai-shared-v1` de `tilcai-core` (`code`, `message`, `recovery`).
+
+## Vault de desembolsos
+
+Para vender USDC cobrando por fuera de la cadena (un QR bancario, una transferencia): quien
+cobra confirma el pago y pide a TilcAI que entregue los USDC a la wallet del comprador.
+
+```
+optipagos (u otro servicio)          TilcAI API + worker                 OZ Relayer            TilcaiVault (Fuji)
+  │ POST /v1/vault/disbursements ──▶ valida, comprueba que el vault puede pagar → REQUESTED
+  │                                  simula y envía disburse(id, to, amount) ──▶ paga el gas ──▶ transfiere USDC
+  │                                  worker: recibo + evento Disbursed == pedido → CONFIRMED
+  │ GET  /v1/vault/disbursements/:id ◀─ estado, txHash y enlace
+```
+
+- **Un pago por id.** El contrato anota cada `disbursementId` y se niega a pagarlo dos veces,
+  así que un pago se reintenta sin riesgo: una transacción repetida o tardía solo puede revertir.
+- **Una compra, un pago.** `reference` es el id de quien llama (la compra); no admite un segundo
+  desembolso mientras el primero no haya fallado. `Idempotency-Key` hace repetible la petición.
+- **Límites en la cadena.** Tope por pago y tope por día (UTC) que solo el dueño cambia; el
+  operador (la cuenta del relayer) no puede saltárselos ni retirar fondos.
+- **Respuesta clara si no puede pagar.** Vault en pausa → `PAUSED`; monto sobre los límites →
+  `PAYMENT_LIMIT`; saldo insuficiente (contando lo ya comprometido) → `BUDGET`. No se crea nada
+  y quien llama puede repetir la misma petición más tarde.
+- `FAILED` solo cuando todos los intentos demostraron no haber pagado. Una llamada al relayer
+  sin respuesta lo deja `uncertain` y se sigue conciliando contra la cadena.
+
+```sh
+cd contracts/evm && forge build && cd ../..
+npm run vault -- deploy --max 100 --daily 1000   # firma DEV_EVM_PAYER_PRIVATE_KEY; operador = cuenta RELAYER_FUJI_ID
+# VAULT_FUJI=0x… en .env, y recargarlo enviando USDC de Fuji a esa dirección
+npm run vault -- status
+npm run vault -- withdraw --to 0x… --amount 5    # el dueño recupera fondos
+```
+
+La dirección del vault y la clave de la API permiten pagar hasta los límites del contrato:
+`TILCAI_API_KEYS` debe estar definida en cualquier despliegue que tenga `VAULT_FUJI`.
 
 ## Despliegue
 
@@ -124,14 +166,15 @@ src/
   shared/            importes atómicos exactos, hex, IDs tilcai-shared-v1, errores de dominio, logger
   modules/
     crosschain/      FASE 1: cctp/ (encoding, decoder V2, Iris), adapters/ (viem, Soroban, submitters), service, verify
+    vault/           desembolsos del TilcaiVault: service (conciliación), repository, adapters/ (viem)
     relayer/         cliente HTTP del OpenZeppelin Relayer (transacciones Stellar, plugin x402)
     principals/ agents/ businesses/ commerce/ identity/ policies/ budgets/
     authorization/ signers/ payments/ receipts/             puertos de las fases 2–5
     tenants/ accounts/                                      puertos de la fase SCA (terceros, cuentas, delegación)
     connectors/mcp  connectors/a2a  jobs/
-  apps/              api (Fastify), worker, all-in-one, cli (xpay, relayer:check, sca:preflight)
-contracts/evm        Foundry: TilcaiCctpRouter (desplegado en Fuji); cuenta ERC-4337, factory y router v2 (fase SCA)
+  apps/              api (Fastify), worker, all-in-one, cli (xpay, relayer:check, sca:preflight, vault)
+contracts/evm        Foundry: TilcaiCctpRouter y TilcaiVault (desplegados en Fuji); cuenta ERC-4337, factory y router v2 (fase SCA)
 contracts/soroban    Cargo: cuenta, verificadores y política de límite (OpenZeppelin); factory y política propia (fase SCA)
-test/unit            25 tests sin red     test/integration   relayer y e2e reales (se omiten sin credenciales)
+test/unit            41 tests sin red     test/integration   relayer y e2e reales (se omiten sin credenciales)
 deploy/              imágenes Docker de TilcAI y del relayer, compose del stack y manifiestos de Cloud Run
 ```

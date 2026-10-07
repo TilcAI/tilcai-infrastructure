@@ -22,6 +22,8 @@ export interface EvmNetwork {
   /** TilcaiCctpRouter (gasless source leg). Absent until deployed on the network. */
   cctpRouter?: `0x${string}`;
   cctpV2: { tokenMessenger: `0x${string}`; messageTransmitter: `0x${string}` };
+  /** TilcaiVault (pays purchases settled off-chain). Absent until deployed on the network. */
+  vault?: `0x${string}`;
   /** ERC-4337 EntryPoint the smart accounts are built for (OpenZeppelin Contracts 5.7 `Account` default). */
   erc4337: { entryPoint: `0x${string}`; version: "0.9" };
   /** secp256r1 verification precompile (RIP-7212 / ACP-204): passkey signatures checked on-chain. */
@@ -62,6 +64,7 @@ export function networks(env: Env): NetworkRegistry {
     cctpDomain: 1,
     usdc: { address: "0x5425890298aed601595a70AB815c96711a31Bc65", decimals: 6, eip712Name: "USD Coin", eip712Version: "2" },
     ...(env.CCTP_ROUTER_FUJI ? { cctpRouter: env.CCTP_ROUTER_FUJI as `0x${string}` } : {}),
+    ...(env.VAULT_FUJI ? { vault: env.VAULT_FUJI as `0x${string}` } : {}),
     // Same CREATE2 address on every EVM testnet.
     cctpV2: {
       tokenMessenger: "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",

@@ -87,4 +87,49 @@ ALTER TABLE crosschain_payments ADD COLUMN burn_auth_json TEXT;
 ALTER TABLE crosschain_payments ADD COLUMN burn_requested_at TEXT;
 `,
   },
+  {
+    id: 3,
+    sql: `
+CREATE TABLE vault_disbursements (
+  id TEXT PRIMARY KEY,
+  state TEXT NOT NULL,
+  uncertain INTEGER NOT NULL DEFAULT 0,
+  network TEXT NOT NULL,
+  vault TEXT NOT NULL,
+  to_address TEXT NOT NULL,
+  amount_atomic TEXT NOT NULL,
+  reference TEXT,
+  idempotency_key TEXT NOT NULL UNIQUE,
+  request_hash TEXT NOT NULL,
+  submission_id TEXT,
+  requested_at TEXT,
+  from_block TEXT NOT NULL,
+  tx_hash TEXT,
+  block_number TEXT,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  next_check_at TEXT NOT NULL,
+  last_error TEXT,
+  failure_code TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  version INTEGER NOT NULL DEFAULT 0
+);
+-- What is being paid (an order, a purchase) gets at most one payout per vault. A failed one
+-- (proven unpaid) does not block a new attempt.
+CREATE UNIQUE INDEX ux_vault_disbursements_reference ON vault_disbursements(vault, reference)
+  WHERE reference IS NOT NULL AND state <> 'FAILED';
+CREATE INDEX ix_vault_disbursements_due ON vault_disbursements(state, next_check_at);
+
+CREATE TABLE vault_disbursement_events (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT,
+  disbursement_id TEXT NOT NULL REFERENCES vault_disbursements(id),
+  from_state TEXT,
+  to_state TEXT NOT NULL,
+  note TEXT NOT NULL,
+  data_json TEXT,
+  at TEXT NOT NULL
+);
+CREATE INDEX ix_vault_events_disbursement ON vault_disbursement_events(disbursement_id, seq);
+`,
+  },
 ];

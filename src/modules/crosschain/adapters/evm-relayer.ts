@@ -8,7 +8,18 @@ import { SubmissionRejected, type EvmSubmissionStatus, type EvmTxSubmitter } fro
  */
 export class RelayerEvmSubmitter implements EvmTxSubmitter {
   readonly name = "relayer";
+  private account: Hex | null = null;
   constructor(private readonly client: RelayerClient, private readonly relayerId: string) {}
+
+  /** The relayer's own address: the `msg.sender` of everything it submits. */
+  async sender(): Promise<Hex> {
+    if (!this.account) {
+      const address = String((await this.client.getRelayer(this.relayerId)).address ?? "");
+      if (!/^0x[0-9a-fA-F]{40}$/.test(address)) throw new Error(`relayer ${this.relayerId} has no EVM address`);
+      this.account = address as Hex;
+    }
+    return this.account;
+  }
 
   async submit(to: Hex, data: Hex) {
     const tx = await this.client.sendEvmTransaction(this.relayerId, { to, data }).catch((e: unknown) => {

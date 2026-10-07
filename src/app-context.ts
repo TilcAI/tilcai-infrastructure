@@ -12,6 +12,9 @@ import type { MintSubmitter } from "./modules/crosschain/ports.ts";
 import { SqliteCrosschainRepository } from "./modules/crosschain/repository.ts";
 import { CrosschainPaymentService } from "./modules/crosschain/service.ts";
 import { RelayerClient } from "./modules/relayer/client.ts";
+import { ViemVault } from "./modules/vault/adapters/evm.ts";
+import { SqliteVaultRepository } from "./modules/vault/repository.ts";
+import { VaultDisbursementService } from "./modules/vault/service.ts";
 
 /** Composition root: the only place that knows concrete adapters. */
 export interface AppContext {
@@ -21,6 +24,8 @@ export interface AppContext {
   log: Logger;
   relayer: RelayerClient;
   crosschain: CrosschainPaymentService;
+  /** Payouts from the TilcaiVault. Null until VAULT_FUJI and the relayer key are configured. */
+  vault: VaultDisbursementService | null;
 }
 
 export function createAppContext(name: string, env: Env = loadEnv()): AppContext {
@@ -36,6 +41,8 @@ export function createAppContext(name: string, env: Env = loadEnv()): AppContext
     log.warn("mint submitter not configured; payments will wait at ATTESTED", { submitter: env.STELLAR_MINT_SUBMITTER });
   }
 
+  const evmSubmitter = env.RELAYER_API_KEY ? new RelayerEvmSubmitter(relayer, env.RELAYER_FUJI_ID) : null;
+
   const crosschain = new CrosschainPaymentService({
     repo: new SqliteCrosschainRepository(db),
     evm: new ViemEvmCctp(nets.avalancheFuji, env.DEV_EVM_PAYER_PRIVATE_KEY || undefined),
@@ -43,7 +50,7 @@ export function createAppContext(name: string, env: Env = loadEnv()): AppContext
     iris: new IrisClient(env.IRIS_API_URL),
     submitters,
     activeSubmitter: env.STELLAR_MINT_SUBMITTER,
-    ...(env.RELAYER_API_KEY && nets.avalancheFuji.cctpRouter ? { evmSubmitter: new RelayerEvmSubmitter(relayer, env.RELAYER_FUJI_ID) } : {}),
+    ...(evmSubmitter && nets.avalancheFuji.cctpRouter ? { evmSubmitter } : {}),
     source: nets.avalancheFuji,
     destination: nets.stellarTestnet,
     clock: systemClock,
@@ -54,5 +61,19 @@ export function createAppContext(name: string, env: Env = loadEnv()): AppContext
       minConfirmations: env.EVM_MIN_CONFIRMATIONS,
     },
   });
-  return { env, nets, db, log, relayer, crosschain };
+
+  const vault =
+    evmSubmitter && nets.avalancheFuji.vault
+      ? new VaultDisbursementService({
+          repo: new SqliteVaultRepository(db),
+          vault: new ViemVault(nets.avalancheFuji, nets.avalancheFuji.vault),
+          submitter: evmSubmitter,
+          network: nets.avalancheFuji,
+          clock: systemClock,
+          log,
+          options: { pollMs: env.WORKER_POLL_MS, minConfirmations: env.EVM_MIN_CONFIRMATIONS },
+        })
+      : null;
+  if (nets.avalancheFuji.vault && !vault) log.warn("VAULT_FUJI is set but RELAYER_API_KEY is not; vault payouts are disabled");
+  return { env, nets, db, log, relayer, crosschain, vault };
 }

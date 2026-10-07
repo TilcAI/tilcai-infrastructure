@@ -10,7 +10,7 @@ export function newId<K extends IdKind>(kind: K): EntityId<K> {
   return parseId(kind, `${ID_PREFIXES[kind]}_${randomUUID()}`);
 }
 
-export const LOCAL_PREFIXES = { routeQuote: "route_quote" } as const;
+export const LOCAL_PREFIXES = { routeQuote: "route_quote", vaultDisbursement: "vault_disbursement" } as const;
 export type RouteQuoteId = string & { readonly __brand: "routeQuote" };
 
 export function newRouteQuoteId(): RouteQuoteId {
@@ -22,4 +22,17 @@ export function parseRouteQuoteId(value: unknown): RouteQuoteId {
     throw new TypeError("Invalid route quote ID.");
   }
   return value as RouteQuoteId;
+}
+
+export type VaultDisbursementId = string & { readonly __brand: "vaultDisbursement" };
+
+export function newVaultDisbursementId(): VaultDisbursementId {
+  return `${LOCAL_PREFIXES.vaultDisbursement}_${randomUUID()}` as VaultDisbursementId;
+}
+
+export function parseVaultDisbursementId(value: unknown): VaultDisbursementId {
+  if (typeof value !== "string" || !/^vault_disbursement_[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(value)) {
+    throw new TypeError("Invalid vault disbursement ID.");
+  }
+  return value as VaultDisbursementId;
 }

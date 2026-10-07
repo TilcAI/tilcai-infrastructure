@@ -29,6 +29,11 @@ const schema = z.object({
   RELAYER_FUJI_ID: z.string().default("avalanche-fuji-relayer"),
   /** Deployed TilcaiCctpRouter on Avalanche Fuji (enables gasless modes). */
   CCTP_ROUTER_FUJI: z.string().regex(/^0x[0-9a-fA-F]{40}$/).or(z.literal("")).default(""),
+  /**
+   * Deployed TilcaiVault on Avalanche Fuji (enables /v1/vault). Its operator must be the
+   * RELAYER_FUJI_ID account, which sends the payouts.
+   */
+  VAULT_FUJI: z.string().regex(/^0x[0-9a-fA-F]{40}$/).or(z.literal("")).default(""),
   RELAYER_X402_PLUGIN_ID: z.string().default("x402"),
 
   /** Who submits `CctpForwarder.mint_and_forward` on Stellar. */

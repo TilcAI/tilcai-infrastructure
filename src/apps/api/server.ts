@@ -6,6 +6,8 @@ import { DomainError } from "../../shared/errors.ts";
 import { atomicToDecimal } from "../../shared/amount.ts";
 import type { CrosschainPayment, RouteQuote } from "../../modules/crosschain/domain.ts";
 import { paymentStateOf } from "../../modules/crosschain/domain.ts";
+import type { VaultDisbursement } from "../../modules/vault/domain.ts";
+import type { VaultDisbursementService } from "../../modules/vault/service.ts";
 
 const json = (v: unknown) => JSON.stringify(v, (_, x) => (typeof x === "bigint" ? x.toString() : x));
 const send = (reply: FastifyReply, status: number, body: unknown) =>
@@ -25,6 +27,11 @@ const PaymentBody = z.strictObject({
 });
 const BurnBody = z.strictObject({ txHash: z.string().max(66) });
 const AuthorizationBody = z.strictObject({ signature: z.string().regex(/^0x[0-9a-fA-F]{130}$/) });
+const DisbursementBody = z.strictObject({
+  to: z.string().max(42),
+  amount: z.string().max(40),
+  reference: z.string().max(160).optional(),
+});
 
 export function buildServer(ctx: AppContext): FastifyInstance {
   const app = Fastify({
@@ -63,7 +70,7 @@ export function buildServer(ctx: AppContext): FastifyInstance {
 
   app.get("/health", async (_req, reply) => {
     const relayer = await ctx.relayer.health();
-    return send(reply, 200, { ok: true, env: ctx.env.TILCAI_ENV, relayer: relayer ? "up" : "down" });
+    return send(reply, 200, { ok: true, env: ctx.env.TILCAI_ENV, relayer: relayer ? "up" : "down", vault: ctx.vault ? "on" : "off" });
   });
 
   app.get("/v1/routes", async (_req, reply) =>
@@ -133,6 +140,75 @@ export function buildServer(ctx: AppContext): FastifyInstance {
   app.post<{ Params: { id: string } }>("/v1/crosschain/payments/:id/reconcile", async (req, reply) => {
     const p = await ctx.crosschain.step(ctx.crosschain.mustGet(req.params.id));
     return send(reply, 200, { payment: publicPayment(p) });
+  });
+
+  // ── Vault: payouts of purchases settled off-chain ─────────────────────────
+
+  const vault = (): VaultDisbursementService => {
+    if (!ctx.vault) throw new DomainError("SERVICE_UNAVAILABLE", "vault not configured (VAULT_FUJI)");
+    return ctx.vault;
+  };
+  const usdc = (atomic: bigint) => atomicToDecimal(atomic, ctx.nets.avalancheFuji.usdc.decimals);
+  const publicDisbursement = (d: VaultDisbursement) => ({
+    id: d.id,
+    state: d.state,
+    uncertain: d.uncertain,
+    network: d.network,
+    vault: d.vault,
+    to: d.to,
+    asset: "USDC",
+    amountAtomic: d.amountAtomic,
+    amount: usdc(d.amountAtomic),
+    reference: d.reference,
+    submissionId: d.submissionId,
+    txHash: d.txHash,
+    blockNumber: d.blockNumber,
+    attempts: d.attempts,
+    lastError: d.lastError,
+    failureCode: d.failureCode,
+    nextCheckAt: d.nextCheckAt,
+    createdAt: d.createdAt,
+    updatedAt: d.updatedAt,
+  });
+  const txLink = (d: VaultDisbursement) => ({ tx: d.txHash ? `${ctx.nets.avalancheFuji.explorer}/tx/${d.txHash}` : null });
+
+  app.get("/v1/vault", async (_req, reply) => {
+    const s = await vault().status();
+    return send(reply, 200, {
+      vault: {
+        network: ctx.nets.avalancheFuji.id,
+        address: s.address,
+        asset: ctx.nets.avalancheFuji.usdc.address,
+        owner: s.owner,
+        operator: s.operator,
+        relayer: s.relayer,
+        operatorIsRelayer: s.operatorIsRelayer,
+        paused: s.paused,
+        balance: usdc(s.balanceAtomic),
+        pending: usdc(s.pendingAtomic),
+        maxPerDisbursement: usdc(s.maxPerDisbursementAtomic),
+        dailyLimit: usdc(s.dailyLimitAtomic),
+        availableToday: usdc(s.availableTodayAtomic),
+        explorer: `${ctx.nets.avalancheFuji.explorer}/address/${s.address}`,
+      },
+    });
+  });
+
+  app.post("/v1/vault/disbursements", async (req, reply) => {
+    const body = DisbursementBody.parse(req.body);
+    const r = await vault().create({ ...body, idempotencyKey: idemKey(req) });
+    return send(reply, r.replayed ? 200 : 201, { disbursement: publicDisbursement(r.disbursement), links: txLink(r.disbursement) });
+  });
+
+  app.get<{ Params: { id: string } }>("/v1/vault/disbursements/:id", async (req, reply) => {
+    const v = vault().view(req.params.id);
+    return send(reply, 200, { disbursement: publicDisbursement(v.disbursement), links: v.links, events: v.events });
+  });
+
+  /** Runs one reconciliation step now (the worker does the same on its own cadence). */
+  app.post<{ Params: { id: string } }>("/v1/vault/disbursements/:id/reconcile", async (req, reply) => {
+    const d = await vault().step(vault().mustGet(req.params.id));
+    return send(reply, 200, { disbursement: publicDisbursement(d), links: txLink(d) });
   });
 
   app.get("/v1/relayer/status", async (_req, reply) => {
