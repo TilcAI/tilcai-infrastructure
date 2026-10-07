@@ -8,3 +8,4 @@ scratch/
 contracts/evm/out/
 contracts/evm/cache/
 contracts/evm/lib/
+contracts/soroban/target/
