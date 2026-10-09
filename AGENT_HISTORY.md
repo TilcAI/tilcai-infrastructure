@@ -136,3 +136,42 @@ Reanuda el trabajo de los prompts de las 07:57:54Z y 08:00:23Z, que se había de
 Reanuda el trabajo de los prompts de las 07:57:54Z y 08:00:23Z, que se había detenido por el límite de uso. No es un pedido nuevo: el resultado está en la entrada de las 07:57:54Z.
 
 **En este repositorio.** Sin cambios adicionales: lo de este repositorio está descrito en la entrada de las 07:57:54Z.
+
+## 2026-10-09T15:49:06Z · SaulChoque · Claude Code (claude-opus-5-5)
+
+- **Sesión:** https://claude.ai/code/session_018g3RyDatWoLTxJc1Ef3L4w
+- **Rama:** `main`
+- **Repositorios:** `tilcai-infrastructure`, `tilcai-web`, `documentation` (TilcAI) y `optipagos-backend`, `optipagos-frontend` (Optus)
+
+### Prompt
+
+> Genial, mergea a Main, prueba, corrige y haz push
+
+### Salida
+
+Las cinco ramas de la fase SCA se fusionaron en `main` y se subieron: tilcai-infrastructure (PR #24), tilcai-web (#27), documentation (#2), optipagos-backend (#1) y optipagos-frontend (#4). Antes de cada push se probó el resultado de la fusión: 160 pruebas unitarias y 38 de contratos en tilcai-infrastructure; 45 pruebas, `tsc` y build en tilcai-web (su `main` había avanzado; la fusión fue limpia); 373 pruebas, lint, typecheck y build en optipagos-backend; `tsc` y lint en optipagos-frontend. No hubo nada que corregir en el código. La PR #23 de tilcai-infrastructure sigue abierta en GitHub aunque sus commits ya están en `main`.
+
+**En este repositorio.** Rama `main`. Fusión de `feat/sca-evm-cuentas` (commit `f383077`).
+
+## 2026-10-09T15:50:08Z · SaulChoque · Claude Code (claude-opus-5-5)
+
+- **Sesión:** https://claude.ai/code/session_018g3RyDatWoLTxJc1Ef3L4w
+- **Rama:** `main`
+- **Repositorios:** `tilcai-infrastructure` (sin cambios en archivos versionados)
+
+### Prompt
+
+> Realiza una copia de los Dockers que están funcionando y luego crea los nuevos
+
+### Salida
+
+Llegó mientras se atendía el prompt de las 15:49:06Z y se hizo a continuación, ya con todo fusionado en `main`.
+
+- **Copia** en `~/backups/docker-pre-sca-20261009/` (fuera de los repositorios, solo legible por el usuario): la definición de cada contenedor en uso, los `.env` con que se crearon, un volcado de la base de Optipagos y el volumen de datos de TilcAI. Las imágenes anteriores quedan etiquetadas `tilcai/tilcai:pre-sca` y `optipagos-backend:pre-sca`, y el contenedor anterior de TilcAI queda detenido como `tilcai-pre-sca`.
+- **Ensayo antes de tocar nada**: las migraciones nuevas se aplicaron sobre una copia de la base de Optipagos (PostgreSQL 18) y la imagen nueva de TilcAI arrancó sobre una copia de sus datos, en otro puerto. Ambos bien.
+- **Contenedores nuevos** desde `main`: `tilcai` (con `ACCOUNT_FACTORY_FUJI` y `CCTP_ROUTER_V2_FUJI` añadidas a su `.env`, que no está en git) y `optipagos-backend-1`, que aplicó las migraciones `0004` y `0005` a la base real. Los dos sanos; los datos siguen ahí (6 usuarios, 3 billeteras, 16 movimientos, todo como `testnet`). El relayer y Postgres no se tocaron.
+- La configuración de Optipagos no se cambió: las billeteras nuevas siguen siendo de clave propia y mainnet sigue apagado. Activar las cuentas de contrato o mainnet es un cambio de variables que queda a decisión del usuario.
+- No se probó una conversación real por WhatsApp con los contenedores nuevos (el canal de desarrollo está apagado en ese despliegue): se comprobó salud, permisos de la API, migraciones y registros sin errores.
+- Volver atrás exige restaurar los datos además de las imágenes: las versiones anteriores no entienden el esquema nuevo.
+
+**En este repositorio.** Sin cambios en archivos versionados. La imagen `tilcai/tilcai:local` se construyó con `deploy/build.sh tilcai` desde `main`.
