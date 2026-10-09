@@ -17,9 +17,9 @@ Plan y arquitectura completos: [`documentation/TILCAI_PLAN_ARQUITECTURA_BACKEND_
 | Cobro con QR Simple: mock de la API de Vendis («QR Dinámico para Pagos» v1.3) con página «Simular depósito» | **Implementado como mock** (2026-10-09): no hay banco ni dinero. Verificado de extremo a extremo con optipagos-backend: QR → depósito simulado → notificación → desembolso del vault en Fuji |
 | Monitorización: registro de eventos, recursos y alertas; avisos del relayer por webhook; envío firmado a tilcai-web | **Implementado** (2026-10-09). El receptor de avisos del relayer está probado con avisos firmados de prueba; falta apuntar el relayer real a TilcAI |
 | Fase SCA, EVM — cuentas de contrato con passkey para terceros (`TilcaiAccountFactory`, Fuji `0x55a5b0ed47c5dfb168cfe2b431a56455576d51b8`; `TilcaiCctpRouterV2`, Fuji `0x09483803916e6cb2027741c9287361ad55507a66`) | **Desplegado en testnet y verificado** (2026-10-09, `npm run sca -- verify`): una cuenta emitida por la factory pagó USDC real de Fuji con una firma de passkey (ERC-1271 + ERC-7739). API `/v1/accounts`, claves por tercero con permisos y modo de pago `account`. Contratos **sin auditar: solo testnet**. Falta: delegación a claves de agente (M4) y envío de UserOperations |
-| Fase SCA, Stellar — emisión de cuentas abstractas para agentes y terceros | **En preparación**: prerrequisitos verificados (`npm run sca:preflight`), contratos base de Soroban compilados, puertos definidos. Hitos M0–M7 en [`TILCAI_FASE_SCA_EMISION_DE_CUENTAS_2026-10-06.md`](../documentation/TILCAI_FASE_SCA_EMISION_DE_CUENTAS_2026-10-06.md) |
+| Fase SCA, Stellar — emisión de cuentas (`tilcai_account_factory`) y vault de USDC (`tilcai_vault`) | **Desplegado en testnet y verificado** (2026-10-09, `npm run stellar -- verify-account` y `verify-vault`): el relayer despliega la cuenta del tercero por la factory sin que el dueño tenga XLM, y desembolsa USDC desde el vault igual que en Avalanche. API `/v1/accounts` con `network:"stellar:testnet"` y `/v1/vault?network=stellar:testnet`. 17 tests de Soroban + 14 unitarios. **Sin auditar: solo testnet.** Falta: delegación a claves de agente (M3) y que el tablero muestre el vault de Stellar |
 | Estructura de módulos de las fases 2–5 (`src/modules/*/ports.ts`) | Interfaces sin implementación |
-| Contratos | EVM: `TilcaiCctpRouter`, `TilcaiVault`, `TilcaiAccountFactory` (+ `TilcaiAccount`) y `TilcaiCctpRouterV2` desplegados en Fuji (38 tests Foundry). Soroban: cuenta, verificadores y política de límite sobre OpenZeppelin `stellar-accounts` 0.7.2 (compilan, 2 tests; sin desplegar) |
+| Contratos | EVM: `TilcaiCctpRouter`, `TilcaiVault`, `TilcaiAccountFactory` (+ `TilcaiAccount`) y `TilcaiCctpRouterV2` desplegados en Fuji (38 tests Foundry). Soroban: cuenta, factory, verificadores y política de límite sobre OpenZeppelin `stellar-accounts` 0.7.2, y `tilcai_vault` (19 tests; desplegados en Stellar Testnet salvo la política) |
 
 ## Modos de pago
 
@@ -100,11 +100,11 @@ tercero (*tenant*) y lleva permisos:
 | POST | `/v1/crosschain/payments/:id/burn` | `{txHash}` del burn difundido por la wallet externa (también rescata un pago gasless cuyo hash se perdió) |
 | GET | `/v1/crosschain/payments/:id` | Estado detallado, `paymentState` compartido, enlaces, eventos y recibo |
 | POST | `/v1/crosschain/payments/:id/reconcile` | Ejecuta un paso de conciliación inmediatamente |
-| POST | `/v1/accounts` | Cabecera `Idempotency-Key`. `{network:"eip155:43113", externalRef, owner:{kind:"webauthn-p256", publicKey, credentialId, rpId}}` → cuenta con su dirección definitiva. Permiso `accounts:write` |
+| POST | `/v1/accounts` | Cabecera `Idempotency-Key`. `{network:"eip155:43113" \| "stellar:testnet", externalRef, owner}` → cuenta con su dirección definitiva. `owner`: `{kind:"webauthn-p256", publicKey, credentialId, rpId}` (ambas redes) o `{kind:"ed25519", publicKey}` (solo Stellar). Permiso `accounts:write` |
 | GET | `/v1/accounts/:id` | La cuenta (`DEPLOYING` → `ACTIVE`), enlaces y eventos. Permiso `accounts:read` |
 | GET | `/v1/accounts` | Las cuentas del tercero; filtros `externalRef`, `network`, `limit` |
-| GET | `/v1/vault` | El vault en la cadena: saldo, límites, pausa, dueño, operador y lo comprometido en pagos en curso |
-| POST | `/v1/vault/disbursements` | Cabecera `Idempotency-Key`. `{to:"0x…", amount:"10.5", reference?:"compra-123"}` → desembolso. El relayer envía `TilcaiVault.disburse` y paga el gas |
+| GET | `/v1/vault` | El vault en la cadena: saldo, límites, pausa, dueño, operador y lo comprometido en pagos en curso. `?network=` elige la red; sin él, Fuji |
+| POST | `/v1/vault/disbursements` | Cabecera `Idempotency-Key`. `{network?, to:"0x…" \| "G…" \| "C…", amount:"10.5", reference?:"compra-123"}` → desembolso. El relayer envía `disburse` del vault de la red y paga el gas. Sin `network`, Fuji |
 | GET | `/v1/vault/disbursements/:id` | Estado (`REQUESTED` → `SUBMITTED` → `CONFIRMED` \| `FAILED`), hash, enlace y eventos |
 | POST | `/v1/vault/disbursements/:id/reconcile` | Ejecuta un paso de conciliación inmediatamente |
 | GET | `/v1/relayer/status` | x402 `/supported` y relayer Stellar |
@@ -192,6 +192,43 @@ npm run tenant -- key --tenant tenant_… --label backend --scopes payments,acco
 ```
 
 Los contratos no están auditados y la configuración solo admite testnet.
+
+## Stellar: cuentas y vault (fase SCA)
+
+Lo mismo que en Avalanche, en Soroban, con los mismos contratos de OpenZeppelin `stellar-accounts`
+como base y la misma API. Cambia la red en la petición: `network:"stellar:testnet"`.
+
+- **Cuentas.** `tilcai_account_factory` despliega `tilcai_account` en una dirección derivada de la
+  clave del dueño y de un salt (`sha256(dominio ‖ tipo ‖ firmante ‖ salt)`): se conoce antes de
+  desplegar, compromete al dueño y desplegar no exige autorización, así que paga el relayer. El
+  dueño es un firmante externo: una clave **Ed25519** (un keypair de Stellar) o una **passkey**
+  P-256 que verifica el contrato `webauthn-verifier`. TilcAI no queda como firmante ni como
+  administrador de nada. La cuenta no es actualizable.
+- **Vault.** `tilcai_vault` reproduce `TilcaiVault`: un pago por `disbursementId`, tope por pago y
+  por día UTC, pausa, retiro del dueño, cambio de operador y de dueño en dos pasos. El operador es la
+  cuenta del relayer y autoriza como fuente de la transacción. Paga a cuentas `G…` (con trustline
+  de USDC) y a contratos `C…` (sin trustline, como las cuentas emitidas por la factory).
+- **Mismo servicio.** `VaultDisbursementService` sirve a las dos redes: un servicio por red sobre
+  el mismo repositorio, cada uno concilia solo lo suyo. En Stellar un ledger cerrado es final, así
+  que basta una confirmación; el registro `payout(id)` del contrato decide si un id se pagó, y el
+  evento `disbursed` aporta el hash mientras el nodo lo conserve.
+
+```sh
+cd contracts/soroban && cargo test && cd ../..            # 19 tests (antes: stellar contract build, para que existan los wasm)
+npm run stellar -- relayer                                 # cuenta G… del relayer: operador del vault
+contracts/soroban/deploy-testnet.sh --source <identidad> --operator G… [--owner G…] [--max 100] [--daily 1000]
+# ACCOUNT_FACTORY_STELLAR=C… y VAULT_STELLAR=C… en .env; recargar el vault enviándole USDC a la dirección C…
+npm run stellar -- status
+npm run stellar -- verify-account                          # emite una cuenta de prueba por el relayer y comprueba su regla owner
+npm run stellar -- verify-vault --pay G… --amount 0.1      # comprueba los topes y hace un desembolso real
+```
+
+Contratos en Stellar Testnet (2026-10-09): factory `CCQCZQGQTUESUBMBPKQWHDZYKAVKFIL3VHZGV2YRCJ4Q7AYA5OWRU2ZB`,
+verificador Ed25519 `CDKHWRLYZRCLJK4CJY7C5G76AII77AUSMNIHWZIDIT5EMAJOBXF65QYP`, verificador WebAuthn
+`CBBPAL5S7XWTXZYSNLMQAQQ6QJYW3HMDWWJ2BGKPX6K2VOVGJQM2RWC6`, vault `CDQ5KG2WCKHOI5MXGNB6X4662ONAWOZUGZFA7HTG6VAZPVU7MBLOAVI6`
+(dueño: una cuenta de desarrollo; **en producción, una multifirma o una cuenta inteligente**: puede vaciar el vault).
+El estado de Soroban expira: una cuenta o un vault sin uso se archivan hasta restaurarlos. Cada
+llamada al vault y a la factory extiende su TTL; el vault extiende también el de cada pago.
 
 ## QR Simple (mock)
 
@@ -305,18 +342,19 @@ src/
   shared/            importes atómicos exactos, hex, IDs tilcai-shared-v1, errores de dominio, logger
   modules/
     crosschain/      FASE 1: cctp/ (encoding, decoder V2, Iris), adapters/ (viem, Soroban, submitters), service, verify
-    vault/           desembolsos del TilcaiVault: service (conciliación), repository, adapters/ (viem)
+    vault/           desembolsos del vault de cada red: service (conciliación), repository, adapters/ (viem, Soroban)
+    stellar/         lectura de Soroban (simulación, estado) y envío de llamadas por el relayer
     monitor/         registro de eventos, foto de recursos y alertas, avisos del relayer, envío a tilcai-web
     qrsimple/        mock de QR Simple (API de Vendis): tokens, QR, pagos simulados, callback y su página
     relayer/         cliente HTTP del OpenZeppelin Relayer (transacciones Stellar, plugin x402)
     principals/ agents/ businesses/ commerce/ identity/ policies/ budgets/
     authorization/ signers/ payments/ receipts/             puertos de las fases 2–5
     tenants/         terceros: claves con permisos y cupos diarios (CLI `npm run tenant`)
-    accounts/        fase SCA: emisión de cuentas (service), evm/ (firma de passkey, factory), repositorio
+    accounts/        fase SCA: emisión de cuentas (service), evm/ (firma de passkey, factory), stellar/ (factory Soroban), repositorio
     connectors/mcp  connectors/a2a  jobs/
-  apps/              api (Fastify), worker, all-in-one, cli (xpay, relayer:check, sca:preflight, sca, vault, tenant)
+  apps/              api (Fastify), worker, all-in-one, cli (xpay, relayer:check, sca:preflight, sca, vault, stellar, tenant)
 contracts/evm        Foundry: TilcaiCctpRouter, TilcaiVault, TilcaiAccount + TilcaiAccountFactory y TilcaiCctpRouterV2 (desplegados en Fuji)
-contracts/soroban    Cargo: cuenta, verificadores y política de límite (OpenZeppelin); factory y política propia (fase SCA)
-test/unit            160 tests sin red     test/integration   relayer y e2e reales (se omiten sin credenciales)
+contracts/soroban    Cargo: cuenta, factory, vault, verificadores y política de límite (OpenZeppelin); política propia pendiente (M3)
+test/unit            174 tests sin red     test/integration   relayer y e2e reales (se omiten sin credenciales)
 deploy/              imágenes Docker de TilcAI y del relayer, compose del stack y manifiestos de Cloud Run
 ```

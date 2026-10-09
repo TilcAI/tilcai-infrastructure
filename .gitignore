@@ -9,3 +9,5 @@ contracts/evm/out/
 contracts/evm/cache/
 contracts/evm/lib/
 contracts/soroban/target/
+contracts/soroban/account-factory/test_snapshots/
+contracts/soroban/vault/test_snapshots/

@@ -1,4 +1,3 @@
-import type { Hex } from "../../shared/hex.ts";
 import type { VaultDisbursementId } from "../../shared/ids.ts";
 
 /**
@@ -36,9 +35,9 @@ export interface VaultDisbursement {
   state: DisbursementState;
   /** A relayer call ended without an answer: a transaction may exist that TilcAI cannot see. */
   uncertain: boolean;
-  network: "eip155:43113";
-  vault: Hex;
-  to: Hex;
+  network: "eip155:43113" | "stellar:testnet";
+  vault: string;
+  to: string;
   amountAtomic: bigint;
   /** The caller's own id for what is being paid (an order, a purchase). One payout per reference. */
   reference: string | null;
@@ -49,7 +48,7 @@ export interface VaultDisbursement {
   requestedAt: string | null;
   /** Chain head when the payout was created: where the search for its event starts. */
   fromBlock: bigint;
-  txHash: Hex | null;
+  txHash: string | null;
   blockNumber: bigint | null;
   attempts: number;
   nextCheckAt: string;

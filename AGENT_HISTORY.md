@@ -175,3 +175,37 @@ Llegó mientras se atendía el prompt de las 15:49:06Z y se hizo a continuación
 - Volver atrás exige restaurar los datos además de las imágenes: las versiones anteriores no entienden el esquema nuevo.
 
 **En este repositorio.** Sin cambios en archivos versionados. La imagen `tilcai/tilcai:local` se construyó con `deploy/build.sh tilcai` desde `main`.
+
+## 2026-10-09T21:22:59Z · SaulChoque · Claude Code (Sonnet 5.5)
+
+- **Sesión:** https://claude.ai/code/session_01XXALddBkW59xRAowuFKvD7
+- **Rama:** `feat/sca-stellar-vault`
+- **Repositorios:** `tilcai-infrastructure`, `documentation`
+
+### Prompt
+
+> genial, ahora implementa la emision de stellar scas accounts y la creacion de un vault de usdc al igual que avalanche
+
+### Salida
+
+Cuentas SCA y vault de USDC en Stellar, con la misma API y el mismo servicio que en Avalanche, desplegados y verificados en Stellar Testnet. Sin commit ni push; la rama `feat/sca-stellar-vault` queda con los cambios en el árbol.
+
+- **Contratos Soroban** (`contracts/soroban`): `account-factory` (deriva la dirección de la clave del dueño, Ed25519 o passkey; sin autorización, la paga el relayer) y `vault` (gemelo de `TilcaiVault.sol`: un pago por id, tope por pago y por día UTC, pausa, retiro, dueño en dos pasos). 17 tests nuevos; el espacio de trabajo pasa 19.
+- **Backend:** `StellarSmartAccountProvider` (`/v1/accounts` con `network:"stellar:testnet"`, dueño Ed25519 o passkey), `SorobanVault` y `StellarVaultSubmitter` (`/v1/vault?network=` y `network` en el desembolso). El servicio de desembolsos es el mismo para las dos redes; la conciliación se filtra por red. `AccountDeployer` pasó a `accounts/ports.ts`.
+- **Verificado en testnet:** `npm run stellar -- verify-account` y `verify-vault --pay` (desembolso real con evento `disbursed`), y por la API de una instancia temporal: cuenta `ACTIVE` y desembolso `CONFIRMED` a esa cuenta. Contratos: factory `CCQCZQGQ…U2ZB`, vault `CDQ5KG2W…VI6`.
+- **Pruebas:** 174 unitarias (160 existentes + 14 nuevas) y `tsc` limpios.
+- **Pendiente:** `ACCOUNT_FACTORY_STELLAR` y `VAULT_STELLAR` no se pusieron en el `.env` ni se reinició el contenedor `tilcai`; falta la regla de agente (M3), que el tablero muestre el vault de Stellar y la auditoría.
+
+## 2026-10-09T21:33:48Z · SaulChoque · Claude Code (Sonnet 5.5)
+
+- **Sesión:** https://claude.ai/code/session_01XXALddBkW59xRAowuFKvD7
+- **Rama:** `feat/sca-stellar-vault`
+- **Repositorios:** `tilcai-infrastructure`, `documentation`
+
+### Prompt
+
+> sí, haz commit y push y reinicia tilcai
+
+### Salida
+
+Commit y push de la rama `feat/sca-stellar-vault` (tilcai-infrastructure) y de `docs/sca-stellar-estado` (documentation). El contenedor `tilcai` se recreó con la imagen construida desde esa rama y las dos variables nuevas, `ACCOUNT_FACTORY_STELLAR` y `VAULT_STELLAR`: queda `healthy`, `/health` informa `vaultStellar: on` y `accounts: on`, sin errores en el registro, mismo volumen `tilcai-data`, red `host` y política `unless-stopped`. Respaldo previo en `~/backups/docker-pre-stellar-20261009/` (inspección y variables) y la imagen anterior como `tilcai/tilcai:pre-stellar`. La rama no se fusionó en `main`.

@@ -7,19 +7,28 @@ import type { TenantId } from "../../modules/tenants/ports.ts";
 import { DomainError } from "../../shared/errors.ts";
 import type { Hex } from "../../shared/hex.ts";
 
+const NETWORKS = ["eip155:43113", "stellar:testnet"] as const;
 const AccountBody = z.strictObject({
-  network: z.literal("eip155:43113"),
+  network: z.enum(NETWORKS),
   externalRef: z.string().min(1).max(128),
-  owner: z.strictObject({
-    kind: z.literal("webauthn-p256"),
-    /** 65-byte uncompressed P-256 point of the passkey. Public material only. */
-    publicKey: z.string().regex(/^0x04[0-9a-fA-F]{128}$/),
-    credentialId: z.string().min(1).max(1024),
-    rpId: z.string().min(1).max(253),
-  }),
+  // The network decides which owners it takes (EVM: a passkey; Stellar: a passkey or an Ed25519 key).
+  owner: z.discriminatedUnion("kind", [
+    z.strictObject({
+      kind: z.literal("webauthn-p256"),
+      /** 65-byte uncompressed P-256 point of the passkey. Public material only. */
+      publicKey: z.string().regex(/^0x04[0-9a-fA-F]{128}$/),
+      credentialId: z.string().min(1).max(1024),
+      rpId: z.string().min(1).max(253),
+    }),
+    z.strictObject({
+      kind: z.literal("ed25519"),
+      /** 32-byte Ed25519 public key (the bytes of a Stellar G… address). */
+      publicKey: z.string().regex(/^0x[0-9a-fA-F]{64}$/),
+    }),
+  ]),
 });
 const ListQuery = z.object({
-  network: z.literal("eip155:43113").optional(),
+  network: z.enum(NETWORKS).optional(),
   externalRef: z.string().min(1).max(128).optional(),
   limit: z.coerce.number().int().min(1).max(200).default(50),
 });
@@ -31,8 +40,8 @@ const ListQuery = z.object({
  *   GET  /v1/accounts/:id           the account and its history
  *   GET  /v1/accounts?externalRef=  the tenant's accounts, newest first
  *
- * The owner is a passkey that never leaves the holder's device: TilcAI receives its public key,
- * derives the address from it and pays the deployment. An account of another tenant is "not found".
+ * The owner is a passkey that never leaves the holder's device (on Stellar also an Ed25519 key):
+ * TilcAI receives its public key, derives the address from it and pays the deployment. An account of another tenant is "not found".
  */
 export function registerAccountRoutes(
   app: FastifyInstance,
@@ -40,7 +49,7 @@ export function registerAccountRoutes(
   h: { tenantOf(req: FastifyRequest): TenantId; idemKey(req: FastifyRequest): string; send(reply: FastifyReply, status: number, body: unknown): FastifyReply },
 ): void {
   const service = (): AccountService => {
-    if (!ctx.accountService) throw new DomainError("SERVICE_UNAVAILABLE", "accounts not configured (ACCOUNT_FACTORY_FUJI)");
+    if (!ctx.accountService) throw new DomainError("SERVICE_UNAVAILABLE", "accounts not configured (ACCOUNT_FACTORY_FUJI or ACCOUNT_FACTORY_STELLAR)");
     return ctx.accountService;
   };
   const explorer = (a: StoredSmartAccount) => ctx.nets.byId(a.network)?.explorer;
@@ -58,7 +67,7 @@ export function registerAccountRoutes(
     updatedAt: a.updatedAt,
   });
   const links = (a: StoredSmartAccount) => ({
-    address: `${explorer(a)}/address/${a.address}`,
+    address: `${explorer(a)}/${a.network === "stellar:testnet" ? "contract" : "address"}/${a.address}`,
     deployTx: a.deployTxHash ? `${explorer(a)}/tx/${a.deployTxHash}` : null,
   });
 

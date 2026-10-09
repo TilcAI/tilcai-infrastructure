@@ -12,7 +12,7 @@ const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
  * Both stop on signal.
  */
 export function startWorker(ctx: AppContext): { stop(): Promise<void> } {
-  const reconcile = loop(ctx, "worker", ctx.env.WORKER_POLL_MS, [() => ctx.crosschain.processDue(), () => ctx.vault?.processDue(), () => ctx.accountService?.processDue()]);
+  const reconcile = loop(ctx, "worker", ctx.env.WORKER_POLL_MS, [() => ctx.crosschain.processDue(), ...Object.values(ctx.vaults).map((v) => () => v.processDue()), () => ctx.accountService?.processDue()]);
 
   let lastSnapshotAt = 0;
   let lastPruneAt = Date.now();

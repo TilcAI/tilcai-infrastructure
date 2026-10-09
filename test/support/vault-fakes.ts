@@ -55,7 +55,11 @@ export class FakeVault implements VaultPort {
   async paidAmount(id32: Hex) {
     return this.paid.get(id32)?.amount ?? 0n;
   }
-  encodeDisburse(id32: Hex, to: Hex, amount: bigint) {
+  parseRecipient(to: string): Hex {
+    if (!/^0x[0-9a-fA-F]{40}$/.test(to) || sameHex(to, `0x${"00".repeat(20)}`) || sameHex(to, VAULT)) throw new TypeError("to must be an EVM address other than the vault");
+    return to.toLowerCase() as Hex;
+  }
+  encodeDisburse(id32: Hex, to: string, amount: bigint) {
     return `0x${Buffer.from(JSON.stringify([id32, to, amount.toString()])).toString("hex")}` as Hex;
   }
   private revertReason(sender: Hex, id32: Hex, amount: bigint): string | null {
@@ -145,7 +149,7 @@ export function vaultHarness(options: { maxAttempts?: number } = {}) {
     repo,
     vault,
     submitter,
-    network: { ...nets.avalancheFuji, vault: VAULT },
+    network: nets.avalancheFuji,
     clock,
     log: silentLogger,
     events: { emit: (e) => void events.push(e) },
