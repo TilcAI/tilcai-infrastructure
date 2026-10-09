@@ -10,6 +10,12 @@ const csv = z
   .default("")
   .transform((s) => s.split(",").map((x) => x.trim()).filter(Boolean));
 
+const flag = z
+  .enum(["true", "false", "1", "0", ""])
+  .default("false")
+  .transform((v) => v === "true" || v === "1");
+const optionalUrl = z.string().url().or(z.literal("")).default("");
+
 const schema = z.object({
   TILCAI_ENV: z.literal("testnet").default("testnet"),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
@@ -54,6 +60,33 @@ const schema = z.object({
    */
   DEV_EVM_PAYER_PRIVATE_KEY: z.string().default(""),
 
+  // ── Monitoring: events and resources for the dashboard in tilcai-web ───────
+  /** Ingest endpoint of tilcai-web (…/api/monitor/events). Empty = events stay in this database. */
+  MONITOR_WEB_URL: optionalUrl,
+  /** Shared with tilcai-web (MONITOR_INGEST_SECRET): signs every delivery (HMAC-SHA256). */
+  MONITOR_WEB_SECRET: z.string().default(""),
+  /** How often a `resources.snapshot` event is taken. */
+  MONITOR_RESOURCES_INTERVAL_MS: z.coerce.number().int().min(5000).default(30_000),
+  MONITOR_RETENTION_DAYS: z.coerce.number().int().min(1).max(365).default(14),
+  /**
+   * The relayer's WEBHOOK_SIGNING_KEY: authenticates POST /v1/webhooks/relayer. Empty = only
+   * unsigned notifications from loopback are accepted.
+   */
+  RELAYER_WEBHOOK_SIGNING_KEY: z.string().default(""),
+
+  // ── QR Simple mock (Vendis "QR Dinámico para Pagos" API v1.3) ──────────────
+  /** Serves the mock under /mock/vendis. It moves no money: testnet and demos only. */
+  QR_MOCK_ENABLED: flag,
+  /** Credentials accepted by POST /mock/vendis/api/v1/login. */
+  QR_MOCK_EMAIL: z.string().default(""),
+  QR_MOCK_PASSWORD: z.string().default(""),
+  /** Where the payment notification goes: the caller's …/api/v1/devices/simple-qr/callback. */
+  QR_MOCK_CALLBACK_URL: optionalUrl,
+  /** Base of `qr_url` as the caller sees this API. Empty = http://API_HOST:API_PORT. */
+  QR_MOCK_PUBLIC_URL: optionalUrl,
+  /** Opens the "Simular depósito" page to browsers that are not on this host (?key=…). */
+  QR_MOCK_SIMULATOR_KEY: z.string().default(""),
+
   WORKER_POLL_MS: z.coerce.number().int().min(500).default(4000),
   QUOTE_TTL_SECONDS: z.coerce.number().int().min(30).max(3600).default(900),
   /** Avalanche finalizes in ~1 block; Iris still decides when to attest. */
@@ -62,8 +95,17 @@ const schema = z.object({
 
 export type Env = z.infer<typeof schema>;
 
+const checked = schema.superRefine((env, ctx) => {
+  const need = (ok: boolean, path: keyof Env, message: string) => {
+    if (!ok) ctx.addIssue({ code: "custom", path: [path], message });
+  };
+  need(!env.MONITOR_WEB_URL || env.MONITOR_WEB_SECRET.length >= 16, "MONITOR_WEB_SECRET", "16+ characters with MONITOR_WEB_URL");
+  need(!env.QR_MOCK_ENABLED || Boolean(env.QR_MOCK_EMAIL), "QR_MOCK_EMAIL", "required with QR_MOCK_ENABLED");
+  need(!env.QR_MOCK_ENABLED || env.QR_MOCK_PASSWORD.length >= 8, "QR_MOCK_PASSWORD", "8+ characters with QR_MOCK_ENABLED");
+});
+
 export function loadEnv(source: NodeJS.ProcessEnv = process.env): Env {
-  const parsed = schema.safeParse(source);
+  const parsed = checked.safeParse(source);
   if (!parsed.success) {
     const fields = parsed.error.issues.map((i) => i.path.join(".")).join(", ");
     throw new Error(`Invalid configuration: ${fields}`);

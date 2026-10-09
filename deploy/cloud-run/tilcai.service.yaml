@@ -46,6 +46,12 @@ spec:
                 secretKeyRef:
                   name: relayer-api-key
                   key: latest
+            # El mismo secreto que firma los avisos del relayer: autentica POST /v1/webhooks/relayer.
+            - name: RELAYER_WEBHOOK_SIGNING_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: relayer-webhook-signing-key
+                  key: latest
             - name: TILCAI_API_KEYS
               valueFrom:
                 secretKeyRef:

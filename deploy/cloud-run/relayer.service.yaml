@@ -57,6 +57,14 @@ spec:
                 secretKeyRef:
                   name: relayer-keystore-b64
                   key: latest
+            # Firma los avisos que el relayer envía a TilcAI (config.json → notifications). La URL
+            # de destino está en config.json: cámbiala por la del servicio tilcai antes de
+            # construir la imagen (ver deploy/README.md, "Avisos del relayer").
+            - name: WEBHOOK_SIGNING_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: relayer-webhook-signing-key
+                  key: latest
           resources:
             limits:
               cpu: "1"

@@ -6,6 +6,7 @@
       "network": "avalanche-fuji-testnet",
       "paused": false,
       "signer_id": "local-signer",
+      "notification_id": "tilcai-monitor",
       "network_type": "evm",
       "policies": {
         "min_balance": 0
@@ -17,6 +18,7 @@
       "network": "testnet",
       "paused": false,
       "signer_id": "local-signer",
+      "notification_id": "tilcai-monitor",
       "network_type": "stellar",
       "policies": {
         "fee_payment_strategy": "relayer",
@@ -24,7 +26,14 @@
       }
     }
   ],
-  "notifications": [],
+  "notifications": [
+    {
+      "id": "tilcai-monitor",
+      "type": "webhook",
+      "url": "http://tilcai:8787/v1/webhooks/relayer",
+      "signing_key": { "type": "env", "value": "WEBHOOK_SIGNING_KEY" }
+    }
+  ],
   "signers": [
     {
       "id": "local-signer",

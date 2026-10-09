@@ -10,6 +10,7 @@ import { isTerminal } from "../../src/modules/vault/domain.ts";
 import type { DisbursementInspection, VaultPort, VaultStatus, VaultSubmitter } from "../../src/modules/vault/ports.ts";
 import { SqliteVaultRepository } from "../../src/modules/vault/repository.ts";
 import { VaultDisbursementService } from "../../src/modules/vault/service.ts";
+import type { NewMonitorEvent } from "../../src/modules/monitor/domain.ts";
 import { FakeClock } from "./fakes.ts";
 
 const nets = networks(loadEnv({}));
@@ -138,6 +139,8 @@ export function vaultHarness(options: { maxAttempts?: number } = {}) {
   const repo = new SqliteVaultRepository(openDatabase(":memory:"));
   const vault = new FakeVault();
   const submitter = new FakeVaultSubmitter(vault);
+  /** What the service announced for the dashboard, in order. */
+  const events: NewMonitorEvent[] = [];
   const svc = new VaultDisbursementService({
     repo,
     vault,
@@ -145,6 +148,7 @@ export function vaultHarness(options: { maxAttempts?: number } = {}) {
     network: { ...nets.avalancheFuji, vault: VAULT },
     clock,
     log: silentLogger,
+    events: { emit: (e) => void events.push(e) },
     options: { pollMs: 1000, minConfirmations: 1, ...options },
   });
   /** Drives the worker until the payout settles (bounded). */
@@ -157,7 +161,7 @@ export function vaultHarness(options: { maxAttempts?: number } = {}) {
     }
     return svc.mustGet(id);
   };
-  return { clock, repo, vault, submitter, svc, drive };
+  return { clock, repo, vault, submitter, svc, drive, events };
 }
 
 /** Decodes real `disburse` calldata (used to check the production encoder). */

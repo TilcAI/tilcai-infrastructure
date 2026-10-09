@@ -250,3 +250,58 @@ test("calldata: disburse(bytes32 id, address to, uint256 amount) with the id has
   assert.equal(data.slice(0, 10), toFunctionSelector("disburse(bytes32,address,uint256)"));
   assert.deepEqual(decodeDisburse(data).map((x) => String(x).toLowerCase()), [id32, BUYER, "10500000"]);
 });
+
+test("dashboard: every state change of a payout is announced, from its creation", async () => {
+  const h = vaultHarness();
+  const r = await h.svc.create(request);
+  const d = await h.drive(r.disbursement.id);
+  const transitions = h.events.filter((e) => e.type === "vault.disbursement.transition");
+  assert.deepEqual(transitions.map((e) => [e.data?.from, e.data?.to]), [[null, "REQUESTED"], ["REQUESTED", "SUBMITTED"], ["SUBMITTED", "CONFIRMED"]]);
+  assert.ok(transitions.every((e) => e.subject === d.id && e.severity === "info" && e.data?.amount === "10.5" && e.data?.reference === "purchase:1"));
+  const confirmed = transitions[2]!;
+  assert.equal(confirmed.data?.txHash, d.txHash);
+  assert.equal(confirmed.data?.explorer, `https://testnet.snowtrace.io/tx/${d.txHash}`);
+  assert.match(confirmed.summary, /^Desembolso de 10\.5 USDC SUBMITTED → CONFIRMED: /);
+  // A replay of the same request announces nothing new.
+  await h.svc.create(request);
+  assert.equal(h.events.length, 3);
+});
+
+test("dashboard: a payout the vault cannot take is announced with what the vault had", async () => {
+  const h = vaultHarness();
+  h.vault.balance = 0n;
+  await rejects(h.svc.create(request), "BUDGET");
+  h.vault.balance = 1_000_000_000n;
+  h.vault.paused = true;
+  await rejects(h.svc.create(request), "PAUSED");
+  h.vault.paused = false;
+  await rejects(h.svc.create({ ...request, amount: "100.01" }), "PAYMENT_LIMIT");
+  // Bad input is the caller's mistake, not something to watch.
+  await rejects(h.svc.create({ ...request, amount: "-1" }), "INVALID_INPUT");
+
+  assert.deepEqual(h.events.map((e) => [e.type, e.severity, e.data?.code]), [
+    ["vault.disbursement.rejected", "error", "BUDGET"],
+    ["vault.disbursement.rejected", "error", "PAUSED"],
+    ["vault.disbursement.rejected", "warning", "PAYMENT_LIMIT"],
+  ]);
+  const budget = h.events[0]!;
+  assert.equal(budget.subject, "purchase:1");
+  assert.equal(budget.summary, "Desembolso de 10.5 USDC rechazado (BUDGET): vault has insufficient USDC");
+  assert.deepEqual([budget.data?.balance, budget.data?.pending, budget.data?.amount, budget.data?.to], ["0", "0", "10.5", BUYER.toLowerCase()]);
+  // Nothing was stored: the caller can repeat the request once the vault can pay.
+  assert.equal((await h.svc.create(request)).replayed, false);
+});
+
+test("dashboard: a relayer call without an answer is announced once as uncertain", async () => {
+  const h = vaultHarness();
+  h.submitter.failNextSubmit = "ambiguous";
+  const r = await h.svc.create(request);
+  assert.equal(r.disbursement.uncertain, true);
+  // Past the guard that protects a transaction that may still land.
+  h.clock.advance(61_000);
+  await h.drive(r.disbursement.id);
+  const uncertain = h.events.filter((e) => e.type === "vault.disbursement.uncertain");
+  assert.equal(uncertain.length, 1);
+  assert.deepEqual([uncertain[0]!.severity, uncertain[0]!.subject, uncertain[0]!.data?.state], ["warning", r.disbursement.id, "REQUESTED"]);
+  assert.equal(h.events.at(-1)?.data?.to, "CONFIRMED");
+});

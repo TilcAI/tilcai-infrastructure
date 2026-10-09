@@ -25,6 +25,7 @@ import { SubmissionRejected } from "../../src/modules/crosschain/ports.ts";
 import { ROUTER_ABI } from "../../src/modules/crosschain/router.ts";
 import { SqliteCrosschainRepository } from "../../src/modules/crosschain/repository.ts";
 import { CrosschainPaymentService } from "../../src/modules/crosschain/service.ts";
+import type { NewMonitorEvent } from "../../src/modules/monitor/domain.ts";
 
 export const nets = networks(loadEnv({}));
 export const PAYER: Hex = "0x1111111111111111111111111111111111111111";
@@ -253,6 +254,8 @@ export function harness() {
   const stellar = new FakeStellar();
   const submitter = new FakeSubmitter(stellar, (m) => bytesToHex(hexToBytes(m).subarray(12, 44)));
   const evmSubmitter = new FakeEvmSubmitter(evm);
+  /** What the service announced for the dashboard, in order. */
+  const events: NewMonitorEvent[] = [];
   const svc = new CrosschainPaymentService({
     repo,
     evm,
@@ -265,6 +268,7 @@ export function harness() {
     destination: nets.stellarTestnet,
     clock,
     log: silentLogger,
+    events: { emit: (e) => void events.push(e) },
     options: { quoteTtlSeconds: 600, pollMs: 1000, minConfirmations: 1 },
   });
   /** Makes Iris return a correct attestation for a burn tx. */
@@ -300,5 +304,5 @@ export function harness() {
     }
     return svc.mustGet(id);
   };
-  return { clock, db, repo, evm, evmSubmitter, iris, stellar, submitter, svc, attest, drive };
+  return { clock, db, repo, evm, evmSubmitter, iris, stellar, submitter, svc, attest, drive, events };
 }

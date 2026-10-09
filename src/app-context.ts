@@ -1,3 +1,4 @@
+import { hostname } from "node:os";
 import type { DatabaseSync } from "node:sqlite";
 import { loadEnv, type Env } from "./config/env.ts";
 import { networks, type NetworkRegistry } from "./config/networks.ts";
@@ -11,6 +12,14 @@ import { IrisClient } from "./modules/crosschain/cctp/iris.ts";
 import type { MintSubmitter } from "./modules/crosschain/ports.ts";
 import { SqliteCrosschainRepository } from "./modules/crosschain/repository.ts";
 import { CrosschainPaymentService } from "./modules/crosschain/service.ts";
+import { sqliteCorrelate } from "./modules/monitor/correlate.ts";
+import { WebForwarder } from "./modules/monitor/forwarder.ts";
+import type { Correlate } from "./modules/monitor/relayer-webhook.ts";
+import { SqliteMonitorRepository } from "./modules/monitor/repository.ts";
+import { ResourceMonitor } from "./modules/monitor/resources.ts";
+import { MonitorService } from "./modules/monitor/service.ts";
+import { SqliteQrMockRepository } from "./modules/qrsimple/repository.ts";
+import { QrSimpleMock } from "./modules/qrsimple/service.ts";
 import { RelayerClient } from "./modules/relayer/client.ts";
 import { ViemVault } from "./modules/vault/adapters/evm.ts";
 import { SqliteVaultRepository } from "./modules/vault/repository.ts";
@@ -26,6 +35,17 @@ export interface AppContext {
   crosschain: CrosschainPaymentService;
   /** Payouts from the TilcaiVault. Null until VAULT_FUJI and the relayer key are configured. */
   vault: VaultDisbursementService | null;
+  /** all | api | worker: which process this is. */
+  role: string;
+  /** The event log behind the dashboard in tilcai-web. */
+  monitor: MonitorService;
+  resources: ResourceMonitor;
+  /** Pushes the event log to tilcai-web. Null until MONITOR_WEB_URL is configured. */
+  forwarder: WebForwarder | null;
+  /** Maps a relayer transaction to the payment or payout that sent it. */
+  correlate: Correlate;
+  /** QR Simple mock (Vendis API). Null unless QR_MOCK_ENABLED. */
+  qrMock: QrSimpleMock | null;
 }
 
 export function createAppContext(name: string, env: Env = loadEnv()): AppContext {
@@ -33,6 +53,9 @@ export function createAppContext(name: string, env: Env = loadEnv()): AppContext
   const nets = networks(env);
   const db = openDatabase(env.DATABASE_PATH);
   const relayer = new RelayerClient(env.RELAYER_URL, env.RELAYER_API_KEY);
+  const role = name === "tilcai" ? "all" : name;
+  const monitorRepo = new SqliteMonitorRepository(db);
+  const monitor = new MonitorService(monitorRepo, systemClock, log);
 
   const submitters: Record<string, MintSubmitter> = {};
   if (env.RELAYER_API_KEY) submitters.relayer = new RelayerMintSubmitter(relayer, env.RELAYER_STELLAR_ID, nets.stellarTestnet);
@@ -55,6 +78,7 @@ export function createAppContext(name: string, env: Env = loadEnv()): AppContext
     destination: nets.stellarTestnet,
     clock: systemClock,
     log,
+    events: monitor,
     options: {
       quoteTtlSeconds: env.QUOTE_TTL_SECONDS,
       pollMs: env.WORKER_POLL_MS,
@@ -71,9 +95,48 @@ export function createAppContext(name: string, env: Env = loadEnv()): AppContext
           network: nets.avalancheFuji,
           clock: systemClock,
           log,
+          events: monitor,
           options: { pollMs: env.WORKER_POLL_MS, minConfirmations: env.EVM_MIN_CONFIRMATIONS },
         })
       : null;
   if (nets.avalancheFuji.vault && !vault) log.warn("VAULT_FUJI is set but RELAYER_API_KEY is not; vault payouts are disabled");
-  return { env, nets, db, log, relayer, crosschain, vault };
+
+  const resources = new ResourceMonitor({
+    role,
+    db,
+    databasePath: env.DATABASE_PATH,
+    relayer,
+    relayerAuthenticated: Boolean(env.RELAYER_API_KEY),
+    relayerIds: [env.RELAYER_FUJI_ID, env.RELAYER_STELLAR_ID],
+    vault,
+    usdcDecimals: nets.avalancheFuji.usdc.decimals,
+    monitor: { head: () => monitorRepo.head(), sinks: () => monitorRepo.sinks() },
+    now: systemClock.now,
+  });
+  const forwarder = env.MONITOR_WEB_URL
+    ? new WebForwarder({
+        repo: monitorRepo,
+        url: env.MONITOR_WEB_URL,
+        secret: env.MONITOR_WEB_SECRET,
+        origin: { env: env.TILCAI_ENV, instance: hostname() },
+        clock: systemClock,
+        log,
+      })
+    : null;
+  const qrMock = env.QR_MOCK_ENABLED
+    ? new QrSimpleMock({
+        repo: new SqliteQrMockRepository(db),
+        clock: systemClock,
+        log,
+        events: monitor,
+        config: {
+          email: env.QR_MOCK_EMAIL,
+          password: env.QR_MOCK_PASSWORD,
+          publicUrl: env.QR_MOCK_PUBLIC_URL || `http://${env.API_HOST === "0.0.0.0" ? "127.0.0.1" : env.API_HOST}:${env.API_PORT}`,
+          callbackUrl: env.QR_MOCK_CALLBACK_URL,
+        },
+      })
+    : null;
+  if (qrMock && !env.QR_MOCK_CALLBACK_URL) log.warn("QR mock without QR_MOCK_CALLBACK_URL: payments are only visible by polling the QR status");
+  return { env, nets, db, log, relayer, crosschain, vault, role, monitor, resources, forwarder, correlate: sqliteCorrelate(db), qrMock };
 }

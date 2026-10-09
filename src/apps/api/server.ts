@@ -1,4 +1,3 @@
-import { timingSafeEqual } from "node:crypto";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import { z } from "zod";
 import type { AppContext } from "../../app-context.ts";
@@ -8,6 +7,11 @@ import type { CrosschainPayment, RouteQuote } from "../../modules/crosschain/dom
 import { paymentStateOf } from "../../modules/crosschain/domain.ts";
 import type { VaultDisbursement } from "../../modules/vault/domain.ts";
 import type { VaultDisbursementService } from "../../modules/vault/service.ts";
+import { Throttle } from "../../modules/monitor/service.ts";
+import { QR_MOCK_PREFIX, registerQrMock } from "../../modules/qrsimple/routes.ts";
+import { systemClock } from "../../shared/clock.ts";
+import { bearerOf, isLoopback, matchesAny } from "./auth.ts";
+import { registerMonitorRoutes, RELAYER_WEBHOOK_PATH } from "./monitor-routes.ts";
 
 const json = (v: unknown) => JSON.stringify(v, (_, x) => (typeof x === "bigint" ? x.toString() : x));
 const send = (reply: FastifyReply, status: number, body: unknown) =>
@@ -37,25 +41,44 @@ export function buildServer(ctx: AppContext): FastifyInstance {
   const app = Fastify({
     logger: { level: ctx.env.LOG_LEVEL, redact: ["req.headers.authorization", "req.headers['idempotency-key']"] },
     bodyLimit: 64 * 1024,
+    // An open event stream must not keep the process from shutting down.
+    forceCloseConnections: true,
   });
 
-  const keys = ctx.env.TILCAI_API_KEYS.map((k) => Buffer.from(k));
+  const keys = ctx.env.TILCAI_API_KEYS;
   if (keys.length === 0) app.log.warn("TILCAI_API_KEYS empty: API only reachable unauthenticated on loopback");
 
   app.addHook("onRequest", async (req, reply) => {
-    if (req.url === "/health") return;
+    const path = req.url.split("?", 1)[0]!;
+    // These authenticate on their own: the relayer signs its webhooks and the QR mock speaks
+    // Vendis's API, with Vendis's tokens.
+    if (path === "/health" || path === RELAYER_WEBHOOK_PATH || path === QR_MOCK_PREFIX || path.startsWith(`${QR_MOCK_PREFIX}/`)) return;
     if (keys.length === 0) {
       if (!isLoopback(req.ip)) return send(reply, 401, { error: new DomainError("UNAUTHENTICATED").contract });
       return;
     }
-    const token = /^Bearer (.+)$/.exec(req.headers.authorization ?? "")?.[1];
-    const ok = token !== undefined && keys.some((k) => k.length === Buffer.byteLength(token) && timingSafeEqual(k, Buffer.from(token)));
-    if (!ok) return send(reply, 401, { error: new DomainError("UNAUTHENTICATED").contract });
+    if (!matchesAny(bearerOf(req.headers.authorization), keys)) return send(reply, 401, { error: new DomainError("UNAUTHENTICATED").contract });
   });
+
+  // A failing dependency shows on the dashboard once a minute, not once per request.
+  const rejections = new Throttle(systemClock);
+  const announceFailure = (req: FastifyRequest, status: number, code: string, detail?: string) => {
+    const route = `${req.method} ${req.routeOptions?.url ?? req.url.split("?", 1)[0]}`;
+    const pass = rejections.pass(`${route} ${code}`);
+    if (!pass) return;
+    ctx.monitor.emit({
+      type: "api.request_rejected",
+      severity: "error",
+      subject: route,
+      summary: `API ${route} → ${status} ${code}${detail ? `: ${detail}` : ""}`,
+      data: { route, status, code, detail: detail ?? null, repeatedSinceLast: pass.suppressed },
+    });
+  };
 
   app.setErrorHandler((err, req, reply) => {
     if (err instanceof DomainError) {
       req.log.info({ code: err.contract.code, detail: err.detail }, "domain error");
+      if (err.httpStatus >= 500) announceFailure(req, err.httpStatus, err.contract.code, err.detail);
       return send(reply, err.httpStatus, { error: err.contract, ...(err.detail && err.httpStatus < 500 ? { detail: err.detail } : {}) });
     }
     if (err instanceof z.ZodError) {
@@ -65,13 +88,26 @@ export function buildServer(ctx: AppContext): FastifyInstance {
       return send(reply, 400, { error: new DomainError("INVALID_INPUT").contract });
     }
     req.log.error({ err }, "unhandled error");
+    announceFailure(req, 500, "INTERNAL_ERROR");
     return send(reply, 500, { error: new DomainError("INTERNAL_ERROR").contract });
   });
 
   app.get("/health", async (_req, reply) => {
     const relayer = await ctx.relayer.health();
-    return send(reply, 200, { ok: true, env: ctx.env.TILCAI_ENV, relayer: relayer ? "up" : "down", vault: ctx.vault ? "on" : "off" });
+    return send(reply, 200, {
+      ok: true,
+      env: ctx.env.TILCAI_ENV,
+      relayer: relayer ? "up" : "down",
+      vault: ctx.vault ? "on" : "off",
+      qrMock: ctx.qrMock ? "on" : "off",
+      monitor: ctx.forwarder ? "push" : "local",
+    });
   });
+
+  registerMonitorRoutes(app, ctx);
+  if (ctx.qrMock) {
+    registerQrMock(app, { mock: ctx.qrMock, apiKeys: keys, simulatorKey: ctx.env.QR_MOCK_SIMULATOR_KEY, callbackUrl: ctx.env.QR_MOCK_CALLBACK_URL });
+  }
 
   app.get("/v1/routes", async (_req, reply) =>
     send(reply, 200, {
@@ -278,4 +314,3 @@ function publicPayment(p: CrosschainPayment) {
 }
 
 const pick = (o: Record<string, unknown>, ks: string[]) => Object.fromEntries(ks.filter((k) => k in o).map((k) => [k, o[k]]));
-const isLoopback = (ip: string) => ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1";

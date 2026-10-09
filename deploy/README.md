@@ -68,6 +68,7 @@ Ninguna imagen lleva secretos. Todo entra por variables de entorno.
 | `REDIS_URL` | según el caso | `redis://…` o `rediss://…` |
 | `REPOSITORY_STORAGE_TYPE` | no | `in-memory` (por defecto) o `redis` |
 | `STORAGE_ENCRYPTION_KEY` | sí | Solo con `redis`: `openssl rand -base64 32` |
+| `WEBHOOK_SIGNING_KEY` | sí | Firma los avisos que el relayer envía a TilcAI (`openssl rand -hex 32`). `config.json` la referencia: sin ella el relayer no arranca |
 | `PORT` | no | Si la plataforma lo define, el relayer escucha ahí |
 
 El keystore es la identidad on-chain del relayer: sus direcciones pagan el gas (AVAX en Fuji,
@@ -79,6 +80,14 @@ no exista en la red.
 firmante y el plugin `x402` para `eip155:43113` y `stellar:testnet`. Otras redes se añaden
 ahí y en `relayer/config/networks/`.
 
+**Avisos del relayer.** Los dos relayers envían sus avisos (cada cambio de estado de una
+transacción, un relayer que se deshabilita) a la notificación `tilcai-monitor` de
+`config.json`: un webhook a `http://tilcai:8787/v1/webhooks/relayer`, firmado con
+`WEBHOOK_SIGNING_KEY`. Esa URL es la de Compose; donde TilcAI tenga otra dirección (Cloud
+Run), cámbiala en `config.json` antes de construir la imagen. TilcAI comprueba la firma con
+`RELAYER_WEBHOOK_SIGNING_KEY` (el mismo valor) y muestra los avisos en el tablero; nunca
+decide un pago por ellos.
+
 **TilcAI**
 
 | Variable | Secreto | Notas |
@@ -89,6 +98,14 @@ ahí y en `relayer/config/networks/`.
 | `CCTP_ROUTER_FUJI` | no | `TilcaiCctpRouter` desplegado; habilita los modos gasless |
 | `VAULT_FUJI` | no | `TilcaiVault` desplegado; habilita `/v1/vault`. Su operador debe ser la cuenta del relayer `RELAYER_FUJI_ID`. Quien tenga una clave de `TILCAI_API_KEYS` puede pedir pagos hasta los límites del contrato |
 | `LITESTREAM_REPLICA_URL` | no | `gcs://bucket/ruta`, `s3://bucket/ruta` o `abs://…`. Vacía, la base vive solo en `/data` |
+| `RELAYER_WEBHOOK_SIGNING_KEY` | sí | La `WEBHOOK_SIGNING_KEY` del relayer. Vacía, `/v1/webhooks/relayer` solo acepta avisos sin firmar desde el propio host |
+| `MONITOR_WEB_URL` | no | `<tilcai-web>/api/monitor/events`: adonde TilcAI envía sus eventos para el tablero. Vacía, los eventos se quedan en su base (`GET /v1/monitor/events`) |
+| `MONITOR_WEB_SECRET` | sí | Firma cada envío; el mismo valor que `MONITOR_INGEST_SECRET` en tilcai-web (`openssl rand -hex 32`) |
+| `QR_MOCK_ENABLED` | no | `true` sirve el mock de QR Simple en `/mock/vendis` (API de Vendis y la página «Simular depósito»). No mueve dinero: solo demos |
+| `QR_MOCK_EMAIL`, `QR_MOCK_PASSWORD` | sí | Credenciales del `login` del mock |
+| `QR_MOCK_CALLBACK_URL` | no | El callback de quien cobra: `<optipagos-backend>/api/v1/devices/simple-qr/callback` |
+| `QR_MOCK_PUBLIC_URL` | no | Base de `qr_url` tal como la ve quien llama (`http://tilcai:8787`) |
+| `QR_MOCK_SIMULATOR_KEY` | sí | Abre «Simular depósito» desde fuera del contenedor: `/mock/vendis/?key=…`. Dentro de Compose el navegador nunca es «el propio host», así que hace falta |
 | `TILCAI_ROLE` | no | `all` (por defecto): API y worker en un proceso. `api` y `worker` por separado solo tienen sentido en un mismo host y compartiendo el volumen `/data`; en Cloud Run usa `all` |
 | `PORT` | no | Si la plataforma lo define, la API escucha ahí |
 
@@ -132,6 +149,7 @@ openssl rand -hex 32 | tr -d '\n' | gcloud secrets create relayer-api-key --data
 printf '%s' "$KEYSTORE_PASSPHRASE" | gcloud secrets create relayer-keystore-passphrase --data-file=-
 base64 -w0 local-signer.json | gcloud secrets create relayer-keystore-b64 --data-file=-
 openssl rand -hex 32 | tr -d '\n' | gcloud secrets create tilcai-api-keys --data-file=-
+openssl rand -hex 32 | tr -d '\n' | gcloud secrets create relayer-webhook-signing-key --data-file=-
 
 gcloud iam service-accounts create tilcai-relayer
 gcloud iam service-accounts create tilcai
@@ -236,6 +254,16 @@ TILCAI_API_KEY=<una de TILCAI_API_KEYS>
 TILCAI_ROUTER_ADDRESS=0x297ce6a2787484db4bB18A96a8F28A9881Fc163C
 ```
 
+Para la compra de dólares con el QR de TilcAI (mock), además:
+
+```bash
+BUY_QR_PROVIDER=tilcai
+TILCAI_QR_EMAIL=<QR_MOCK_EMAIL>
+TILCAI_QR_PASSWORD=<QR_MOCK_PASSWORD>
+```
+
+y en TilcAI, `QR_MOCK_CALLBACK_URL=<url de optipagos-backend>/api/v1/devices/simple-qr/callback`.
+
 ## Qué está probado
 
 Probado en local con Docker (5 de octubre de 2026), con un keystore desechable:
@@ -252,6 +280,12 @@ Probado en local con Docker (5 de octubre de 2026), con un keystore desechable:
 - `TILCAI_ROLE=api` y `TILCAI_ROLE=worker` arrancan y se detienen limpio. El worker suelto se
   cerraba nada más arrancar: quedó corregido en `src/apps/worker/main.ts`.
 - El relayer acepta el keystore montado como archivo en lugar de la variable.
+
+Añadido el 9 de octubre de 2026 y probado solo fuera de contenedores (`npm start` contra el
+relayer local): el mock de QR Simple, los eventos hacia tilcai-web y el receptor de avisos
+del relayer, este último con avisos firmados de prueba. **No se ha reconstruido ninguna imagen
+con estos cambios**: la notificación `tilcai-monitor` de `config.json` y la variable
+`WEBHOOK_SIGNING_KEY` del relayer están sin probar en contenedor.
 
 Sin probar:
 

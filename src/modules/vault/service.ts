@@ -7,6 +7,7 @@ import { sameHex, type Hex } from "../../shared/hex.ts";
 import { newVaultDisbursementId, parseVaultDisbursementId } from "../../shared/ids.ts";
 import type { Logger } from "../../shared/log.ts";
 import { SubmissionRejected } from "../crosschain/ports.ts";
+import type { EventSink } from "../monitor/domain.ts";
 import { disbursementIdBytes32 } from "./adapters/evm.ts";
 import { canMove, isTerminal, type DisbursementState, type VaultDisbursement } from "./domain.ts";
 import type { VaultPort, VaultStatus, VaultSubmitter } from "./ports.ts";
@@ -20,6 +21,8 @@ export interface VaultDeps {
   network: EvmNetwork;
   clock: Clock;
   log: Logger;
+  /** Where state changes and refusals are announced for the dashboard. */
+  events?: EventSink;
   options: {
     pollMs: number;
     minConfirmations: number;
@@ -90,12 +93,35 @@ export class VaultDisbursementService {
     const [status, head] = await Promise.all([this.status(), this.d.vault.blockNumber()]).catch((e: unknown) => {
       throw new DomainError("SERVICE_UNAVAILABLE", `vault or relayer unreachable: ${errText(e)}`);
     });
-    if (!status.operatorIsRelayer) throw new DomainError("SERVICE_UNAVAILABLE", "the relayer is not the vault operator");
-    if (status.paused) throw new DomainError("PAUSED", "vault is paused");
-    if (amount > status.maxPerDisbursementAtomic) throw new DomainError("PAYMENT_LIMIT", "amount above the vault's limit per disbursement");
+    // A payout the vault cannot take is announced: nobody finds out from a caller that keeps retrying.
+    const refuse = (code: "SERVICE_UNAVAILABLE" | "PAUSED" | "PAYMENT_LIMIT" | "BUDGET", detail: string): never => {
+      const usdc = (atomic: bigint) => atomicToDecimal(atomic, this.d.network.usdc.decimals);
+      this.d.events?.emit({
+        type: "vault.disbursement.rejected",
+        severity: code === "PAYMENT_LIMIT" ? "warning" : "error",
+        subject: input.reference ?? null,
+        summary: `Desembolso de ${usdc(amount)} USDC rechazado (${code}): ${detail}`,
+        data: {
+          code,
+          detail,
+          to,
+          amount: usdc(amount),
+          reference: input.reference ?? null,
+          vault: status.address,
+          balance: usdc(status.balanceAtomic),
+          pending: usdc(status.pendingAtomic),
+          availableToday: usdc(status.availableTodayAtomic),
+          maxPerDisbursement: usdc(status.maxPerDisbursementAtomic),
+        },
+      });
+      throw new DomainError(code, detail);
+    };
+    if (!status.operatorIsRelayer) refuse("SERVICE_UNAVAILABLE", "the relayer is not the vault operator");
+    if (status.paused) refuse("PAUSED", "vault is paused");
+    if (amount > status.maxPerDisbursementAtomic) refuse("PAYMENT_LIMIT", "amount above the vault's limit per disbursement");
     // Payouts already promised count against both the daily limit and the balance.
-    if (amount + status.pendingAtomic > status.availableTodayAtomic) throw new DomainError("PAYMENT_LIMIT", "amount above what the vault can still pay today");
-    if (amount + status.pendingAtomic > status.balanceAtomic) throw new DomainError("BUDGET", "vault has insufficient USDC");
+    if (amount + status.pendingAtomic > status.availableTodayAtomic) refuse("PAYMENT_LIMIT", "amount above what the vault can still pay today");
+    if (amount + status.pendingAtomic > status.balanceAtomic) refuse("BUDGET", "vault has insufficient USDC");
 
     const now = iso(this.d.clock.now());
     const disbursement: VaultDisbursement = {
@@ -131,6 +157,7 @@ export class VaultDisbursementService {
       }
       throw e;
     }
+    this.announce(disbursement, null, "created");
     // Sent right away: the caller does not wait for the worker's next pass.
     try {
       return { disbursement: await this.submit(disbursement), replayed: false };
@@ -295,7 +322,33 @@ export class VaultDisbursementService {
       at: now,
     });
     this.d.log.info("disbursement transition", { disbursementId: d.id, from: d.state, to, note });
+    this.announce(saved, d.state, note);
     return saved;
+  }
+
+  /** Tells the dashboard that a payout was created (`from` = null) or changed state. */
+  private announce(d: VaultDisbursement, from: DisbursementState | null, note: string): void {
+    this.d.events?.emit({
+      type: "vault.disbursement.transition",
+      severity: d.state === "FAILED" ? "error" : "info",
+      subject: d.id,
+      summary: `Desembolso de ${atomicToDecimal(d.amountAtomic, this.d.network.usdc.decimals)} USDC ${from ?? "nuevo"} → ${d.state}: ${note}`,
+      data: {
+        disbursementId: d.id,
+        from,
+        to: d.state,
+        note,
+        recipient: d.to,
+        amount: atomicToDecimal(d.amountAtomic, this.d.network.usdc.decimals),
+        reference: d.reference,
+        submissionId: d.submissionId,
+        txHash: d.txHash,
+        explorer: d.txHash ? `${this.d.network.explorer}/tx/${d.txHash}` : null,
+        attempts: d.attempts,
+        failureCode: d.failureCode,
+        lastError: d.lastError,
+      },
+    });
   }
 
   private patch(d: VaultDisbursement, patch: Partial<VaultDisbursement>): VaultDisbursement {
@@ -318,6 +371,13 @@ export class VaultDisbursementService {
     };
     if (becameUncertain) {
       this.d.log.warn("disbursement flagged uncertain", { disbursementId: d.id, state: d.state, error: o.error });
+      this.d.events?.emit({
+        type: "vault.disbursement.uncertain",
+        severity: "warning",
+        subject: d.id,
+        summary: `Desembolso incierto en ${fresh.state}: ${o.error ?? "sin detalle"}`,
+        data: { disbursementId: d.id, state: fresh.state, error: o.error ?? null, attempts },
+      });
       return this.d.repo.update(next, fresh.version, {
         disbursementId: d.id,
         from: fresh.state,

@@ -36,6 +36,8 @@ services:
       REPOSITORY_STORAGE_TYPE: ${REPOSITORY_STORAGE_TYPE:-in-memory}
       STORAGE_ENCRYPTION_KEY: ${STORAGE_ENCRYPTION_KEY:-}
       RESET_STORAGE_ON_START: ${RESET_STORAGE_ON_START:-false}
+      # Signs the notifications the relayer sends to TilcAI (config.json → notifications).
+      WEBHOOK_SIGNING_KEY: ${WEBHOOK_SIGNING_KEY:?set WEBHOOK_SIGNING_KEY in deploy/.env}
       LOG_LEVEL: ${LOG_LEVEL:-info}
     depends_on:
       redis:
@@ -70,6 +72,17 @@ services:
       STELLAR_OPERATOR_SECRET: ${STELLAR_OPERATOR_SECRET:-}
       STELLAR_SIMULATION_SOURCE: ${STELLAR_SIMULATION_SOURCE:-}
       DEV_EVM_PAYER_PRIVATE_KEY: ${DEV_EVM_PAYER_PRIVATE_KEY:-}
+      # Dashboard: events pushed to tilcai-web and the relayer's webhooks (see deploy/README.md).
+      MONITOR_WEB_URL: ${MONITOR_WEB_URL:-}
+      MONITOR_WEB_SECRET: ${MONITOR_WEB_SECRET:-}
+      RELAYER_WEBHOOK_SIGNING_KEY: ${WEBHOOK_SIGNING_KEY:-}
+      # QR Simple mock (Vendis API): bank QRs paid with a button, for demos.
+      QR_MOCK_ENABLED: ${QR_MOCK_ENABLED:-false}
+      QR_MOCK_EMAIL: ${QR_MOCK_EMAIL:-}
+      QR_MOCK_PASSWORD: ${QR_MOCK_PASSWORD:-}
+      QR_MOCK_CALLBACK_URL: ${QR_MOCK_CALLBACK_URL:-}
+      QR_MOCK_PUBLIC_URL: ${QR_MOCK_PUBLIC_URL:-}
+      QR_MOCK_SIMULATOR_KEY: ${QR_MOCK_SIMULATOR_KEY:-}
       # Optional off-host copy of the SQLite database (gcs://, s3://, abs://).
       LITESTREAM_REPLICA_URL: ${LITESTREAM_REPLICA_URL:-}
       LOG_LEVEL: ${LOG_LEVEL:-info}
