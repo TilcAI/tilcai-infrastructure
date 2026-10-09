@@ -79,7 +79,7 @@ Todas las rutas salvo `/health` exigen `Authorization: Bearer <TILCAI_API_KEYS>`
 | GET | `/v1/routes` | Rutas crosschain habilitadas |
 | POST | `/v1/crosschain/quotes` | `{sourceNetwork:"eip155:43113", destinationNetwork:"stellar:testnet", amount:"1.25", payTo:"G…"}` |
 | GET | `/v1/crosschain/quotes/:id` | Cotización |
-| POST | `/v1/crosschain/payments` | Cabecera `Idempotency-Key`. `{quoteId, mode:"external"\|"dev_signer", payer?, orderId?}` → pago + `unsignedCalls` |
+| POST | `/v1/crosschain/payments` | Cabecera `Idempotency-Key` (obligatoria). `{quoteId, mode:"external"\|"dev_signer"\|"gasless"\|"dev_gasless", payer?, orderId?}`. `payer` es obligatorio en `external` y `gasless`; en `dev_signer` y `dev_gasless` el pagador es la clave de desarrollo. `external` → pago + `unsignedCalls`; `gasless` → pago + `authorization.typedData`; `dev_gasless` y `dev_signer` salen solos hacia el burn |
 | POST | `/v1/crosschain/payments/:id/authorization` | Modo `gasless`: `{signature}` (65 bytes hex) de `authorization.typedData`. TilcAI la verifica contra el pagador, la persiste y pide al relayer que envíe el burn |
 | POST | `/v1/crosschain/payments/:id/burn` | `{txHash}` del burn difundido por la wallet externa (también rescata un pago gasless cuyo hash se perdió) |
 | GET | `/v1/crosschain/payments/:id` | Estado detallado, `paymentState` compartido, enlaces, eventos y recibo |

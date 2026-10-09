@@ -1,0 +1,7 @@
+# Los scripts y archivos que entran en las imágenes se ejecutan en Linux: siempre LF,
+# aunque el checkout sea en Windows con core.autocrlf=true (un shebang con CRLF impide
+# que el contenedor arranque: "exec /app/relayer-entrypoint.sh: no such file or directory").
+*.sh            text eol=lf
+Dockerfile*     text eol=lf
+*.dockerignore  text eol=lf
+deploy/**       text eol=lf
