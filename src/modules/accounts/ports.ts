@@ -87,3 +87,110 @@ export interface UserOperationSubmitter {
   submit(userOp: unknown): Promise<{ submissionId: string; userOpHash: Hex }>;
   status(submissionId: string): Promise<{ state: "pending" } | { state: "confirmed"; txHash: Hex; success: boolean } | { state: "failed"; reason: string }>;
 }
+
+// ── Persistence (M1 · Jhamil, to agree with Omar) ───────────────────────────────────────────────────
+// Everything the API reads for a tenant goes through a `…ForTenant` method: an account or delegation of
+// another tenant is "not found", never "forbidden", so ids cannot be probed. The plain `get`, `findByAddress`
+// and `listDue` are for the worker and for payment routing and are NOT scoped: never call them with an id
+// that came from a request without checking `tenantId` first.
+// Methods return promises so a Postgres implementation (phase 2) changes nothing for consumers.
+
+export type AccountState = SmartAccount["state"];
+export type DelegationState = Delegation["state"];
+
+/** A `SmartAccount` plus what the repository and the reconciliation worker need. */
+export interface StoredSmartAccount extends SmartAccount {
+  /** The CREATE2 / factory salt the address was derived with. */
+  salt: Hex;
+  /** Id the relayer gave to the deployment submission. */
+  deploySubmissionId?: string;
+  /** Client key of the creation request; unique per tenant. */
+  idempotencyKey: string;
+  /** Hash of the request arguments: the same key with other arguments is a conflict. */
+  requestHash: string;
+  attempts: number;
+  nextCheckAt: string;
+  lastError?: string;
+  updatedAt: string;
+  /** Optimistic lock: `update` must pass the version it read. */
+  version: number;
+}
+
+export interface StoredDelegation extends Delegation {
+  /** Optional client key; unique per account when present. */
+  idempotencyKey?: string;
+  requestHash?: string;
+  /** The request the owner has to sign right now (creation or revocation). */
+  signRequest?: OwnerSignRequest;
+  /** Relayer submission of the current step. */
+  submissionId?: string;
+  attempts: number;
+  nextCheckAt: string;
+  lastError?: string;
+  createdAt: string;
+  updatedAt: string;
+  version: number;
+}
+
+/** Append-only log. Written in the same transaction as the change it describes. */
+export interface AccountEvent {
+  accountId: SmartAccountId;
+  /** Set when the event is about a delegation of the account. */
+  delegationId?: DelegationId;
+  from: AccountState | DelegationState | null;
+  to: AccountState | DelegationState;
+  note: string;
+  data?: Record<string, unknown>;
+  at: string;
+}
+
+export interface SmartAccountRepository {
+  /**
+   * Stores the account and its creation event in one transaction.
+   * Throws `AccountConflictError` (address / external ref / idempotency key already used).
+   * With `chargeQuota`, the creation also counts against the tenant's accounts-per-day quota in the same
+   * transaction: if the quota is exhausted it throws `QuotaExceededError` and stores nothing, and a conflict
+   * (an idempotent replay) counts nothing.
+   */
+  insert(account: StoredSmartAccount, event: AccountEvent, options?: { chargeQuota?: boolean }): Promise<void>;
+  getForTenant(tenantId: TenantId, id: SmartAccountId): Promise<StoredSmartAccount | undefined>;
+  findForTenant(tenantId: TenantId, network: AccountNetwork, externalRef: string): Promise<StoredSmartAccount | undefined>;
+  getByIdempotencyKey(tenantId: TenantId, key: string): Promise<StoredSmartAccount | undefined>;
+  /** Newest first, 50 by default (200 at most). `before` is `{createdAt, id}` of the last row of the previous page. */
+  listForTenant(
+    tenantId: TenantId,
+    filter?: { network?: AccountNetwork; externalRef?: string; limit?: number; before?: { createdAt: string; id: SmartAccountId } },
+  ): Promise<StoredSmartAccount[]>;
+  /** Worker / payment routing, not scoped by tenant. */
+  get(id: SmartAccountId): Promise<StoredSmartAccount | undefined>;
+  findByAddress(network: AccountNetwork, address: string): Promise<StoredSmartAccount | undefined>;
+  /** `DEPLOYING` accounts whose `nextCheckAt` has passed. */
+  listDue(nowIso: string, limit: number): Promise<StoredSmartAccount[]>;
+  /**
+   * Optimistic update: throws `StaleVersionError` if `expectedVersion` is not the stored one.
+   * A change of `state` must follow the account state machine and must carry its `event`
+   * (`IllegalTransitionError`, `MissingEventError`); the event is stored in the same transaction.
+   * Identity (tenant, network, address, external ref) never changes.
+   */
+  update(account: StoredSmartAccount, expectedVersion: number, event?: AccountEvent): Promise<StoredSmartAccount>;
+  /** Events of the account and of its delegations, oldest first. */
+  events(accountId: SmartAccountId): Promise<AccountEvent[]>;
+}
+
+export interface DelegationRepository {
+  /**
+   * Stores the delegation and its creation event in one transaction, only if the account belongs to `tenantId`
+   * (otherwise `AccountNotFoundError`). Throws `AccountConflictError` on a repeated idempotency key or on-chain ref.
+   */
+  insert(tenantId: TenantId, delegation: StoredDelegation, event: AccountEvent): Promise<void>;
+  getForTenant(tenantId: TenantId, accountId: SmartAccountId, id: DelegationId): Promise<StoredDelegation | undefined>;
+  listForTenant(tenantId: TenantId, accountId: SmartAccountId): Promise<StoredDelegation[]>;
+  getByIdempotencyKey(tenantId: TenantId, accountId: SmartAccountId, key: string): Promise<StoredDelegation | undefined>;
+  /** Worker, not scoped by tenant. */
+  get(id: DelegationId): Promise<StoredDelegation | undefined>;
+  findByOnchainRef(accountId: SmartAccountId, onchainRef: string): Promise<StoredDelegation | undefined>;
+  /** Delegations in `SUBMITTED` or `REVOKING` whose `nextCheckAt` has passed. */
+  listDue(nowIso: string, limit: number): Promise<StoredDelegation[]>;
+  /** Same rules as `SmartAccountRepository.update`, with the delegation state machine. */
+  update(delegation: StoredDelegation, expectedVersion: number, event?: AccountEvent): Promise<StoredDelegation>;
+}
