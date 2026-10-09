@@ -1,0 +1,21 @@
+[package]
+name = "tilcai-spending-limit-policy"
+description = "OpenZeppelin rolling-window spending limit policy, shared by TilcAI smart accounts."
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+repository.workspace = true
+
+[package.metadata.stellar]
+cargo_inherit = true
+
+[lib]
+crate-type = ["cdylib"]
+doctest = false
+
+[dependencies]
+soroban-sdk = { workspace = true }
+stellar-accounts = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }

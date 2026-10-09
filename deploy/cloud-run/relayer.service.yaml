@@ -1,0 +1,94 @@
+# OpenZeppelin Relayer de TilcAI en Cloud Run, con Redis como contenedor acompañante.
+#
+#   gcloud run services replace deploy/cloud-run/relayer.service.yaml --region REGION
+#   gcloud run services add-iam-policy-binding tilcai-relayer --region REGION \
+#     --member=allUsers --role=roles/run.invoker     # el acceso lo protege API_KEY
+#
+# Sustituye PROJECT_ID, REGION y TAG. Los secretos deben existir en Secret Manager y la
+# cuenta de servicio necesita roles/secretmanager.secretAccessor (ver deploy/README.md).
+#
+# Este Redis vive en la memoria de la instancia: sirve mientras el relayer use
+# REPOSITORY_STORAGE_TYPE=in-memory. Para conservar el historial de transacciones entre
+# reinicios usa un Redis administrado (README, "Redis") y quita el contenedor `redis`.
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: tilcai-relayer
+  annotations:
+    run.googleapis.com/ingress: all
+spec:
+  template:
+    metadata:
+      annotations:
+        # Una sola instancia, siempre encendida y con CPU fuera de las peticiones: el
+        # relayer procesa colas y vigila transacciones en segundo plano.
+        autoscaling.knative.dev/minScale: "1"
+        autoscaling.knative.dev/maxScale: "1"
+        run.googleapis.com/cpu-throttling: "false"
+        run.googleapis.com/execution-environment: gen2
+        run.googleapis.com/container-dependencies: '{"relayer":["redis"]}'
+    spec:
+      serviceAccountName: tilcai-relayer@PROJECT_ID.iam.gserviceaccount.com
+      timeoutSeconds: 120
+      containers:
+        - name: relayer
+          image: REGION-docker.pkg.dev/PROJECT_ID/tilcai/relayer:TAG
+          ports:
+            - containerPort: 8080
+          env:
+            - name: REDIS_URL
+              value: redis://127.0.0.1:6379
+            - name: REPOSITORY_STORAGE_TYPE
+              value: in-memory
+            - name: LOG_LEVEL
+              value: info
+            - name: API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: relayer-api-key
+                  key: latest
+            - name: KEYSTORE_PASSPHRASE
+              valueFrom:
+                secretKeyRef:
+                  name: relayer-keystore-passphrase
+                  key: latest
+            - name: KEYSTORE_JSON_B64
+              valueFrom:
+                secretKeyRef:
+                  name: relayer-keystore-b64
+                  key: latest
+            # Firma los avisos que el relayer envía a TilcAI (config.json → notifications). La URL
+            # de destino está en config.json: cámbiala por la del servicio tilcai antes de
+            # construir la imagen (ver deploy/README.md, "Avisos del relayer").
+            - name: WEBHOOK_SIGNING_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: relayer-webhook-signing-key
+                  key: latest
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          startupProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 8080
+            periodSeconds: 5
+            failureThreshold: 24
+          livenessProbe:
+            httpGet:
+              path: /api/v1/health
+              port: 8080
+            periodSeconds: 30
+        - name: redis
+          image: docker.io/library/redis:7-bookworm
+          args: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "192mb"]
+          resources:
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          startupProbe:
+            tcpSocket:
+              port: 6379
+            periodSeconds: 2
+            failureThreshold: 15

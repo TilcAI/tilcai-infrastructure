@@ -1,0 +1,101 @@
+# TilcAI on one host: Redis + OpenZeppelin Relayer + TilcAI (API and worker).
+#
+#   cp deploy/.env.example deploy/.env        # fill in the secrets
+#   ./deploy/build.sh                         # build the images
+#   docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d
+#
+# Both HTTP ports are published on loopback only; put a TLS proxy in front, or keep the
+# caller (optipagos-backend) on the same host or private network.
+name: tilcai
+
+services:
+  redis:
+    image: redis:7-bookworm
+    command: [redis-server, --appendonly, "yes", --save, "60", "1"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    security_opt: [no-new-privileges]
+    restart: unless-stopped
+
+  relayer:
+    image: ${REGISTRY:-tilcai}/relayer:${TAG:-local}
+    environment:
+      API_KEY: ${RELAYER_API_KEY:?set RELAYER_API_KEY in deploy/.env}
+      KEYSTORE_PASSPHRASE: ${KEYSTORE_PASSPHRASE:?set KEYSTORE_PASSPHRASE in deploy/.env}
+      KEYSTORE_JSON_B64: ${KEYSTORE_JSON_B64:?set KEYSTORE_JSON_B64 in deploy/.env}
+      REDIS_URL: redis://redis:6379
+      # in-memory: relayers are loaded from config.json on every start and the transaction
+      #            history is lost on restart.
+      # redis:     everything is kept in Redis; needs STORAGE_ENCRYPTION_KEY, and config.json
+      #            is only read on the first start (RESET_STORAGE_ON_START=true re-reads it).
+      REPOSITORY_STORAGE_TYPE: ${REPOSITORY_STORAGE_TYPE:-in-memory}
+      STORAGE_ENCRYPTION_KEY: ${STORAGE_ENCRYPTION_KEY:-}
+      RESET_STORAGE_ON_START: ${RESET_STORAGE_ON_START:-false}
+      # Signs the notifications the relayer sends to TilcAI (config.json → notifications).
+      WEBHOOK_SIGNING_KEY: ${WEBHOOK_SIGNING_KEY:?set WEBHOOK_SIGNING_KEY in deploy/.env}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${RELAYER_PORT:-8080}:8080"
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:8080/api/v1/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 6
+    security_opt: [no-new-privileges]
+    restart: unless-stopped
+
+  tilcai:
+    image: ${REGISTRY:-tilcai}/tilcai:${TAG:-local}
+    environment:
+      TILCAI_API_KEYS: ${TILCAI_API_KEYS:?set TILCAI_API_KEYS in deploy/.env}
+      RELAYER_URL: http://relayer:8080
+      RELAYER_API_KEY: ${RELAYER_API_KEY}
+      RELAYER_STELLAR_ID: ${RELAYER_STELLAR_ID:-stellar-example}
+      RELAYER_FUJI_ID: ${RELAYER_FUJI_ID:-avalanche-fuji-relayer}
+      RELAYER_X402_PLUGIN_ID: ${RELAYER_X402_PLUGIN_ID:-x402}
+      CCTP_ROUTER_FUJI: ${CCTP_ROUTER_FUJI:-}
+      VAULT_FUJI: ${VAULT_FUJI:-}
+      STELLAR_MINT_SUBMITTER: ${STELLAR_MINT_SUBMITTER:-relayer}
+      STELLAR_OPERATOR_SECRET: ${STELLAR_OPERATOR_SECRET:-}
+      STELLAR_SIMULATION_SOURCE: ${STELLAR_SIMULATION_SOURCE:-}
+      DEV_EVM_PAYER_PRIVATE_KEY: ${DEV_EVM_PAYER_PRIVATE_KEY:-}
+      # Dashboard: events pushed to tilcai-web and the relayer's webhooks (see deploy/README.md).
+      MONITOR_WEB_URL: ${MONITOR_WEB_URL:-}
+      MONITOR_WEB_SECRET: ${MONITOR_WEB_SECRET:-}
+      RELAYER_WEBHOOK_SIGNING_KEY: ${WEBHOOK_SIGNING_KEY:-}
+      # QR Simple mock (Vendis API): bank QRs paid with a button, for demos.
+      QR_MOCK_ENABLED: ${QR_MOCK_ENABLED:-false}
+      QR_MOCK_EMAIL: ${QR_MOCK_EMAIL:-}
+      QR_MOCK_PASSWORD: ${QR_MOCK_PASSWORD:-}
+      QR_MOCK_CALLBACK_URL: ${QR_MOCK_CALLBACK_URL:-}
+      QR_MOCK_PUBLIC_URL: ${QR_MOCK_PUBLIC_URL:-}
+      QR_MOCK_SIMULATOR_KEY: ${QR_MOCK_SIMULATOR_KEY:-}
+      # Optional off-host copy of the SQLite database (gcs://, s3://, abs://).
+      LITESTREAM_REPLICA_URL: ${LITESTREAM_REPLICA_URL:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      - tilcai-data:/data
+    depends_on:
+      relayer:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${TILCAI_PORT:-8787}:8787"
+    security_opt: [no-new-privileges]
+    restart: unless-stopped
+
+volumes:
+  redis-data:
+  tilcai-data:

@@ -1,0 +1,74 @@
+# TilcAI (API + worker) en Cloud Run.
+#
+#   gcloud run services replace deploy/cloud-run/tilcai.service.yaml --region REGION
+#   gcloud run services add-iam-policy-binding tilcai --region REGION \
+#     --member=allUsers --role=roles/run.invoker     # el acceso lo protege TILCAI_API_KEYS
+#
+# Sustituye PROJECT_ID, REGION, TAG, BUCKET y RELAYER_URL (la URL del servicio
+# tilcai-relayer). La base SQLite vive en la instancia y Litestream la replica en el bucket:
+# la cuenta de servicio necesita roles/storage.objectAdmin sobre él.
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: tilcai
+  annotations:
+    run.googleapis.com/ingress: all
+spec:
+  template:
+    metadata:
+      annotations:
+        # Exactamente una instancia: el worker y la base SQLite no admiten réplicas.
+        autoscaling.knative.dev/minScale: "1"
+        autoscaling.knative.dev/maxScale: "1"
+        run.googleapis.com/cpu-throttling: "false"
+        run.googleapis.com/execution-environment: gen2
+    spec:
+      serviceAccountName: tilcai@PROJECT_ID.iam.gserviceaccount.com
+      timeoutSeconds: 120
+      containers:
+        - name: tilcai
+          image: REGION-docker.pkg.dev/PROJECT_ID/tilcai/tilcai:TAG
+          ports:
+            - containerPort: 8787
+          env:
+            - name: RELAYER_URL
+              value: https://RELAYER_URL
+            - name: CCTP_ROUTER_FUJI
+              value: "0x297ce6a2787484db4bB18A96a8F28A9881Fc163C"
+            - name: VAULT_FUJI
+              value: "0x841dD47Db3124839be1D878DD277e1b07D6932b6"
+            - name: LITESTREAM_REPLICA_URL
+              value: gcs://BUCKET/tilcai
+            - name: LOG_LEVEL
+              value: info
+            - name: RELAYER_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: relayer-api-key
+                  key: latest
+            # El mismo secreto que firma los avisos del relayer: autentica POST /v1/webhooks/relayer.
+            - name: RELAYER_WEBHOOK_SIGNING_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: relayer-webhook-signing-key
+                  key: latest
+            - name: TILCAI_API_KEYS
+              valueFrom:
+                secretKeyRef:
+                  name: tilcai-api-keys
+                  key: latest
+          resources:
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          startupProbe:
+            httpGet:
+              path: /health
+              port: 8787
+            periodSeconds: 5
+            failureThreshold: 24
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8787
+            periodSeconds: 30

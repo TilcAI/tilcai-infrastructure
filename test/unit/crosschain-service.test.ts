@@ -354,3 +354,34 @@ test("gasless modes are refused when the router is not configured", async () => 
   const q = await h.svc.quote(quoteInput);
   await rejects(h.svc.createPayment({ quoteId: q.id, mode: "gasless", payer: PAYER, idempotencyKey: "key-nogasless" }), "SERVICE_UNAVAILABLE");
 });
+
+test("dashboard: every state change of a payment is announced, and an uncertain one once", async () => {
+  const h = harness();
+  const q = await h.svc.quote(quoteInput);
+  const r = await h.svc.createPayment({ quoteId: q.id, mode: "dev_signer", idempotencyKey: "key-events-1", orderId: "order_demo" });
+  h.attest(r.payment.burnTxHash!, NONCE);
+  const p = await h.drive(r.payment.id);
+  const transitions = h.events.filter((e) => e.type === "crosschain.payment.transition");
+  assert.deepEqual(transitions.map((e) => e.data?.to), ["AWAITING_BURN", "BURN_SUBMITTED", "BURN_CONFIRMED", "ATTESTED", "MINT_SUBMITTED", "SETTLED"]);
+  assert.equal(transitions[0]!.data?.from, null);
+  assert.ok(transitions.every((e) => e.subject === p.id && e.data?.orderId === "order_demo"));
+  assert.deepEqual([transitions.at(-1)!.data?.paymentState, transitions.at(-1)!.data?.mintTxHash], ["SETTLED", p.mintTxHash]);
+
+  const q2 = await h.svc.quote(quoteInput);
+  const ghost = await h.svc.createPayment({ quoteId: q2.id, mode: "external", payer: PAYER, idempotencyKey: "key-events-2" });
+  h.svc.attachBurn(ghost.payment.id, `0x${"e3".repeat(32)}`);
+  h.clock.advance(31 * 60_000);
+  await h.svc.step(h.svc.mustGet(ghost.payment.id));
+  await h.svc.step(h.svc.mustGet(ghost.payment.id));
+  const uncertain = h.events.filter((e) => e.type === "crosschain.payment.uncertain");
+  assert.deepEqual(uncertain.map((e) => [e.severity, e.subject, e.data?.state]), [["warning", ghost.payment.id, "BURN_SUBMITTED"]]);
+
+  const q3 = await h.svc.quote(quoteInput);
+  const reverted = await h.svc.createPayment({ quoteId: q3.id, mode: "external", payer: PAYER, idempotencyKey: "key-events-3" });
+  const hash = `0x${"e4".repeat(32)}` as Hex;
+  h.evm.burns.set(hash, { kind: "reverted", blockNumber: 9n });
+  h.svc.attachBurn(reverted.payment.id, hash);
+  await h.drive(reverted.payment.id);
+  const failed = h.events.filter((e) => e.subject === reverted.payment.id).at(-1)!;
+  assert.deepEqual([failed.severity, failed.data?.to, failed.data?.failureCode], ["error", "FAILED", "BURN_REVERTED"]);
+});

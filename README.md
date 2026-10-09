@@ -1,6 +1,6 @@
 # tilcai-infrastructure
 
-Backend e infraestructura de TilcAI: gateway, rieles de pago (x402 sobre Stellar y USDC crosschain con Circle CCTP V2), integración con el OpenZeppelin Relayer y, por fases, cuentas abstractas, paymasters, ERC-8004, MCP y A2A.
+Backend e infraestructura de TilcAI: gateway, rieles de pago (x402 sobre Stellar y USDC crosschain con Circle CCTP V2), vault de desembolsos en Avalanche, cobro con QR Simple (mock), eventos para el tablero de monitorización, integración con el OpenZeppelin Relayer y, por fases, cuentas abstractas, paymasters, ERC-8004, MCP y A2A.
 
 Plan y arquitectura completos: [`documentation/TILCAI_PLAN_ARQUITECTURA_BACKEND_INFRA_2026-10-02.md`](../documentation/TILCAI_PLAN_ARQUITECTURA_BACKEND_INFRA_2026-10-02.md).
 
@@ -13,8 +13,12 @@ Plan y arquitectura completos: [`documentation/TILCAI_PLAN_ARQUITECTURA_BACKEND_
 | Fase 1 — pago USDC Avalanche Fuji → Stellar Testnet (CCTP V2 + CctpForwarder) | **Implementado y verificado con transferencias reales** (2026-10-02). 25 tests unitarios + 3 de integración on-chain. |
 | Origen gasless: el pagador firma EIP-3009 y el OZ Relayer envía el burn (`TilcaiCctpRouter`, Fuji `0x297ce6a2787484db4bB18A96a8F28A9881Fc163C`) | **Desplegado y verificado**: burn enviado por la cuenta del relayer; el pagador no gastó AVAX |
 | Destino gasless: el Relayer envía `mint_and_forward` y paga el XLM | Verificado (fee account = firmante del relayer) |
+| Vault de desembolsos: paga en USDC las compras cobradas fuera de la cadena (`TilcaiVault`, Fuji `0x841dD47Db3124839be1D878DD277e1b07D6932b6`) | **Desplegado** (2026-10-07). El relayer envía `disburse` y paga el gas; el contrato limita cada pago, el total diario y paga cada id una sola vez. 13 tests Foundry + 16 unitarios |
+| Cobro con QR Simple: mock de la API de Vendis («QR Dinámico para Pagos» v1.3) con página «Simular depósito» | **Implementado como mock** (2026-10-09): no hay banco ni dinero. Verificado de extremo a extremo con optipagos-backend: QR → depósito simulado → notificación → desembolso del vault en Fuji |
+| Monitorización: registro de eventos, recursos y alertas; avisos del relayer por webhook; envío firmado a tilcai-web | **Implementado** (2026-10-09). El receptor de avisos del relayer está probado con avisos firmados de prueba; falta apuntar el relayer real a TilcAI |
+| Fase SCA — emisión de cuentas abstractas para agentes y terceros (Stellar y EVM) | **En preparación**: prerrequisitos verificados (`npm run sca:preflight`), contratos base de Soroban compilados, puertos definidos. Hitos M0–M7 en [`TILCAI_FASE_SCA_EMISION_DE_CUENTAS_2026-10-06.md`](../documentation/TILCAI_FASE_SCA_EMISION_DE_CUENTAS_2026-10-06.md) |
 | Estructura de módulos de las fases 2–5 (`src/modules/*/ports.ts`) | Interfaces sin implementación |
-| Contratos | EVM: `TilcaiCctpRouter` desplegado en Fuji (4 tests Foundry). Soroban: solo esqueleto |
+| Contratos | EVM: `TilcaiCctpRouter` y `TilcaiVault` desplegados en Fuji (17 tests Foundry). Soroban: cuenta, verificadores y política de límite sobre OpenZeppelin `stellar-accounts` 0.7.2 (compilan, 2 tests; sin desplegar) |
 
 ## Modos de pago
 
@@ -54,6 +58,8 @@ cp .env.example .env         # completar RELAYER_API_KEY y, para pruebas, DEV_EV
 npm test                     # unitarios (sin red)
 npm run typecheck
 npm run relayer:check        # salud, auth, x402 /supported y relayer Stellar
+npm run sca:preflight        # prerrequisitos de la fase SCA: Fuji, Stellar, relayer y herramientas (solo lectura)
+npm run vault -- status      # el vault en la cadena: saldo, límites, dueño y operador
 npm start                    # API (127.0.0.1:8787) + worker en un proceso
 ```
 
@@ -84,13 +90,147 @@ Todas las rutas salvo `/health` exigen `Authorization: Bearer <TILCAI_API_KEYS>`
 | POST | `/v1/crosschain/payments/:id/burn` | `{txHash}` del burn difundido por la wallet externa (también rescata un pago gasless cuyo hash se perdió) |
 | GET | `/v1/crosschain/payments/:id` | Estado detallado, `paymentState` compartido, enlaces, eventos y recibo |
 | POST | `/v1/crosschain/payments/:id/reconcile` | Ejecuta un paso de conciliación inmediatamente |
+| GET | `/v1/vault` | El vault en la cadena: saldo, límites, pausa, dueño, operador y lo comprometido en pagos en curso |
+| POST | `/v1/vault/disbursements` | Cabecera `Idempotency-Key`. `{to:"0x…", amount:"10.5", reference?:"compra-123"}` → desembolso. El relayer envía `TilcaiVault.disburse` y paga el gas |
+| GET | `/v1/vault/disbursements/:id` | Estado (`REQUESTED` → `SUBMITTED` → `CONFIRMED` \| `FAILED`), hash, enlace y eventos |
+| POST | `/v1/vault/disbursements/:id/reconcile` | Ejecuta un paso de conciliación inmediatamente |
 | GET | `/v1/relayer/status` | x402 `/supported` y relayer Stellar |
+| GET | `/v1/monitor/events` | El registro de eventos: `?after=<seq>` para lo que vino después, sin `after` los últimos. Filtros `type` (exacto o prefijo `vault.`), `source`, `severity`, `limit` |
+| GET | `/v1/monitor/stream` | Lo mismo en vivo (Server-Sent Events; `?after=<seq>` o `Last-Event-ID` para reanudar) |
+| GET | `/v1/monitor/resources` | Proceso, base de datos, colas, relayer y vault ahora mismo, y las alertas activas |
+| POST | `/v1/webhooks/relayer` | Avisos del OpenZeppelin Relayer. No usa clave Bearer: los firma el relayer (`X-Signature`) |
+| — | `/mock/vendis/…` | Mock de QR Simple, solo con `QR_MOCK_ENABLED=true`. Usa los tokens de su propio `login` (ver abajo) |
 
 Los errores usan el envelope `tilcai-shared-v1` de `tilcai-core` (`code`, `message`, `recovery`).
 
+## Vault de desembolsos
+
+Para vender USDC cobrando por fuera de la cadena (un QR bancario, una transferencia): quien
+cobra confirma el pago y pide a TilcAI que entregue los USDC a la wallet del comprador.
+
+```
+optipagos (u otro servicio)          TilcAI API + worker                 OZ Relayer            TilcaiVault (Fuji)
+  │ POST /v1/vault/disbursements ──▶ valida, comprueba que el vault puede pagar → REQUESTED
+  │                                  simula y envía disburse(id, to, amount) ──▶ paga el gas ──▶ transfiere USDC
+  │                                  worker: recibo + evento Disbursed == pedido → CONFIRMED
+  │ GET  /v1/vault/disbursements/:id ◀─ estado, txHash y enlace
+```
+
+- **Un pago por id.** El contrato anota cada `disbursementId` y se niega a pagarlo dos veces,
+  así que un pago se reintenta sin riesgo: una transacción repetida o tardía solo puede revertir.
+- **Una compra, un pago.** `reference` es el id de quien llama (la compra); no admite un segundo
+  desembolso mientras el primero no haya fallado. `Idempotency-Key` hace repetible la petición.
+- **Límites en la cadena.** Tope por pago y tope por día (UTC) que solo el dueño cambia; el
+  operador (la cuenta del relayer) no puede saltárselos ni retirar fondos.
+- **Respuesta clara si no puede pagar.** Vault en pausa → `PAUSED`; monto sobre los límites →
+  `PAYMENT_LIMIT`; saldo insuficiente (contando lo ya comprometido) → `BUDGET`. No se crea nada
+  y quien llama puede repetir la misma petición más tarde.
+- `FAILED` solo cuando todos los intentos demostraron no haber pagado. Una llamada al relayer
+  sin respuesta lo deja `uncertain` y se sigue conciliando contra la cadena.
+
+```sh
+cd contracts/evm && forge build && cd ../..
+npm run vault -- deploy --max 100 --daily 1000   # firma DEV_EVM_PAYER_PRIVATE_KEY; operador = cuenta RELAYER_FUJI_ID
+# VAULT_FUJI=0x… en .env, y recargarlo enviando USDC de Fuji a esa dirección
+npm run vault -- status
+npm run vault -- withdraw --to 0x… --amount 5    # el dueño recupera fondos
+```
+
+La dirección del vault y la clave de la API permiten pagar hasta los límites del contrato:
+`TILCAI_API_KEYS` debe estar definida en cualquier despliegue que tenga `VAULT_FUJI`.
+
+## QR Simple (mock)
+
+Para cobrar en bolivianos con el QR del banco sin tener todavía un proveedor: TilcAI hace de
+pasarela y responde como la API de **Vendis, «QR Dinámico para Pagos» v1.3**. Quien integra
+contra el mock integra contra Vendis: cambia la URL base y las credenciales. No hay banco ni
+dinero; un pago ocurre cuando alguien pulsa **Simular depósito**.
+
+```
+optipagos (quien cobra)              TilcAI · /mock/vendis                    navegador
+  │ POST api/v1/login ─────────────▶ token (vigencia: un año)
+  │ POST api/v1/devices/simple-qr/generate ─▶ qr_image (PNG en base64), qr_url, qr_id   → Pendiente
+  │                                  GET /mock/vendis/  ◀──────────── «Simular depósito» (un botón)
+  │ POST …/simple-qr/callback ◀───── {payment_date, payment_amount, qr_id, payment_name, payment_bank}
+  │      responde {success:true}     reintenta 3 veces (5 s, 15 s, 45 s)                 → Pagado
+  │ GET  api/v1/devices/simple-qr/get/<qr_id> ─▶ {status, payments[]}   (por si el aviso se pierde)
+```
+
+| Método | Ruta (bajo `/mock/vendis`) | Qué hace |
+| --- | --- | --- |
+| POST | `/api/v1/login` | `{email, password, token_name}` → `{access_token}`. Error: `401 {"message":"Credenciales Inválidos"}` |
+| POST | `/api/v1/devices/simple-qr/generate` | `Bearer <token>`. `{device_id, amount, modify_amount, is_multi_use, qr_expiration:"Y-m-d H:i:s", description}` → `{success, data:{qr_image, qr_url, qr_id}}` |
+| GET | `/api/v1/devices/simple-qr/get/<qr_id>` | `Bearer <token>` → `{success, data:{status, payments}}`. `status`: `Pendiente`, `Pagado`, `Anulado` o `Fallido` |
+| GET | `/qr-image/<archivo>` | La imagen de `qr_url` |
+| GET | `/` | La página con el botón **Simular depósito** (`?qr=<qr_id>` elige otro QR pendiente) |
+| GET | `/simulate/pending` | Los QR que esperan pago |
+| POST | `/simulate/deposit` | `{qr_id?, amount?, payment_name?, payment_bank?}`: paga el QR (sin `qr_id`, el pendiente más reciente) y envía el aviso |
+
+- **El QR** tiene la forma de un QR Simple real: un bloque opaco en base64, una barra y un
+  identificador, con el distintivo «$» en el centro. Lleva corrección de errores H: quien
+  rediseñe la tarjeta puede tapar el centro con su marca y se sigue leyendo lo mismo.
+- **Fechas** en hora de Bolivia (UTC−4), como las entrega un servicio boliviano; montos en
+  bolivianos con dos decimales.
+- **El aviso** va a `QR_MOCK_CALLBACK_URL` con el token del QR en `Authorization`. Se da por
+  entregado con un `2xx` y `{"success": true}`. Quien lo recibe debería confirmar el pago
+  consultando el estado del QR antes de entregar nada: el aviso solo dispara la consulta.
+- **El simulador** se abre sin clave desde el propio equipo. Desde otro, con
+  `?key=<QR_MOCK_SIMULATOR_KEY>` o una clave de `TILCAI_API_KEYS`.
+- Lo que el mock decide por su cuenta, porque la documentación no lo dice: un QR vencido sin
+  pagar pasa a `Anulado`, y un QR de monto abierto se paga con Bs 10.00 si nadie indica otro.
+
+```sh
+QR_MOCK_ENABLED=true QR_MOCK_EMAIL=caja@ejemplo.bo QR_MOCK_PASSWORD=… \
+QR_MOCK_CALLBACK_URL=http://localhost:3200/api/v1/devices/simple-qr/callback npm start
+# abrir http://127.0.0.1:8787/mock/vendis/
+```
+
+## Monitorización
+
+TilcAI anota en su base lo que le pasa y lo que le cuentan, y lo envía a `tilcai-web`, que lo
+muestra en el tablero. La explicación completa, con el contrato y los pasos para conectarlos,
+está en [`documentation/2-ARQUITECTURA/TILCAI_MONITORIZACION_EVENTOS_BACKEND_FRONTEND_2026-10-09.md`](../documentation/2-ARQUITECTURA/TILCAI_MONITORIZACION_EVENTOS_BACKEND_FRONTEND_2026-10-09.md).
+
+```
+servicios (pagos, vault, API) ─┐
+avisos del relayer (webhook) ──┼─▶ monitor_events (SQLite, seq creciente) ─▶ POST firmado ─▶ tilcai-web
+mock de QR Simple ─────────────┤        ▲                                    (reintenta; no pierde orden)
+foto de recursos cada 30 s ────┘        └── GET /v1/monitor/events · /stream · /resources
+```
+
+- **Eventos** (`tilcai-monitor-v1`): `{seq, id, type, source, severity, subject, summary, data, at}`.
+  Los tipos están en [`src/modules/monitor/domain.ts`](src/modules/monitor/domain.ts):
+  `system.*`, `resources.snapshot`, `alert.*`, `api.request_rejected`,
+  `crosschain.payment.*`, `vault.disbursement.*`, `relayer.*` y `qr.*`.
+- **Recursos**: memoria, CPU y retraso del event loop del proceso; tamaño de la base y filas por
+  estado de cada cola; saldo de gas y estado de cada relayer; saldo, límites y pausa del vault.
+- **Alertas**: lo que está mal ahora (`VAULT_EMPTY`, `VAULT_LOW`, `RELAYER_DOWN`,
+  `RELAYER_LOW_GAS:<id>`, `MONITOR_SINK_FAILING:web`…). Un evento cuando aparece y otro cuando
+  se resuelve, no uno por cada foto.
+- **Envío a tilcai-web**: por lotes, en orden y al menos una vez. El cursor solo avanza con un
+  `2xx`, así que un tablero caído recibe después todo lo que se perdió. Cada envío va firmado:
+  `X-Tilcai-Signature: v1=HMAC-SHA256(secreto, "<X-Tilcai-Timestamp>.<cuerpo>")`.
+- **Avisos del relayer**: se guardan una vez (por su `id`) y, si la transacción la envió
+  TilcAI, enlazan con su pago o su desembolso. Sirven para ver, no para decidir: un pago solo
+  se liquida cuando TilcAI comprobó la cadena.
+- Emitir un evento nunca rompe ni retrasa un pago: si no se puede guardar, se registra en el log
+  y se sigue. El envío al tablero y el reloj del mock corren en un bucle aparte del de
+  conciliación.
+
 ## Despliegue
 
-TilcAI y el Relayer comparten host: `RELAYER_URL=http://localhost:8080`, `API_HOST=127.0.0.1`. Para probar desde otra máquina de la LAN: `RELAYER_URL=http://192.168.1.57:8080`.
+TilcAI necesita el OpenZeppelin Relayer (con el plugin `x402`) y un Redis para el relayer.
+
+**En contenedores** (un host con Docker Compose, Google Cloud Run, AWS o Azure): imágenes,
+configuración del relayer y guía en [`deploy/`](deploy/README.md).
+
+```sh
+cp deploy/.env.example deploy/.env       # completar los secretos
+./deploy/build.sh
+docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d
+```
+
+**Sin contenedores**, TilcAI y el Relayer comparten host: `RELAYER_URL=http://localhost:8080`, `API_HOST=127.0.0.1`. Para probar desde otra máquina de la LAN: `RELAYER_URL=http://192.168.1.57:8080`.
 
 ```ini
 # /etc/systemd/system/tilcai.service (ejemplo)
@@ -111,12 +251,17 @@ src/
   shared/            importes atómicos exactos, hex, IDs tilcai-shared-v1, errores de dominio, logger
   modules/
     crosschain/      FASE 1: cctp/ (encoding, decoder V2, Iris), adapters/ (viem, Soroban, submitters), service, verify
+    vault/           desembolsos del TilcaiVault: service (conciliación), repository, adapters/ (viem)
+    monitor/         registro de eventos, foto de recursos y alertas, avisos del relayer, envío a tilcai-web
+    qrsimple/        mock de QR Simple (API de Vendis): tokens, QR, pagos simulados, callback y su página
     relayer/         cliente HTTP del OpenZeppelin Relayer (transacciones Stellar, plugin x402)
     principals/ agents/ businesses/ commerce/ identity/ policies/ budgets/
-    authorization/ accounts/ signers/ payments/ receipts/   puertos de las fases 2–5
+    authorization/ signers/ payments/ receipts/             puertos de las fases 2–5
+    tenants/ accounts/                                      puertos de la fase SCA (terceros, cuentas, delegación)
     connectors/mcp  connectors/a2a  jobs/
-  apps/              api (Fastify), worker, all-in-one, cli (xpay, relayer:check)
-contracts/evm        Foundry: TilcaiCctpRouter (desplegado en Fuji), paymaster ERC-4337 (fase 3)
-contracts/soroban    política de gasto para smart accounts y presupuesto (fase 3)
-test/unit            25 tests sin red     test/integration   relayer y e2e reales (se omiten sin credenciales)
+  apps/              api (Fastify), worker, all-in-one, cli (xpay, relayer:check, sca:preflight, vault)
+contracts/evm        Foundry: TilcaiCctpRouter y TilcaiVault (desplegados en Fuji); cuenta ERC-4337, factory y router v2 (fase SCA)
+contracts/soroban    Cargo: cuenta, verificadores y política de límite (OpenZeppelin); factory y política propia (fase SCA)
+test/unit            86 tests sin red     test/integration   relayer y e2e reales (se omiten sin credenciales)
+deploy/              imágenes Docker de TilcAI y del relayer, compose del stack y manifiestos de Cloud Run
 ```

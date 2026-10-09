@@ -1,4 +1,3 @@
-import { timingSafeEqual } from "node:crypto";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
 import { z } from "zod";
 import type { AppContext } from "../../app-context.ts";
@@ -6,6 +5,13 @@ import { DomainError } from "../../shared/errors.ts";
 import { atomicToDecimal } from "../../shared/amount.ts";
 import type { CrosschainPayment, RouteQuote } from "../../modules/crosschain/domain.ts";
 import { paymentStateOf } from "../../modules/crosschain/domain.ts";
+import type { VaultDisbursement } from "../../modules/vault/domain.ts";
+import type { VaultDisbursementService } from "../../modules/vault/service.ts";
+import { Throttle } from "../../modules/monitor/service.ts";
+import { QR_MOCK_PREFIX, registerQrMock } from "../../modules/qrsimple/routes.ts";
+import { systemClock } from "../../shared/clock.ts";
+import { bearerOf, isLoopback, matchesAny } from "./auth.ts";
+import { registerMonitorRoutes, RELAYER_WEBHOOK_PATH } from "./monitor-routes.ts";
 
 const json = (v: unknown) => JSON.stringify(v, (_, x) => (typeof x === "bigint" ? x.toString() : x));
 const send = (reply: FastifyReply, status: number, body: unknown) =>
@@ -25,30 +31,54 @@ const PaymentBody = z.strictObject({
 });
 const BurnBody = z.strictObject({ txHash: z.string().max(66) });
 const AuthorizationBody = z.strictObject({ signature: z.string().regex(/^0x[0-9a-fA-F]{130}$/) });
+const DisbursementBody = z.strictObject({
+  to: z.string().max(42),
+  amount: z.string().max(40),
+  reference: z.string().max(160).optional(),
+});
 
 export function buildServer(ctx: AppContext): FastifyInstance {
   const app = Fastify({
     logger: { level: ctx.env.LOG_LEVEL, redact: ["req.headers.authorization", "req.headers['idempotency-key']"] },
     bodyLimit: 64 * 1024,
+    // An open event stream must not keep the process from shutting down.
+    forceCloseConnections: true,
   });
 
-  const keys = ctx.env.TILCAI_API_KEYS.map((k) => Buffer.from(k));
+  const keys = ctx.env.TILCAI_API_KEYS;
   if (keys.length === 0) app.log.warn("TILCAI_API_KEYS empty: API only reachable unauthenticated on loopback");
 
   app.addHook("onRequest", async (req, reply) => {
-    if (req.url === "/health") return;
+    const path = req.url.split("?", 1)[0]!;
+    // These authenticate on their own: the relayer signs its webhooks and the QR mock speaks
+    // Vendis's API, with Vendis's tokens.
+    if (path === "/health" || path === RELAYER_WEBHOOK_PATH || path === QR_MOCK_PREFIX || path.startsWith(`${QR_MOCK_PREFIX}/`)) return;
     if (keys.length === 0) {
       if (!isLoopback(req.ip)) return send(reply, 401, { error: new DomainError("UNAUTHENTICATED").contract });
       return;
     }
-    const token = /^Bearer (.+)$/.exec(req.headers.authorization ?? "")?.[1];
-    const ok = token !== undefined && keys.some((k) => k.length === Buffer.byteLength(token) && timingSafeEqual(k, Buffer.from(token)));
-    if (!ok) return send(reply, 401, { error: new DomainError("UNAUTHENTICATED").contract });
+    if (!matchesAny(bearerOf(req.headers.authorization), keys)) return send(reply, 401, { error: new DomainError("UNAUTHENTICATED").contract });
   });
+
+  // A failing dependency shows on the dashboard once a minute, not once per request.
+  const rejections = new Throttle(systemClock);
+  const announceFailure = (req: FastifyRequest, status: number, code: string, detail?: string) => {
+    const route = `${req.method} ${req.routeOptions?.url ?? req.url.split("?", 1)[0]}`;
+    const pass = rejections.pass(`${route} ${code}`);
+    if (!pass) return;
+    ctx.monitor.emit({
+      type: "api.request_rejected",
+      severity: "error",
+      subject: route,
+      summary: `API ${route} → ${status} ${code}${detail ? `: ${detail}` : ""}`,
+      data: { route, status, code, detail: detail ?? null, repeatedSinceLast: pass.suppressed },
+    });
+  };
 
   app.setErrorHandler((err, req, reply) => {
     if (err instanceof DomainError) {
       req.log.info({ code: err.contract.code, detail: err.detail }, "domain error");
+      if (err.httpStatus >= 500) announceFailure(req, err.httpStatus, err.contract.code, err.detail);
       return send(reply, err.httpStatus, { error: err.contract, ...(err.detail && err.httpStatus < 500 ? { detail: err.detail } : {}) });
     }
     if (err instanceof z.ZodError) {
@@ -58,13 +88,26 @@ export function buildServer(ctx: AppContext): FastifyInstance {
       return send(reply, 400, { error: new DomainError("INVALID_INPUT").contract });
     }
     req.log.error({ err }, "unhandled error");
+    announceFailure(req, 500, "INTERNAL_ERROR");
     return send(reply, 500, { error: new DomainError("INTERNAL_ERROR").contract });
   });
 
   app.get("/health", async (_req, reply) => {
     const relayer = await ctx.relayer.health();
-    return send(reply, 200, { ok: true, env: ctx.env.TILCAI_ENV, relayer: relayer ? "up" : "down" });
+    return send(reply, 200, {
+      ok: true,
+      env: ctx.env.TILCAI_ENV,
+      relayer: relayer ? "up" : "down",
+      vault: ctx.vault ? "on" : "off",
+      qrMock: ctx.qrMock ? "on" : "off",
+      monitor: ctx.forwarder ? "push" : "local",
+    });
   });
+
+  registerMonitorRoutes(app, ctx);
+  if (ctx.qrMock) {
+    registerQrMock(app, { mock: ctx.qrMock, apiKeys: keys, simulatorKey: ctx.env.QR_MOCK_SIMULATOR_KEY, callbackUrl: ctx.env.QR_MOCK_CALLBACK_URL });
+  }
 
   app.get("/v1/routes", async (_req, reply) =>
     send(reply, 200, {
@@ -135,6 +178,75 @@ export function buildServer(ctx: AppContext): FastifyInstance {
     return send(reply, 200, { payment: publicPayment(p) });
   });
 
+  // ── Vault: payouts of purchases settled off-chain ─────────────────────────
+
+  const vault = (): VaultDisbursementService => {
+    if (!ctx.vault) throw new DomainError("SERVICE_UNAVAILABLE", "vault not configured (VAULT_FUJI)");
+    return ctx.vault;
+  };
+  const usdc = (atomic: bigint) => atomicToDecimal(atomic, ctx.nets.avalancheFuji.usdc.decimals);
+  const publicDisbursement = (d: VaultDisbursement) => ({
+    id: d.id,
+    state: d.state,
+    uncertain: d.uncertain,
+    network: d.network,
+    vault: d.vault,
+    to: d.to,
+    asset: "USDC",
+    amountAtomic: d.amountAtomic,
+    amount: usdc(d.amountAtomic),
+    reference: d.reference,
+    submissionId: d.submissionId,
+    txHash: d.txHash,
+    blockNumber: d.blockNumber,
+    attempts: d.attempts,
+    lastError: d.lastError,
+    failureCode: d.failureCode,
+    nextCheckAt: d.nextCheckAt,
+    createdAt: d.createdAt,
+    updatedAt: d.updatedAt,
+  });
+  const txLink = (d: VaultDisbursement) => ({ tx: d.txHash ? `${ctx.nets.avalancheFuji.explorer}/tx/${d.txHash}` : null });
+
+  app.get("/v1/vault", async (_req, reply) => {
+    const s = await vault().status();
+    return send(reply, 200, {
+      vault: {
+        network: ctx.nets.avalancheFuji.id,
+        address: s.address,
+        asset: ctx.nets.avalancheFuji.usdc.address,
+        owner: s.owner,
+        operator: s.operator,
+        relayer: s.relayer,
+        operatorIsRelayer: s.operatorIsRelayer,
+        paused: s.paused,
+        balance: usdc(s.balanceAtomic),
+        pending: usdc(s.pendingAtomic),
+        maxPerDisbursement: usdc(s.maxPerDisbursementAtomic),
+        dailyLimit: usdc(s.dailyLimitAtomic),
+        availableToday: usdc(s.availableTodayAtomic),
+        explorer: `${ctx.nets.avalancheFuji.explorer}/address/${s.address}`,
+      },
+    });
+  });
+
+  app.post("/v1/vault/disbursements", async (req, reply) => {
+    const body = DisbursementBody.parse(req.body);
+    const r = await vault().create({ ...body, idempotencyKey: idemKey(req) });
+    return send(reply, r.replayed ? 200 : 201, { disbursement: publicDisbursement(r.disbursement), links: txLink(r.disbursement) });
+  });
+
+  app.get<{ Params: { id: string } }>("/v1/vault/disbursements/:id", async (req, reply) => {
+    const v = vault().view(req.params.id);
+    return send(reply, 200, { disbursement: publicDisbursement(v.disbursement), links: v.links, events: v.events });
+  });
+
+  /** Runs one reconciliation step now (the worker does the same on its own cadence). */
+  app.post<{ Params: { id: string } }>("/v1/vault/disbursements/:id/reconcile", async (req, reply) => {
+    const d = await vault().step(vault().mustGet(req.params.id));
+    return send(reply, 200, { disbursement: publicDisbursement(d), links: txLink(d) });
+  });
+
   app.get("/v1/relayer/status", async (_req, reply) => {
     const up = await ctx.relayer.health();
     if (!up || !ctx.env.RELAYER_API_KEY) return send(reply, 200, { up, authenticated: false });
@@ -202,4 +314,3 @@ function publicPayment(p: CrosschainPayment) {
 }
 
 const pick = (o: Record<string, unknown>, ks: string[]) => Object.fromEntries(ks.filter((k) => k in o).map((k) => [k, o[k]]));
-const isLoopback = (ip: string) => ip === "127.0.0.1" || ip === "::1" || ip === "::ffff:127.0.0.1";

@@ -8,6 +8,7 @@ import { DomainError } from "../../shared/errors.ts";
 import { isHex32, type Hex } from "../../shared/hex.ts";
 import { newId, newRouteQuoteId, parseRouteQuoteId } from "../../shared/ids.ts";
 import type { Logger } from "../../shared/log.ts";
+import type { EventSink } from "../monitor/domain.ts";
 import { isValidStellarRecipient, stellarMintTarget } from "./cctp/encoding.ts";
 import type { IrisPort } from "./cctp/iris.ts";
 import { decodeMessageV2 } from "./cctp/message.ts";
@@ -39,6 +40,8 @@ export interface CrosschainDeps {
   destination: StellarNetwork;
   clock: Clock;
   log: Logger;
+  /** Where state changes are announced for the dashboard. */
+  events?: EventSink;
   options: {
     quoteTtlSeconds: number;
     pollMs: number;
@@ -201,6 +204,7 @@ export class CrosschainPaymentService {
       }
       throw e;
     }
+    this.announce(payment, null, "created");
 
     if (isGaslessMode(input.mode)) {
       const authorization = this.authorizationRequest(payment);
@@ -607,7 +611,33 @@ export class CrosschainPaymentService {
       at: now,
     });
     this.d.log.info("payment transition", { paymentId: p.id, from: p.state, to, note });
+    this.announce(saved, p.state, note);
     return saved;
+  }
+
+  /** Tells the dashboard that a payment was created (`from` = null) or changed state. */
+  private announce(p: CrosschainPayment, from: CrosschainState | null, note: string): void {
+    this.d.events?.emit({
+      type: "crosschain.payment.transition",
+      severity: p.state === "FAILED" ? "error" : "info",
+      subject: p.id,
+      summary: `Pago crosschain ${from ?? "nuevo"} → ${p.state}: ${note}`,
+      data: {
+        paymentId: p.id,
+        from,
+        to: p.state,
+        paymentState: paymentStateOf(p.state, p.uncertain),
+        note,
+        mode: p.mode,
+        orderId: p.orderId,
+        payer: p.payer,
+        burnTxHash: p.burnTxHash,
+        mintTxHash: p.mintTxHash,
+        attempts: p.attempts,
+        failureCode: p.failureCode,
+        lastError: p.lastError,
+      },
+    });
   }
 
   private patch(p: CrosschainPayment, patch: Partial<CrosschainPayment>): CrosschainPayment {
@@ -634,6 +664,13 @@ export class CrosschainPaymentService {
     if (becameUncertain) {
       assertSharedTransition(paymentStateOf(fresh.state, false), paymentStateOf(fresh.state, true));
       this.d.log.warn("payment flagged uncertain", { paymentId: p.id, state: p.state, error: o.error });
+      this.d.events?.emit({
+        type: "crosschain.payment.uncertain",
+        severity: "warning",
+        subject: p.id,
+        summary: `Pago crosschain incierto en ${fresh.state}: ${o.error ?? "sin detalle"}`,
+        data: { paymentId: p.id, state: fresh.state, error: o.error ?? null, attempts },
+      });
       return this.d.repo.update(next, fresh.version, {
         paymentId: p.id,
         from: fresh.state,

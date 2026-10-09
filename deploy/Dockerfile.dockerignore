@@ -1,0 +1,10 @@
+# The build context is the parent directory (tilcai/), which also holds other repos.
+# Ignore everything, then let in only what the image needs.
+*
+!tilcai-core/package.json
+!tilcai-core/src
+!tilcai-infrastructure/package.json
+!tilcai-infrastructure/package-lock.json
+!tilcai-infrastructure/tsconfig.json
+!tilcai-infrastructure/src
+!tilcai-infrastructure/deploy/entrypoint.sh
