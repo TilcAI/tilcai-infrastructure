@@ -6,15 +6,15 @@ import {
   encodeFunctionData,
   erc20Abi,
   http,
-  keccak256,
   parseAbi,
-  toHex,
   type PublicClient,
 } from "viem";
 import type { EvmNetwork } from "../../../config/networks.ts";
 import { sameHex, type Hex } from "../../../shared/hex.ts";
 import { viemChain } from "../../crosschain/adapters/evm.ts";
 import type { DisbursedEvent, DisbursementInspection, VaultPort, VaultStatus } from "../ports.ts";
+
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
 export const VAULT_ABI = parseAbi([
   "constructor(address usdc_, address owner_, address operator_, uint256 maxPerDisbursement_, uint256 dailyLimit_)",
@@ -41,8 +41,7 @@ export const VAULT_ABI = parseAbi([
   "error OwnableUnauthorizedAccount(address account)",
 ]);
 
-/** bytes32 id of a TilcAI disbursement, as the vault records it. */
-export const disbursementIdBytes32 = (disbursementId: string): Hex => keccak256(toHex(disbursementId));
+export { disbursementIdBytes32 } from "../disbursement-id.ts";
 
 /** Public RPCs cap eth_getLogs ranges (2048 blocks on Avalanche's). */
 const LOG_WINDOW = 2000n;
@@ -83,13 +82,20 @@ export class ViemVault implements VaultPort {
     return this.pub.readContract({ address: this.vault, abi: VAULT_ABI, functionName: "disbursedAmount", args: [id32] });
   }
 
-  encodeDisburse(id32: Hex, to: Hex, amount: bigint): Hex {
-    return encodeFunctionData({ abi: VAULT_ABI, functionName: "disburse", args: [id32, to, amount] });
+  encodeDisburse(id32: Hex, to: string, amount: bigint): Hex {
+    return encodeFunctionData({ abi: VAULT_ABI, functionName: "disburse", args: [id32, to as Hex, amount] });
   }
 
-  async simulate(sender: Hex, id32: Hex, to: Hex, amount: bigint): Promise<{ ok: true } | { ok: false; reason: string }> {
+  parseRecipient(to: string): Hex {
+    if (!/^0x[0-9a-fA-F]{40}$/.test(to) || sameHex(to, ZERO_ADDRESS) || sameHex(to, this.vault)) {
+      throw new TypeError("to must be an EVM address other than the vault");
+    }
+    return to.toLowerCase() as Hex;
+  }
+
+  async simulate(sender: string, id32: Hex, to: string, amount: bigint): Promise<{ ok: true } | { ok: false; reason: string }> {
     try {
-      await this.pub.simulateContract({ address: this.vault, abi: VAULT_ABI, functionName: "disburse", args: [id32, to, amount], account: sender });
+      await this.pub.simulateContract({ address: this.vault, abi: VAULT_ABI, functionName: "disburse", args: [id32, to as Hex, amount], account: sender as Hex });
       return { ok: true };
     } catch (e) {
       const reverted = e instanceof BaseError ? e.walk((x) => x instanceof ContractFunctionRevertedError) : null;
@@ -101,8 +107,8 @@ export class ViemVault implements VaultPort {
     }
   }
 
-  async inspect(txHash: Hex): Promise<DisbursementInspection> {
-    const rcpt = await this.pub.getTransactionReceipt({ hash: txHash }).catch((e: unknown) => {
+  async inspect(txHash: string): Promise<DisbursementInspection> {
+    const rcpt = await this.pub.getTransactionReceipt({ hash: txHash as Hex }).catch((e: unknown) => {
       if (String(e).includes("could not be found") || String(e).includes("TransactionReceiptNotFound")) return null;
       throw e;
     });

@@ -78,6 +78,16 @@ export interface SmartAccountProvider {
   submitOwnerSigned(account: SmartAccount, request: OwnerSignRequest, signature: string): Promise<{ submissionId: string }>;
 }
 
+/** What the relayer reports about a submission, on either chain. */
+export type DeploySubmissionStatus = { state: "pending" } | { state: "confirmed"; txHash: string } | { state: "failed"; reason: string };
+
+/** What the account service needs beyond issuing: the fate of a deployment it sent. */
+export interface AccountDeployer extends SmartAccountProvider {
+  /** Code the accounts run: the factory's implementation (EVM) or the account wasm hash (Stellar). */
+  codeRef(): Promise<string>;
+  deployStatus(submissionId: string): Promise<DeploySubmissionStatus>;
+}
+
 /**
  * EVM only. TilcAI's relayer sends UserOperations itself through `EntryPoint.handleOps`:
  * no external bundler and no paymaster (plan ADR-12).

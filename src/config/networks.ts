@@ -46,6 +46,10 @@ export interface StellarNetwork {
   /** USDC is a classic asset with a Stellar Asset Contract (SAC) for Soroban. */
   usdc: { code: "USDC"; issuer: string; sac: string; decimals: 7 };
   cctpV2: { tokenMessengerMinter: string; messageTransmitter: string; cctpForwarder: string };
+  /** `tilcai_account_factory`: issues the smart accounts of the SCA phase. Absent until deployed. */
+  accountFactory?: string;
+  /** `tilcai_vault` (pays purchases settled off-chain). Absent until deployed. */
+  vault?: string;
 }
 
 export type Network = EvmNetwork | StellarNetwork;
@@ -100,6 +104,8 @@ export function networks(env: Env): NetworkRegistry {
       messageTransmitter: "CBJ6MTCKKZG73PMDZCJMSFRD7DQEMI4FKDH7CGDSV4W6FHCRBCQAVVJY",
       cctpForwarder: "CA66Q2WFBND6V4UEB7RD4SAXSVIWMD6RA4X3U32ELVFGXV5PJK4T4VSZ",
     },
+    ...(env.ACCOUNT_FACTORY_STELLAR ? { accountFactory: env.ACCOUNT_FACTORY_STELLAR } : {}),
+    ...(env.VAULT_STELLAR ? { vault: env.VAULT_STELLAR } : {}),
   };
   const all: Network[] = [avalancheFuji, stellarTestnet];
   return { avalancheFuji, stellarTestnet, byId: (id) => all.find((n) => n.id === id) };

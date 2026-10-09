@@ -321,3 +321,23 @@ test("alerts of a snapshot: relayer down, out of gas or disabled, and a dashboar
   assert.deepEqual(codes(snapshot({ monitor: { head: 50, sinks: [sink] } })), ["warning:MONITOR_SINK_FAILING:web"]);
   assert.deepEqual(codes(snapshot({ monitor: { head: 50, sinks: [{ ...sink, attempts: 2 }] } })), []);
 });
+
+test("alerts of a snapshot: the vault of another network raises the same alerts, told apart by its network", () => {
+  const view = snapshot().vault!;
+  const stellar = (over: Partial<typeof view> = {}, error?: string) => ({
+    network: "stellar:testnet",
+    vault: error ? null : { ...view, address: "CDQ5", ...over },
+    ...(error ? { error } : {}),
+  });
+  const primary = { network: "eip155:43113", vault: view };
+  const codes = (s: ResourceSnapshot) => alertsOf(s, true).map((a) => `${a.severity}:${a.code}`);
+
+  assert.deepEqual(codes(snapshot({ vaults: [primary, stellar()] })), []);
+  assert.deepEqual(codes(snapshot({ vaults: [primary, stellar({ balance: "0" })] })), ["error:VAULT_EMPTY:stellar:testnet"]);
+  assert.deepEqual(codes(snapshot({ vaults: [primary, stellar({ paused: true, operatorIsRelayer: false })] })), ["error:VAULT_PAUSED:stellar:testnet", "error:VAULT_OPERATOR_MISMATCH:stellar:testnet"]);
+  assert.deepEqual(codes(snapshot({ vaults: [primary, stellar({}, "timeout")] })), ["warning:VAULT_UNREADABLE:stellar:testnet"]);
+  // The primary keeps its plain codes, and is not counted twice through `vaults`.
+  assert.deepEqual(codes(snapshot({ vault: { ...view, balance: "0" }, vaults: [{ network: "eip155:43113", vault: { ...view, balance: "0" } }, stellar()] })), ["error:VAULT_EMPTY"]);
+  const [message] = alertsOf(snapshot({ vaults: [primary, stellar({ balance: "0" })] }), true);
+  assert.match(message!.message, /vault de stellar:testnet CDQ5 no tiene USDC/);
+});

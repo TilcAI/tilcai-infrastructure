@@ -1,6 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
 import { tx } from "../../db/sqlite.ts";
-import type { Hex } from "../../shared/hex.ts";
 import type { VaultDisbursementId } from "../../shared/ids.ts";
 import type { DisbursementEvent, DisbursementState, VaultDisbursement } from "./domain.ts";
 
@@ -15,12 +14,13 @@ export interface VaultRepository {
   get(id: VaultDisbursementId): VaultDisbursement | undefined;
   getByIdempotencyKey(key: string): VaultDisbursement | undefined;
   /** The payout of a reference that has not failed, if there is one. */
-  getByReference(vault: Hex, reference: string): VaultDisbursement | undefined;
+  getByReference(vault: string, reference: string): VaultDisbursement | undefined;
   /** Optimistic update: fails if `expectedVersion` is stale. Appends the event atomically. */
   update(d: VaultDisbursement, expectedVersion: number, ev?: DisbursementEvent): VaultDisbursement;
-  listDue(nowIso: string, limit: number): VaultDisbursement[];
+  /** Payouts to reconcile now; with `network`, only that network's (each network has its own service). */
+  listDue(nowIso: string, limit: number, network?: string): VaultDisbursement[];
   /** USDC already promised to payouts that have not finished. */
-  pendingAtomic(vault: Hex): bigint;
+  pendingAtomic(vault: string): bigint;
   events(id: VaultDisbursementId): DisbursementEvent[];
 }
 
@@ -57,7 +57,7 @@ export class SqliteVaultRepository implements VaultRepository {
     return r ? this.toDisbursement(r as Record<string, any>) : undefined;
   }
 
-  getByReference(vault: Hex, reference: string): VaultDisbursement | undefined {
+  getByReference(vault: string, reference: string): VaultDisbursement | undefined {
     const r = this.db
       .prepare("SELECT * FROM vault_disbursements WHERE vault = ? AND reference = ? AND state <> 'FAILED'")
       .get(vault.toLowerCase(), reference);
@@ -83,18 +83,18 @@ export class SqliteVaultRepository implements VaultRepository {
     return next;
   }
 
-  listDue(nowIso: string, limit: number): VaultDisbursement[] {
+  listDue(nowIso: string, limit: number, network?: string): VaultDisbursement[] {
     const rows = this.db
       .prepare(
         `SELECT * FROM vault_disbursements
-         WHERE state IN ('REQUESTED','SUBMITTED') AND next_check_at <= ?
+         WHERE state IN ('REQUESTED','SUBMITTED') AND next_check_at <= ?${network ? " AND network = ?" : ""}
          ORDER BY next_check_at LIMIT ?`,
       )
-      .all(nowIso, limit);
+      .all(...(network ? [nowIso, network, limit] : [nowIso, limit]));
     return rows.map((r) => this.toDisbursement(r as Record<string, any>));
   }
 
-  pendingAtomic(vault: Hex): bigint {
+  pendingAtomic(vault: string): bigint {
     const rows = this.db
       .prepare("SELECT amount_atomic FROM vault_disbursements WHERE vault = ? AND state IN ('REQUESTED','SUBMITTED')")
       .all(vault.toLowerCase()) as Array<{ amount_atomic: string }>;

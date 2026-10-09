@@ -9,9 +9,8 @@ import { SubmissionRejected } from "../crosschain/ports.ts";
 import type { EventSink } from "../monitor/domain.ts";
 import type { TenantId } from "../tenants/ports.ts";
 import { AccountConflictError, QuotaExceededError, StaleVersionError } from "./domain.ts";
-import type { AccountDeployer } from "./evm/provider.ts";
 import { PasskeyFormatError } from "./evm/passkey.ts";
-import type { AccountEvent, AccountNetwork, OwnerCredential, SmartAccountId, SmartAccountRepository, StoredSmartAccount } from "./ports.ts";
+import type { AccountDeployer, AccountEvent, AccountNetwork, OwnerCredential, SmartAccountId, SmartAccountRepository, StoredSmartAccount } from "./ports.ts";
 
 export interface AccountServiceDeps {
   repo: SmartAccountRepository;
@@ -233,6 +232,7 @@ export function accountSalt(tenantId: TenantId, externalRef: string): Hex {
 }
 
 function normalizeOwner(owner: OwnerCredential): OwnerCredential {
+  if (owner.kind === "ed25519") return { kind: owner.kind, publicKey: owner.publicKey.toLowerCase() as Hex };
   if (owner.kind !== "webauthn-p256") return owner;
   return { kind: owner.kind, publicKey: owner.publicKey.toLowerCase() as Hex, credentialId: owner.credentialId, rpId: owner.rpId };
 }
