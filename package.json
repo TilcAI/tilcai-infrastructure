@@ -13,6 +13,7 @@
     "relayer:check": "tsx src/apps/cli/relayer-check.ts",
     "sca:preflight": "tsx src/apps/cli/sca-preflight.ts",
     "vault": "tsx src/apps/cli/vault.ts",
+    "tenant": "tsx src/apps/cli/tenant.ts",
     "test": "tsx --test 'test/unit/**/*.test.ts'",
     "test:integration": "tsx --test 'test/integration/**/*.test.ts'",
     "typecheck": "tsc -p ."

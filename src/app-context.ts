@@ -24,6 +24,10 @@ import { RelayerClient } from "./modules/relayer/client.ts";
 import { ViemVault } from "./modules/vault/adapters/evm.ts";
 import { SqliteVaultRepository } from "./modules/vault/repository.ts";
 import { VaultDisbursementService } from "./modules/vault/service.ts";
+import type { DelegationRepository, SmartAccountRepository } from "./modules/accounts/ports.ts";
+import { SqliteDelegationRepository, SqliteSmartAccountRepository } from "./modules/accounts/repository.ts";
+import type { TenantAdmin, TenantRegistry } from "./modules/tenants/ports.ts";
+import { SqliteTenantRegistry } from "./modules/tenants/registry.ts";
 
 /** Composition root: the only place that knows concrete adapters. */
 export interface AppContext {
@@ -46,6 +50,10 @@ export interface AppContext {
   correlate: Correlate;
   /** QR Simple mock (Vendis API). Null unless QR_MOCK_ENABLED. */
   qrMock: QrSimpleMock | null;
+  /** Fase SCA M1. Authentication and the HTTP API consume these (M1, Omar); the CLI uses `TenantAdmin`. */
+  tenants: TenantRegistry & TenantAdmin;
+  accounts: SmartAccountRepository;
+  delegations: DelegationRepository;
 }
 
 export function createAppContext(name: string, env: Env = loadEnv()): AppContext {
@@ -65,6 +73,13 @@ export function createAppContext(name: string, env: Env = loadEnv()): AppContext
   }
 
   const evmSubmitter = env.RELAYER_API_KEY ? new RelayerEvmSubmitter(relayer, env.RELAYER_FUJI_ID) : null;
+  // The keys of TILCAI_API_KEYS belong to the legacy tenant (scope `payments`): Optipagos and optus-agentBE keep working.
+  // SQLite runs this to completion before the call returns, so the keys are in place when the context is.
+  const tenants = new SqliteTenantRegistry(db, systemClock);
+  tenants
+    .syncLegacyKeys(env.TILCAI_API_KEYS)
+    .then((r) => log.info("legacy tenant keys synced", r))
+    .catch((e) => log.error("could not sync TILCAI_API_KEYS with the legacy tenant", { error: e instanceof Error ? e.message : String(e) }));
 
   const crosschain = new CrosschainPaymentService({
     repo: new SqliteCrosschainRepository(db),
@@ -138,5 +153,9 @@ export function createAppContext(name: string, env: Env = loadEnv()): AppContext
       })
     : null;
   if (qrMock && !env.QR_MOCK_CALLBACK_URL) log.warn("QR mock without QR_MOCK_CALLBACK_URL: payments are only visible by polling the QR status");
-  return { env, nets, db, log, relayer, crosschain, vault, role, monitor, resources, forwarder, correlate: sqliteCorrelate(db), qrMock };
+  return {
+    env, nets, db, log, relayer, crosschain, vault, role, monitor, resources, forwarder, correlate: sqliteCorrelate(db), qrMock, tenants,
+    accounts: new SqliteSmartAccountRepository(db, systemClock),
+    delegations: new SqliteDelegationRepository(db),
+  };
 }
