@@ -52,6 +52,10 @@ export class ViemEvmCctp implements EvmCctpPort {
     return this.net.cctpRouter ?? null;
   }
 
+  routerV2Address(): Hex | null {
+    return this.net.cctpRouterV2 ?? null;
+  }
+
   async authorizationUsed(payer: Hex, nonce: Hex): Promise<boolean> {
     return this.pub.readContract({ address: this.net.usdc.address, abi: USDC_3009_ABI, functionName: "authorizationState", args: [payer, nonce] });
   }
@@ -125,7 +129,8 @@ export class ViemEvmCctp implements EvmCctpPort {
     const burns: DepositForBurnEvent[] = [];
     const routerPayments: RouterPaymentEvent[] = [];
     for (const log of rcpt.logs) {
-      if (this.net.cctpRouter && sameHex(log.address, this.net.cctpRouter)) {
+      // Both router versions emit the same CrosschainPayment event.
+      if ([this.net.cctpRouter, this.net.cctpRouterV2].some((router) => router && sameHex(log.address, router))) {
         try {
           const ev = decodeEventLog({ abi: ROUTER_ABI, data: log.data, topics: log.topics });
           if (ev.eventName === "CrosschainPayment") routerPayments.push({ ...ev.args });

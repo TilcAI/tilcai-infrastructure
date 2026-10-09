@@ -1,6 +1,7 @@
 import { canTransition, type PaymentAttemptId, type PaymentState } from "tilcai-core/src/contracts.ts";
 import type { Hex } from "../../shared/hex.ts";
 import type { RouteQuoteId } from "../../shared/ids.ts";
+import type { TenantId } from "../tenants/ports.ts";
 import type { MintTarget } from "./cctp/encoding.ts";
 
 /**
@@ -58,9 +59,12 @@ export function assertSharedTransition(from: PaymentState, to: PaymentState): vo
  * dev_signer    backend signs and broadcasts the burn with a testnet key (pays AVAX)
  * gasless       payer signs EIP-3009 typed data; the OZ Relayer submits it through TilcaiCctpRouter
  * dev_gasless   same as gasless, signed by the testnet developer key
+ * account       the payer is a smart account issued by TilcAI: its owner signs the same EIP-3009
+ *               message with the passkey (ERC-1271) and the relayer submits it through TilcaiCctpRouterV2
  */
-export type PaymentMode = "external" | "dev_signer" | "gasless" | "dev_gasless";
-export const isGaslessMode = (m: PaymentMode): boolean => m === "gasless" || m === "dev_gasless";
+export type PaymentMode = "external" | "dev_signer" | "gasless" | "dev_gasless" | "account";
+export const PAYMENT_MODES = ["external", "dev_signer", "gasless", "dev_gasless", "account"] as const satisfies readonly PaymentMode[];
+export const isGaslessMode = (m: PaymentMode): boolean => m === "gasless" || m === "dev_gasless" || m === "account";
 export type Finality = 1000 | 2000;
 
 export interface Preflight {
@@ -71,6 +75,8 @@ export interface Preflight {
 
 export interface RouteQuote {
   id: RouteQuoteId;
+  /** Who asked for it. Calls made on behalf of another tenant see it as not found. */
+  tenantId: TenantId;
   sourceNetwork: "eip155:43113";
   destinationNetwork: "stellar:testnet";
   sourceDomain: number;
@@ -96,10 +102,14 @@ export interface StoredAuthorization {
   v: number;
   r: Hex;
   s: Hex;
+  /** `account` mode: the account's whole ERC-1271 signature (v, r and s are then zero). */
+  signature?: Hex;
 }
 
 export interface CrosschainPayment {
   id: PaymentAttemptId;
+  /** Owner of the payment; always the owner of its quote. Never changes. */
+  tenantId: TenantId;
   quoteId: RouteQuoteId;
   state: CrosschainState;
   uncertain: boolean;

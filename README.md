@@ -16,9 +16,10 @@ Plan y arquitectura completos: [`documentation/TILCAI_PLAN_ARQUITECTURA_BACKEND_
 | Vault de desembolsos: paga en USDC las compras cobradas fuera de la cadena (`TilcaiVault`, Fuji `0x841dD47Db3124839be1D878DD277e1b07D6932b6`) | **Desplegado** (2026-10-07). El relayer envía `disburse` y paga el gas; el contrato limita cada pago, el total diario y paga cada id una sola vez. 13 tests Foundry + 16 unitarios |
 | Cobro con QR Simple: mock de la API de Vendis («QR Dinámico para Pagos» v1.3) con página «Simular depósito» | **Implementado como mock** (2026-10-09): no hay banco ni dinero. Verificado de extremo a extremo con optipagos-backend: QR → depósito simulado → notificación → desembolso del vault en Fuji |
 | Monitorización: registro de eventos, recursos y alertas; avisos del relayer por webhook; envío firmado a tilcai-web | **Implementado** (2026-10-09). El receptor de avisos del relayer está probado con avisos firmados de prueba; falta apuntar el relayer real a TilcAI |
-| Fase SCA — emisión de cuentas abstractas para agentes y terceros (Stellar y EVM) | **En preparación**: prerrequisitos verificados (`npm run sca:preflight`), contratos base de Soroban compilados, puertos definidos. Hitos M0–M7 en [`TILCAI_FASE_SCA_EMISION_DE_CUENTAS_2026-10-06.md`](../documentation/TILCAI_FASE_SCA_EMISION_DE_CUENTAS_2026-10-06.md) |
+| Fase SCA, EVM — cuentas de contrato con passkey para terceros (`TilcaiAccountFactory`, Fuji `0x55a5b0ed47c5dfb168cfe2b431a56455576d51b8`; `TilcaiCctpRouterV2`, Fuji `0x09483803916e6cb2027741c9287361ad55507a66`) | **Desplegado en testnet y verificado** (2026-10-09, `npm run sca -- verify`): una cuenta emitida por la factory pagó USDC real de Fuji con una firma de passkey (ERC-1271 + ERC-7739). API `/v1/accounts`, claves por tercero con permisos y modo de pago `account`. Contratos **sin auditar: solo testnet**. Falta: delegación a claves de agente (M4) y envío de UserOperations |
+| Fase SCA, Stellar — emisión de cuentas abstractas para agentes y terceros | **En preparación**: prerrequisitos verificados (`npm run sca:preflight`), contratos base de Soroban compilados, puertos definidos. Hitos M0–M7 en [`TILCAI_FASE_SCA_EMISION_DE_CUENTAS_2026-10-06.md`](../documentation/TILCAI_FASE_SCA_EMISION_DE_CUENTAS_2026-10-06.md) |
 | Estructura de módulos de las fases 2–5 (`src/modules/*/ports.ts`) | Interfaces sin implementación |
-| Contratos | EVM: `TilcaiCctpRouter` y `TilcaiVault` desplegados en Fuji (17 tests Foundry). Soroban: cuenta, verificadores y política de límite sobre OpenZeppelin `stellar-accounts` 0.7.2 (compilan, 2 tests; sin desplegar) |
+| Contratos | EVM: `TilcaiCctpRouter`, `TilcaiVault`, `TilcaiAccountFactory` (+ `TilcaiAccount`) y `TilcaiCctpRouterV2` desplegados en Fuji (38 tests Foundry). Soroban: cuenta, verificadores y política de límite sobre OpenZeppelin `stellar-accounts` 0.7.2 (compilan, 2 tests; sin desplegar) |
 
 ## Modos de pago
 
@@ -28,6 +29,7 @@ Plan y arquitectura completos: [`documentation/TILCAI_PLAN_ARQUITECTURA_BACKEND_
 | `dev_gasless` | Clave de desarrollo (testnet) firma EIP-3009 | **Relayer** | **Relayer** |
 | `external` | Wallet del pagador difunde `approve` + burn | Pagador (AVAX) | Relayer |
 | `dev_signer` | Clave de desarrollo difunde el burn | Clave de desarrollo (AVAX) | Relayer |
+| `account` | La passkey del dueño de una cuenta emitida por TilcAI firma el mismo EIP-3009 (ERC-1271) | **Relayer**, por `TilcaiCctpRouterV2` | **Relayer** |
 
 En los modos gasless la firma del pagador compromete el destino CCTP completo (el nonce EIP-3009 es un hash de `paymentId`, importe, dominio, `mintRecipient`, `destinationCaller`, `maxFee`, finalidad y `hookData`). El relayer solo puede enviar exactamente lo firmado.
 
@@ -77,7 +79,15 @@ npm run xpay -- --payment payment_attempt_… --burn 0x…HASH
 
 ### API (v1)
 
-Todas las rutas salvo `/health` exigen `Authorization: Bearer <TILCAI_API_KEYS>` (si la lista está vacía, solo se acepta loopback).
+Todas las rutas salvo `/health` exigen `Authorization: Bearer <clave>`. Cada clave pertenece a un
+tercero (*tenant*) y lleva permisos:
+
+- Las claves de `TILCAI_API_KEYS` son las del operador: permiso `payments` y acceso a lo que es de
+  TilcAI (`/v1/vault`, `/v1/monitor`, `/v1/relayer`). Optipagos y optus-agentBE siguen igual.
+- Las claves emitidas con `npm run tenant -- key` pertenecen a un tercero y solo ven lo suyo:
+  `payments` para cotizar y pagar, `accounts:read` y `accounts:write` para sus cuentas. Nunca
+  alcanzan el vault, el registro de eventos ni el relayer (403).
+- Sin `TILCAI_API_KEYS`, solo loopback entra, como operador con todos los permisos (desarrollo).
 
 | Método | Ruta | Descripción |
 | --- | --- | --- |
@@ -86,10 +96,13 @@ Todas las rutas salvo `/health` exigen `Authorization: Bearer <TILCAI_API_KEYS>`
 | POST | `/v1/crosschain/quotes` | `{sourceNetwork:"eip155:43113", destinationNetwork:"stellar:testnet", amount:"1.25", payTo:"G…"}` |
 | GET | `/v1/crosschain/quotes/:id` | Cotización |
 | POST | `/v1/crosschain/payments` | Cabecera `Idempotency-Key`. `{quoteId, mode:"external"\|"dev_signer", payer?, orderId?}` → pago + `unsignedCalls` |
-| POST | `/v1/crosschain/payments/:id/authorization` | Modo `gasless`: `{signature}` (65 bytes hex) de `authorization.typedData`. TilcAI la verifica contra el pagador, la persiste y pide al relayer que envíe el burn |
+| POST | `/v1/crosschain/payments/:id/authorization` | Modo `gasless`: `{signature}` (65 bytes hex) de `authorization.typedData`. Modo `account`: `{webauthn:{authenticatorData, clientDataJSON, signature}}` (base64url, tal como lo devuelve el navegador) o `{signature}` con la firma ERC-1271 ya armada. TilcAI la verifica contra el pagador, la persiste y pide al relayer que envíe el burn |
 | POST | `/v1/crosschain/payments/:id/burn` | `{txHash}` del burn difundido por la wallet externa (también rescata un pago gasless cuyo hash se perdió) |
 | GET | `/v1/crosschain/payments/:id` | Estado detallado, `paymentState` compartido, enlaces, eventos y recibo |
 | POST | `/v1/crosschain/payments/:id/reconcile` | Ejecuta un paso de conciliación inmediatamente |
+| POST | `/v1/accounts` | Cabecera `Idempotency-Key`. `{network:"eip155:43113", externalRef, owner:{kind:"webauthn-p256", publicKey, credentialId, rpId}}` → cuenta con su dirección definitiva. Permiso `accounts:write` |
+| GET | `/v1/accounts/:id` | La cuenta (`DEPLOYING` → `ACTIVE`), enlaces y eventos. Permiso `accounts:read` |
+| GET | `/v1/accounts` | Las cuentas del tercero; filtros `externalRef`, `network`, `limit` |
 | GET | `/v1/vault` | El vault en la cadena: saldo, límites, pausa, dueño, operador y lo comprometido en pagos en curso |
 | POST | `/v1/vault/disbursements` | Cabecera `Idempotency-Key`. `{to:"0x…", amount:"10.5", reference?:"compra-123"}` → desembolso. El relayer envía `TilcaiVault.disburse` y paga el gas |
 | GET | `/v1/vault/disbursements/:id` | Estado (`REQUESTED` → `SUBMITTED` → `CONFIRMED` \| `FAILED`), hash, enlace y eventos |
@@ -138,6 +151,47 @@ npm run vault -- withdraw --to 0x… --amount 5    # el dueño recupera fondos
 
 La dirección del vault y la clave de la API permiten pagar hasta los límites del contrato:
 `TILCAI_API_KEYS` debe estar definida en cualquier despliegue que tenga `VAULT_FUJI`.
+
+## Cuentas de contrato (fase SCA, EVM)
+
+TilcAI emite y patrocina cuentas para los usuarios de un tercero; **nunca es firmante** de una
+cuenta que emite. El dueño es una passkey que no sale del dispositivo del usuario.
+
+```
+tercero (Optipagos)                TilcAI API + worker                OZ Relayer          Avalanche Fuji
+  │ POST /v1/accounts {clave pública de la passkey}
+  │                          ──▶ dirección = factory.getAddress(clave, salt) → DEPLOYING
+  │ ◀── dirección definitiva      envía factory.createAccount ──────▶ paga el gas ──▶ TilcaiAccount (clon)
+  │                               worker: la dirección tiene código → ACTIVE
+  │ POST /v1/crosschain/payments {mode:"account", payer}
+  │ ◀── authorization.account.challenge
+  │ passkey: navigator.credentials.get({challenge})
+  │ POST …/authorization {webauthn} ─▶ isValidSignature en la cadena ─▶ router v2 ──▶ USDC → CCTP
+```
+
+- **La dirección compromete al dueño.** Sale de la clave pública, el tercero y su `externalRef`:
+  nadie puede desplegar ahí otra cuenta, y pedirla dos veces devuelve la misma. Puede recibir
+  fondos antes de estar desplegada; para firmar necesita estar `ACTIVE`.
+- **Qué firma la passkey.** Nunca el hash de la aplicación a secas: un `TypedDataSign` (ERC-7739)
+  que envuelve el mensaje y nombra la cuenta, así una firma no vale en otra cuenta de la misma
+  passkey. La cuenta exige verificación del usuario (huella o PIN), `webauthn.get` y firma con `s` baja.
+- **Pagos.** La cuenta paga USDC con EIP-3009 y firma `bytes` (`transferWithAuthorization` directo,
+  o `TilcaiCctpRouterV2` para CCTP): quien envía la transacción solo entrega lo firmado.
+- **Cupos.** Cada tercero tiene un cupo diario de cuentas; agotado, `POST /v1/accounts` responde
+  429 `BUDGET` y no guarda nada. Un despliegue rechazado se reintenta y avisa al panel
+  (`account.deploy_delayed`); la cuenta nunca se da por perdida.
+
+```sh
+cd contracts/evm && forge build && cd ../..
+npm run sca -- deploy          # factory y router v2; firma DEV_EVM_PAYER_PRIVATE_KEY
+# ACCOUNT_FACTORY_FUJI=0x… y CCTP_ROUTER_V2_FUJI=0x… en .env
+npm run sca -- status
+npm run sca -- verify          # emite una cuenta de prueba y la hace pagar 0.01 USDC con firma de passkey
+npm run tenant -- create --name Optus
+npm run tenant -- key --tenant tenant_… --label backend --scopes payments,accounts:read,accounts:write
+```
+
+Los contratos no están auditados y la configuración solo admite testnet.
 
 ## QR Simple (mock)
 
@@ -257,11 +311,12 @@ src/
     relayer/         cliente HTTP del OpenZeppelin Relayer (transacciones Stellar, plugin x402)
     principals/ agents/ businesses/ commerce/ identity/ policies/ budgets/
     authorization/ signers/ payments/ receipts/             puertos de las fases 2–5
-    tenants/ accounts/                                      puertos de la fase SCA (terceros, cuentas, delegación)
+    tenants/         terceros: claves con permisos y cupos diarios (CLI `npm run tenant`)
+    accounts/        fase SCA: emisión de cuentas (service), evm/ (firma de passkey, factory), repositorio
     connectors/mcp  connectors/a2a  jobs/
-  apps/              api (Fastify), worker, all-in-one, cli (xpay, relayer:check, sca:preflight, vault)
-contracts/evm        Foundry: TilcaiCctpRouter y TilcaiVault (desplegados en Fuji); cuenta ERC-4337, factory y router v2 (fase SCA)
+  apps/              api (Fastify), worker, all-in-one, cli (xpay, relayer:check, sca:preflight, sca, vault, tenant)
+contracts/evm        Foundry: TilcaiCctpRouter, TilcaiVault, TilcaiAccount + TilcaiAccountFactory y TilcaiCctpRouterV2 (desplegados en Fuji)
 contracts/soroban    Cargo: cuenta, verificadores y política de límite (OpenZeppelin); factory y política propia (fase SCA)
-test/unit            86 tests sin red     test/integration   relayer y e2e reales (se omiten sin credenciales)
+test/unit            160 tests sin red     test/integration   relayer y e2e reales (se omiten sin credenciales)
 deploy/              imágenes Docker de TilcAI y del relayer, compose del stack y manifiestos de Cloud Run
 ```

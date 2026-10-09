@@ -56,6 +56,8 @@ export interface EvmCctpPort {
   inspectBurn(txHash: Hex): Promise<BurnInspection>;
   /** Deployed TilcaiCctpRouter, or null when gasless modes are not available. */
   routerAddress(): Hex | null;
+  /** Deployed TilcaiCctpRouterV2 (payers that are smart accounts), or null. */
+  routerV2Address(): Hex | null;
   /** EIP-3009 `authorizationState`: true once the payer's authorization has been consumed on-chain. */
   authorizationUsed(payer: Hex, nonce: Hex): Promise<boolean>;
   /** Testnet developer key signs the typed data (dev_gasless). */
@@ -93,6 +95,16 @@ export type EvmSubmissionStatus =
   | { state: "pending" }
   | { state: "confirmed"; txHash: Hex }
   | { state: "failed"; reason: string };
+
+/**
+ * The smart accounts TilcAI issued, as the payment rail needs them: who may pay with one and
+ * whether a signature is the account's (ERC-1271, answered by the chain).
+ */
+export interface AccountPayerPort {
+  /** True when `address` is a deployed account issued to `tenantId`. */
+  isActiveAccount(tenantId: string, address: Hex): Promise<boolean>;
+  isValidSignature(account: Hex, hash: Hex, signature: Hex): Promise<boolean>;
+}
 
 /** Sends a transaction from the relayer's own account (the payer never pays gas). */
 export interface EvmTxSubmitter {

@@ -22,7 +22,7 @@ import type {
   UnsignedEvmCall,
 } from "../../src/modules/crosschain/ports.ts";
 import { SubmissionRejected } from "../../src/modules/crosschain/ports.ts";
-import { ROUTER_ABI } from "../../src/modules/crosschain/router.ts";
+import { ROUTER_ABI, ROUTER_V2_ABI } from "../../src/modules/crosschain/router.ts";
 import { SqliteCrosschainRepository } from "../../src/modules/crosschain/repository.ts";
 import { CrosschainPaymentService } from "../../src/modules/crosschain/service.ts";
 import type { NewMonitorEvent } from "../../src/modules/monitor/domain.ts";
@@ -30,6 +30,7 @@ import type { NewMonitorEvent } from "../../src/modules/monitor/domain.ts";
 export const nets = networks(loadEnv({}));
 export const PAYER: Hex = "0x1111111111111111111111111111111111111111";
 export const ROUTER: Hex = "0x297ce6a2787484db4bB18A96a8F28A9881Fc163C";
+export const ROUTER_V2: Hex = "0x2222222222222222222222222222222222222222";
 export const SIGNER = privateKeyToAccount(`0x${"ab".repeat(32)}`);
 export const OTHER_SIGNER = privateKeyToAccount(`0x${"cd".repeat(32)}`);
 export const MERCHANT = Keypair.random().publicKey();
@@ -78,6 +79,10 @@ export class FakeEvm implements EvmCctpPort {
   balance = 10_000_000n;
   burns = new Map<string, BurnInspection>();
   routerAddr: Hex | null = ROUTER;
+  routerV2Addr: Hex | null = null;
+  routerV2Address() {
+    return this.routerV2Addr;
+  }
   authUsed = new Set<string>();
   signer = SIGNER;
   routerAddress() {
@@ -155,19 +160,21 @@ export class FakeEvmSubmitter implements EvmTxSubmitter {
   }
   /** Mines the call: registers the burn inspection under a fresh hash. */
   land(id: string, data: Hex, over: { payer?: Hex } = {}) {
-    const { args } = decodeFunctionData({ abi: ROUTER_ABI, data });
+    const to = this.submits.at(-1)?.to ?? ROUTER;
+    const router = to.toLowerCase() === ROUTER_V2.toLowerCase() ? ROUTER_V2 : ROUTER;
+    const { args } = decodeFunctionData({ abi: router === ROUTER_V2 ? ROUTER_V2_ABI : ROUTER_ABI, data });
     const [paymentId, payer, amount, route] = args as unknown as [Hex, Hex, bigint, any, any];
     const hash = `0x${(0x1000 + this.submits.length).toString(16).padStart(64, "f")}` as Hex;
     this.evm.burns.set(hash, {
       kind: "mined",
       blockNumber: 200n,
       confirmations: 3n,
-      to: ROUTER,
+      to: router,
       burns: [
         {
           burnToken: nets.avalancheFuji.usdc.address,
           amount,
-          depositor: ROUTER,
+          depositor: router,
           mintRecipient: route.mintRecipient,
           destinationDomain: route.destinationDomain,
           destinationTokenMessenger: `0x${"00".repeat(32)}`,
@@ -254,12 +261,21 @@ export function harness() {
   const stellar = new FakeStellar();
   const submitter = new FakeSubmitter(stellar, (m) => bytesToHex(hexToBytes(m).subarray(12, 44)));
   const evmSubmitter = new FakeEvmSubmitter(evm);
+  /** Smart accounts as the payment rail sees them: who is an active account of whom, and which signatures the "chain" accepts. */
+  const accountPayers = { active: new Map<string, string>(), valid: new Set<string>(), checked: [] as Array<{ account: Hex; hash: Hex; signature: Hex }> };
   /** What the service announced for the dashboard, in order. */
   const events: NewMonitorEvent[] = [];
   const svc = new CrosschainPaymentService({
     repo,
     evm,
     evmSubmitter,
+    accounts: {
+      isActiveAccount: async (tenantId, address) => accountPayers.active.get(address.toLowerCase()) === tenantId,
+      isValidSignature: async (account, hash, signature) => {
+        accountPayers.checked.push({ account, hash, signature });
+        return accountPayers.valid.has(signature.toLowerCase());
+      },
+    },
     stellar,
     iris,
     submitters: { relayer: submitter },
@@ -272,7 +288,7 @@ export function harness() {
     options: { quoteTtlSeconds: 600, pollMs: 1000, minConfirmations: 1 },
   });
   /** Makes Iris return a correct attestation for a burn tx. */
-  const attest = (txHash: string, nonce: Hex, over: Partial<Parameters<typeof encodeMessageV2>[0]> = {}, gasless = false) => {
+  const attest = (txHash: string, nonce: Hex, over: Partial<Parameters<typeof encodeMessageV2>[0]> = {}, gasless: boolean | "v2" = false) => {
     const b = evm.lastBurn!;
     const message = encodeMessageV2({
       sourceDomain: 1,
@@ -282,7 +298,7 @@ export function harness() {
       burnToken: nets.avalancheFuji.usdc.address,
       mintRecipient: b.target.mintRecipient,
       amount: b.amount,
-      messageSender: gasless ? ROUTER : PAYER,
+      messageSender: gasless === "v2" ? ROUTER_V2 : gasless ? ROUTER : PAYER,
       maxFee: b.maxFee,
       feeExecuted: 0n,
       hookData: b.target.hookData,
@@ -304,5 +320,5 @@ export function harness() {
     }
     return svc.mustGet(id);
   };
-  return { clock, db, repo, evm, evmSubmitter, iris, stellar, submitter, svc, attest, drive, events };
+  return { clock, db, repo, evm, evmSubmitter, accountPayers, iris, stellar, submitter, svc, attest, drive, events };
 }

@@ -5,14 +5,14 @@ const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 /**
  * Background work of TilcAI, in two loops that never wait for each other:
- *  - reconciliation advances every due crosschain payment and vault payout;
+ *  - reconciliation advances every due crosschain payment, vault payout and account deployment;
  *  - housekeeping feeds the dashboard (events to tilcai-web, resource snapshots) and runs the
  *    QR mock's clock (payment notifications, expirations). A slow dashboard or a caller that
  *    does not answer its callback never delays a payment.
  * Both stop on signal.
  */
 export function startWorker(ctx: AppContext): { stop(): Promise<void> } {
-  const reconcile = loop(ctx, "worker", ctx.env.WORKER_POLL_MS, [() => ctx.crosschain.processDue(), () => ctx.vault?.processDue()]);
+  const reconcile = loop(ctx, "worker", ctx.env.WORKER_POLL_MS, [() => ctx.crosschain.processDue(), () => ctx.vault?.processDue(), () => ctx.accountService?.processDue()]);
 
   let lastSnapshotAt = 0;
   let lastPruneAt = Date.now();

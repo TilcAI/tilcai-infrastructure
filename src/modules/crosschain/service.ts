@@ -1,14 +1,15 @@
 import { createHash } from "node:crypto";
-import { parseSignature, recoverTypedDataAddress } from "viem";
+import { domainSeparator, hashStruct, hashTypedData, parseSignature, recoverTypedDataAddress } from "viem";
 import type { PaymentAttemptId } from "tilcai-core/src/contracts.ts";
 import type { EvmNetwork, StellarNetwork } from "../../config/networks.ts";
 import { atomicToDecimal, decimalToAtomic, maxFeeForBps } from "../../shared/amount.ts";
 import { iso, type Clock } from "../../shared/clock.ts";
 import { DomainError } from "../../shared/errors.ts";
-import { isHex32, type Hex } from "../../shared/hex.ts";
+import { isHex32, ZERO32, type Hex } from "../../shared/hex.ts";
 import { newId, newRouteQuoteId, parseRouteQuoteId } from "../../shared/ids.ts";
 import type { Logger } from "../../shared/log.ts";
 import type { EventSink } from "../monitor/domain.ts";
+import { LEGACY_TENANT_ID, type TenantId } from "../tenants/ports.ts";
 import { isValidStellarRecipient, stellarMintTarget } from "./cctp/encoding.ts";
 import type { IrisPort } from "./cctp/iris.ts";
 import { decodeMessageV2 } from "./cctp/message.ts";
@@ -22,8 +23,9 @@ import {
   type PaymentMode,
   type RouteQuote,
 } from "./domain.ts";
-import { SubmissionRejected, type EvmCctpPort, type EvmTxSubmitter, type MintSubmitter, type StellarCctpPort, type UnsignedEvmCall } from "./ports.ts";
-import { authorizationNonce, authorizationTypedData, encodeRouterCall, paymentIdBytes32, routeOf, type SignedAuthorization } from "./router.ts";
+import { typedDataChallenge, wrapTypedDataSignature, type TypedContents } from "../accounts/evm/passkey.ts";
+import { SubmissionRejected, type AccountPayerPort, type EvmCctpPort, type EvmTxSubmitter, type MintSubmitter, type StellarCctpPort, type UnsignedEvmCall } from "./ports.ts";
+import { authorizationNonce, authorizationTypedData, encodeRouterCall, encodeRouterV2Call, paymentIdBytes32, RECEIVE_AUTHORIZATION_TYPE, routeOf, type SignedAuthorization } from "./router.ts";
 import { ConcurrentUpdateError, type CrosschainRepository } from "./repository.ts";
 import { checkAttestedMessage, checkDepositForBurn, checkRouterPayment } from "./verify.ts";
 
@@ -36,6 +38,8 @@ export interface CrosschainDeps {
   activeSubmitter: string;
   /** Sends the gasless source burn from the relayer's account. Absent → gasless modes disabled. */
   evmSubmitter?: EvmTxSubmitter;
+  /** The smart accounts TilcAI issued. Absent → `account` mode disabled. */
+  accounts?: AccountPayerPort;
   source: EvmNetwork;
   destination: StellarNetwork;
   clock: Clock;
@@ -72,7 +76,8 @@ export class CrosschainPaymentService {
 
   // ── Quotes ────────────────────────────────────────────────────────────────
 
-  async quote(input: { sourceNetwork: string; destinationNetwork: string; amount: string; payTo: string }): Promise<RouteQuote> {
+  /** `tenantId` is who asks. Everything a tenant creates is visible only to that tenant; the default is the legacy tenant. */
+  async quote(input: { sourceNetwork: string; destinationNetwork: string; amount: string; payTo: string; tenantId?: TenantId }): Promise<RouteQuote> {
     const { source, destination } = this.d;
     if (input.sourceNetwork !== source.id || input.destinationNetwork !== destination.id) {
       throw new DomainError("NETWORK_OR_ASSET", `route ${input.sourceNetwork} → ${input.destinationNetwork} not enabled`);
@@ -94,6 +99,7 @@ export class CrosschainPaymentService {
     const now = this.d.clock.now();
     const q: RouteQuote = {
       id: newRouteQuoteId(),
+      tenantId: input.tenantId ?? LEGACY_TENANT_ID,
       sourceNetwork: source.id,
       destinationNetwork: destination.id,
       sourceDomain: source.cctpDomain,
@@ -115,7 +121,8 @@ export class CrosschainPaymentService {
     return q;
   }
 
-  getQuote(id: string): RouteQuote {
+  /** A quote of another tenant is "not found". */
+  getQuote(id: string, tenantId: TenantId = LEGACY_TENANT_ID): RouteQuote {
     let qid;
     try {
       qid = parseRouteQuoteId(id);
@@ -123,7 +130,7 @@ export class CrosschainPaymentService {
       throw new DomainError("INVALID_INPUT", "invalid quote id");
     }
     const q = this.d.repo.getQuote(qid);
-    if (!q) throw new DomainError("NOT_FOUND");
+    if (!q || q.tenantId !== tenantId) throw new DomainError("NOT_FOUND");
     return q;
   }
 
@@ -135,17 +142,23 @@ export class CrosschainPaymentService {
     payer?: string;
     orderId?: string;
     idempotencyKey: string;
+    tenantId?: TenantId;
   }): Promise<{ payment: CrosschainPayment; calls: UnsignedEvmCall[]; authorization?: AuthorizationRequest; replayed: boolean }> {
     if (!/^[A-Za-z0-9_-]{8,128}$/.test(input.idempotencyKey)) throw new DomainError("INVALID_INPUT", "bad idempotency key");
-    if (isGaslessMode(input.mode) && (!this.d.evm.routerAddress() || !this.d.evmSubmitter)) {
+    if (input.mode === "account") {
+      if (!this.d.evm.routerV2Address() || !this.d.evmSubmitter || !this.d.accounts) {
+        throw new DomainError("SERVICE_UNAVAILABLE", "account mode needs CCTP_ROUTER_V2_FUJI, ACCOUNT_FACTORY_FUJI and an EVM relayer");
+      }
+    } else if (isGaslessMode(input.mode) && (!this.d.evm.routerAddress() || !this.d.evmSubmitter)) {
       throw new DomainError("SERVICE_UNAVAILABLE", "gasless modes need CCTP_ROUTER_FUJI and an EVM relayer");
     }
+    const tenantId = input.tenantId ?? LEGACY_TENANT_ID;
     const payer = this.resolvePayer(input.mode, input.payer);
     const requestHash = sha256(
       JSON.stringify(["crosschain-payment-v1", input.quoteId, input.mode, payer?.toLowerCase() ?? null, input.orderId ?? null]),
     );
 
-    const existing = this.d.repo.getByIdempotencyKey(input.idempotencyKey);
+    const existing = this.d.repo.getByIdempotencyKey(input.idempotencyKey, tenantId);
     if (existing) {
       if (existing.requestHash !== requestHash) throw new DomainError("IDEMPOTENCY_CONFLICT");
       const waiting = existing.state === "AWAITING_BURN";
@@ -154,9 +167,13 @@ export class CrosschainPaymentService {
       return { payment: existing, calls, ...(authorization ? { authorization } : {}), replayed: true };
     }
 
-    const q = this.getQuote(input.quoteId);
+    const q = this.getQuote(input.quoteId, tenantId);
     const now = this.d.clock.now();
     if (now.toISOString() >= q.expiresAt) throw new DomainError("QUOTE_EXPIRED");
+    // Only an account TilcAI issued to this tenant, already deployed: an address without code signs nothing.
+    if (input.mode === "account" && !(await this.d.accounts!.isActiveAccount(tenantId, payer!))) {
+      throw new DomainError("NOT_FOUND", "payer is not an active account of this tenant");
+    }
     const account = await this.d.stellar.accountStatus(q.payTo);
     if (!account.exists || !account.trustline || !account.authorized) {
       // Burning toward a recipient without a USDC trustline would leave the mint failing.
@@ -165,6 +182,7 @@ export class CrosschainPaymentService {
 
     const payment: CrosschainPayment = {
       id: newId("paymentAttempt"),
+      tenantId,
       quoteId: q.id,
       state: "AWAITING_BURN",
       uncertain: false,
@@ -198,7 +216,7 @@ export class CrosschainPaymentService {
       this.d.repo.insertPayment(payment, { paymentId: payment.id, from: null, to: "AWAITING_BURN", note: "created", at: iso(now) });
     } catch (e) {
       if (String(e).includes("UNIQUE")) {
-        const again = this.d.repo.getByIdempotencyKey(input.idempotencyKey);
+        const again = this.d.repo.getByIdempotencyKey(input.idempotencyKey, tenantId);
         if (again) return this.createPayment(input); // lost a race on the same key → replay path
         throw new DomainError("DUPLICATE", "quote already has a payment attempt");
       }
@@ -208,11 +226,11 @@ export class CrosschainPaymentService {
 
     if (isGaslessMode(input.mode)) {
       const authorization = this.authorizationRequest(payment);
-      if (input.mode === "gasless") return { payment, calls: [], authorization, replayed: false };
+      if (input.mode !== "dev_gasless") return { payment, calls: [], authorization, replayed: false };
       // dev_gasless: sign with the testnet developer key, then hand the signature to the relayer.
       const signature = await this.d.evm.devSignTypedData(authorization.typedData);
       const sig = parseSignature(signature);
-      const submitted = await this.submitAuthorization(payment.id, { v: Number(sig.v ?? BigInt(27 + (sig.yParity ?? 0))), r: sig.r, s: sig.s });
+      const submitted = await this.submitAuthorization(payment.id, { v: Number(sig.v ?? BigInt(27 + (sig.yParity ?? 0))), r: sig.r, s: sig.s }, tenantId);
       return { payment: submitted, calls: [], authorization, replayed: false };
     }
 
@@ -242,24 +260,60 @@ export class CrosschainPaymentService {
   /** What the payer must sign. Deterministic per payment, so a replayed request returns the same message. */
   authorizationRequest(p: CrosschainPayment): AuthorizationRequest {
     const q = this.quoteOf(p);
-    const router = this.d.evm.routerAddress();
+    const router = this.routerOf(p);
     if (!router || !p.payer) throw new DomainError("SERVICE_UNAVAILABLE", "router not configured");
     const paymentId32 = paymentIdBytes32(p.id);
     const route = routeOf(q.destinationDomain, q.target, q.maxFeeAtomic, q.finality);
-    const nonce = authorizationNonce(paymentId32, q.burnAmountAtomic, route);
+    const nonce = authorizationNonce(paymentId32, q.burnAmountAtomic, route, p.mode === "account" ? 2 : 1);
     const ttl = this.d.options.authorizationTtlSeconds ?? 600;
     const validBefore = BigInt(Math.floor(Date.parse(p.createdAt) / 1000) + ttl);
     const typedData = authorizationTypedData({ ...this.d.source, cctpRouter: router }, { payer: p.payer, amount: q.burnAmountAtomic, nonce, validAfter: 0n, validBefore });
-    return { router, paymentId32, nonce, validAfter: 0n, validBefore, typedData };
+    if (p.mode !== "account") return { router, paymentId32, nonce, validAfter: 0n, validBefore, typedData };
+    const contents: TypedContents = {
+      appDomainSeparator: domainSeparator({ domain: typedData.domain }),
+      contentsType: RECEIVE_AUTHORIZATION_TYPE,
+      contentsHash: hashStruct({ data: typedData.message, primaryType: typedData.primaryType, types: typedData.types }),
+    };
+    // The passkey does not sign the typed data itself but an ERC-7739 wrapper that names the account.
+    return { router, paymentId32, nonce, validAfter: 0n, validBefore, typedData, account: { challenge: typedDataChallenge(p.payer, this.d.source.chainId, contents), contents } };
+  }
+
+  /** The router that pulls this payment's funds: v2 for smart accounts, v1 for wallets. */
+  private routerOf(p: Pick<CrosschainPayment, "mode">): Hex | null {
+    return p.mode === "account" ? this.d.evm.routerV2Address() : this.d.evm.routerAddress();
+  }
+
+  /**
+   * `account` mode: takes the account's signature for the authorization. `signature` is either the
+   * finished ERC-1271 signature or the passkey's own (already ABI-encoded), which is wrapped here.
+   * The chain decides whether it is valid; it is persisted before the relayer sees it.
+   */
+  async submitAccountAuthorization(id: string, sig: { signature: Hex } | { passkeySignature: Hex }, tenantId: TenantId = LEGACY_TENANT_ID): Promise<CrosschainPayment> {
+    let p = this.mustGet(id, tenantId);
+    if (p.mode !== "account") throw new DomainError("INVALID_STATE_TRANSITION", "payment is not paid by a smart account");
+    const req = this.authorizationRequest(p);
+    const signature = "signature" in sig ? sig.signature : wrapTypedDataSignature(sig.passkeySignature, req.account!.contents);
+    if (!/^0x([0-9a-fA-F]{2}){65,4096}$/.test(signature)) throw new DomainError("INVALID_INPUT", "bad signature");
+    if (p.burnAuthorization) {
+      if (p.burnAuthorization.signature?.toLowerCase() === signature.toLowerCase()) return p;
+      throw new DomainError("INVALID_STATE_TRANSITION", "payment already has an authorization");
+    }
+    if (p.state !== "AWAITING_BURN") throw new DomainError("INVALID_STATE_TRANSITION");
+    if (BigInt(Math.floor(this.d.clock.now().getTime() / 1000)) >= req.validBefore) throw new DomainError("EXPIRED", "authorization window closed");
+    if (!(await this.d.accounts!.isValidSignature(p.payer!, hashTypedData(req.typedData), signature))) {
+      throw new DomainError("APPROVAL_INVALID", "signature is not from the account's owner");
+    }
+    p = this.patch(p, { burnAuthorization: { validAfter: "0", validBefore: req.validBefore.toString(), v: 0, r: ZERO32, s: ZERO32, signature } });
+    return this.sendBurnToRelayer(p);
   }
 
   /**
    * Takes the payer's signature, verifies it off-chain and persists it BEFORE the relayer sees it,
    * then asks the relayer to send `payWithAuthorization`. The payer never pays gas.
    */
-  async submitAuthorization(id: string, sig: { v: number; r: Hex; s: Hex }): Promise<CrosschainPayment> {
-    let p = this.mustGet(id);
-    if (!isGaslessMode(p.mode)) throw new DomainError("INVALID_STATE_TRANSITION", "payment is not gasless");
+  async submitAuthorization(id: string, sig: { v: number; r: Hex; s: Hex }, tenantId: TenantId = LEGACY_TENANT_ID): Promise<CrosschainPayment> {
+    let p = this.mustGet(id, tenantId);
+    if (!isGaslessMode(p.mode) || p.mode === "account") throw new DomainError("INVALID_STATE_TRANSITION", "payment is not signed by a wallet");
     if (!/^0x[0-9a-fA-F]{64}$/.test(sig.r) || !/^0x[0-9a-fA-F]{64}$/.test(sig.s) || ![27, 28].includes(sig.v)) throw new DomainError("INVALID_INPUT", "bad signature");
     if (p.burnAuthorization) {
       if (p.burnAuthorization.r === sig.r && p.burnAuthorization.s === sig.s) return p;
@@ -280,11 +334,14 @@ export class CrosschainPaymentService {
     const a = p.burnAuthorization!;
     const route = routeOf(q.destinationDomain, q.target, q.maxFeeAtomic, q.finality);
     const signed: SignedAuthorization = { validAfter: BigInt(a.validAfter), validBefore: BigInt(a.validBefore), v: a.v, r: a.r, s: a.s };
-    const data = encodeRouterCall(paymentIdBytes32(p.id), p.payer!, q.burnAmountAtomic, route, signed);
+    const data =
+      p.mode === "account"
+        ? encodeRouterV2Call(paymentIdBytes32(p.id), p.payer!, q.burnAmountAtomic, route, { validAfter: signed.validAfter, validBefore: signed.validBefore, signature: a.signature! })
+        : encodeRouterCall(paymentIdBytes32(p.id), p.payer!, q.burnAmountAtomic, route, signed);
     // Recorded before the call: a crash leaves evidence that a submission may be in flight.
     let cur = this.patch(p, { burnRequestedAt: iso(this.d.clock.now()) });
     try {
-      const sub = await this.d.evmSubmitter!.submit(this.d.evm.routerAddress()!, data);
+      const sub = await this.d.evmSubmitter!.submit(this.routerOf(p)!, data);
       this.d.log.info("burn submitted via relayer", { paymentId: p.id, submissionId: sub.submissionId });
       return this.patch(cur, { burnSubmissionId: sub.submissionId, lastError: null, nextCheckAt: iso(this.d.clock.now()) });
     } catch (e) {
@@ -317,9 +374,9 @@ export class CrosschainPaymentService {
   }
 
   /** External wallets report the burn tx hash they broadcast. Idempotent for the same hash. */
-  attachBurn(id: string, txHash: string): CrosschainPayment {
+  attachBurn(id: string, txHash: string, tenantId: TenantId = LEGACY_TENANT_ID): CrosschainPayment {
     if (!isHex32(txHash)) throw new DomainError("INVALID_INPUT", "txHash must be 0x + 64 hex");
-    const p = this.mustGet(id);
+    const p = this.mustGet(id, tenantId);
     const hash = txHash.toLowerCase() as Hex;
     if (p.burnTxHash) {
       if (p.burnTxHash.toLowerCase() === hash) return p;
@@ -384,7 +441,7 @@ export class CrosschainPaymentService {
       return this.move(p, "FAILED", "tx is not a single CCTP burn", { failureCode: "BURN_NOT_FOUND_IN_TX", burnBlock: r.blockNumber });
     }
     const gasless = isGaslessMode(p.mode);
-    const router = this.d.evm.routerAddress();
+    const router = this.routerOf(p);
     // Gasless burns are deposited by the router; the payer is proven by its event instead.
     const mismatch = checkDepositForBurn(r.burns[0]!, q, gasless ? router : p.payer);
     if (gasless) {
@@ -406,7 +463,7 @@ export class CrosschainPaymentService {
     const r = await this.d.iris.lookup(q.sourceDomain, p.burnTxHash!);
     if (r.kind !== "complete") return this.reschedule(p, {});
     const decoded = decodeMessageV2(r.message.message);
-    const mismatch = checkAttestedMessage(decoded, q, isGaslessMode(p.mode) ? this.d.evm.routerAddress() : p.payer);
+    const mismatch = checkAttestedMessage(decoded, q, isGaslessMode(p.mode) ? this.routerOf(p) : p.payer);
     if (mismatch.length > 0) {
       // Burn was verified but the attested message disagrees: never mint blindly.
       return this.reschedule(p, { uncertain: true, error: `ATTESTATION_MISMATCH:${mismatch.join(",")}`, backoff: true });
@@ -530,8 +587,8 @@ export class CrosschainPaymentService {
 
   // ── Views ─────────────────────────────────────────────────────────────────
 
-  view(id: string) {
-    const p = this.mustGet(id);
+  view(id: string, tenantId: TenantId = LEGACY_TENANT_ID) {
+    const p = this.mustGet(id, tenantId);
     const q = this.quoteOf(p);
     return {
       payment: p,
@@ -564,9 +621,10 @@ export class CrosschainPaymentService {
     return built.calls;
   }
 
-  mustGet(id: string): CrosschainPayment {
+  /** A payment of another tenant is "not found", the same as one that does not exist. */
+  mustGet(id: string, tenantId: TenantId = LEGACY_TENANT_ID): CrosschainPayment {
     const p = this.d.repo.getPayment(id as PaymentAttemptId);
-    if (!p) throw new DomainError("NOT_FOUND");
+    if (!p || p.tenantId !== tenantId) throw new DomainError("NOT_FOUND");
     return p;
   }
 
@@ -699,4 +757,6 @@ export interface AuthorizationRequest {
   validBefore: bigint;
   /** EIP-712 message for eth_signTypedData_v4 (USDC ReceiveWithAuthorization). */
   typedData: ReturnType<typeof authorizationTypedData>;
+  /** `account` mode: what the owner's passkey signs (the WebAuthn challenge) and how the signature is wrapped. */
+  account?: { challenge: Hex; contents: TypedContents };
 }

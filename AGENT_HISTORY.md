@@ -53,3 +53,86 @@ Incidencias que el usuario debe conocer:
 - Los servicios de pagos y del vault anuncian sus transiciones y rechazos. Migración 4. Dependencia nueva: `qrcode-generator` 2.0.4.
 - `deploy/`: variables nuevas y la notificación `tilcai-monitor` del relayer, sin probar en contenedor.
 - Pruebas: 86 unitarias (antes 41) y `npm run typecheck` en verde. Verificado en vivo con una instancia en otro puerto contra el relayer y el vault de Fuji.
+
+## 2026-10-09T07:57:54Z · SaulChoque · Claude Code (claude-opus-5-5)
+
+- **Sesión:** https://claude.ai/code/session_018g3RyDatWoLTxJc1Ef3L4w
+- **Rama:** `feat/sca-evm-cuentas`
+- **Repositorios:** `tilcai-infrastructure`, `tilcai-web`, `documentation` (TilcAI) y `optipagos-backend`, `optipagos-frontend` (Optus)
+
+### Prompt
+
+> Implementa el uso de cuentas SCA de avalanche para optipagos y asi mismo implementa en la db y el backend de optipagos direfencia entre tesnet y mainnet (el numero de demo (testnet) es el con el id '1044392765419850', y el de produccion (mainnet) es el con el id '964536136746615') realiza pruebas, corrige errores y crea una nueva rama y una pr
+
+### Salida
+
+Resumen (la respuesta completa pasa de 60 líneas). Este prompt y el siguiente (08:00:23Z, «las cuentas sca provienen de tilcai…») se atendieron como un solo trabajo. Cambió tres repositorios de TilcAI y dos de Optus (`optipagos-backend` y `optipagos-frontend`, fuera de esta organización). Todo quedó en ramas nuevas con su PR; nada se fusionó en `main`.
+
+- **TilcAI emite las cuentas** ([tilcai-infrastructure#24](https://github.com/TilcAI/tilcai-infrastructure/pull/24)): contratos `TilcaiAccount` (dueña = passkey P-256), `TilcaiAccountFactory` y `TilcaiCctpRouterV2`, desplegados en Fuji; API `POST/GET /v1/accounts`; cada clave Bearer es un tercero con permisos; pagos crosschain en modo `account`.
+- **Optipagos, entornos** ([optipagos-backend#1](https://github.com/Optus-development-team/optipagos-backend/pull/1)): el número de la demo (`1044392765419850`) opera en Avalanche Fuji y el de producción (`964536136746615`) en Avalanche C-Chain. Migración `0005` y backend con billeteras, sesiones, mensajes y enlaces por entorno. Mainnet queda apagado por defecto (`MAINNET_ENABLED`).
+- **Optipagos, billeteras de contrato** (misma PR y [optipagos-frontend#4](https://github.com/Optus-development-team/optipagos-frontend/pull/4)): con `WALLET_CUSTODY=TILCAI_SCA` la billetera es una cuenta emitida por TilcAI; la huella sobre el reto (que es el propio envío) es la firma que comprueba la cadena. Las billeteras existentes siguen siendo de clave propia.
+- **Pruebas en Fuji con instancias propias** (TilcAI en `:8799`, Optipagos en `:3299`, base local nueva, WhatsApp en modo consola): E2E completo con cuentas de contrato (crear, recibir, enviar, cobrar, CCTP a Stellar en modo `account`, devolución de fondos), el mismo E2E con clave propia, aislamiento de los dos entornos, y la página de firma en Chromium con autenticador virtual para los dos tipos de billetera. Todo en verde; los fondos de prueba se devolvieron.
+
+Lo que no se hizo o no se probó:
+
+- Mainnet no se probó con dinero real ni se encendió; el envío por los dos números reales de WhatsApp tampoco (las pruebas usan el canal de desarrollo).
+- Delegación a claves de agente (M5), recuperación de la cuenta y cuentas en Stellar siguen pendientes. Los contratos no están auditados: las cuentas de contrato solo existen en testnet.
+- No se tocó ningún contenedor en uso ni se reconstruyó ninguna imagen: para activar lo nuevo hacen falta las variables indicadas en cada PR.
+- La autenticación por tercero y la API de cuentas correspondían a la issue #9 (OmarQV); se implementaron porque Optipagos las necesitaba y quedan para su revisión.
+
+**En este repositorio.** Rama `feat/sca-evm-cuentas`, [PR #24](https://github.com/TilcAI/tilcai-infrastructure/pull/24). Incluye la capa de datos de la PR #23 (su migración pasa a ser la 5).
+
+- `contracts/evm/src/`: `TilcaiAccount.sol`, `TilcaiAccountFactory.sol`, `TilcaiCctpRouterV2.sol` y sus pruebas (38 de Foundry, 21 nuevas). Factory en Fuji `0x55a5b0ed47c5dfb168cfe2b431a56455576d51b8`, router v2 `0x09483803916e6cb2027741c9287361ad55507a66`.
+- `src/modules/accounts/`: `service.ts` (emisión y conciliación `DEPLOYING → ACTIVE`), `evm/passkey.ts` (reto ERC-7739 y firma WebAuthn como las lee el contrato) y `evm/provider.ts` (factory y `isValidSignature`).
+- `src/apps/api/`: `accounts-routes.ts` y autenticación por tercero con permisos en `server.ts`; el vault, el monitor y el relayer quedan para las claves del operador.
+- `src/modules/crosschain/`: modo `account` por el router v2.
+- `src/apps/cli/sca.ts` (`npm run sca -- status | deploy | verify`), eventos `account.transition` y `account.deploy_delayed`, variables `ACCOUNT_FACTORY_FUJI` y `CCTP_ROUTER_V2_FUJI` (también en `deploy/`).
+- Pruebas: 160 unitarias (12 nuevas) y `npm run sca -- verify` en Fuji, donde una cuenta pagó USDC real con firma de passkey.
+
+## 2026-10-09T08:00:23Z · SaulChoque · Claude Code (claude-opus-5-5)
+
+- **Sesión:** https://claude.ai/code/session_018g3RyDatWoLTxJc1Ef3L4w
+- **Rama:** `feat/sca-evm-cuentas`
+- **Repositorios:** `tilcai-infrastructure`, `tilcai-web`, `documentation` (TilcAI) y `optipagos-backend`, `optipagos-frontend` (Optus)
+
+### Prompt
+
+> Las cuentas sca provienen de tilcai como esta previsto, si existen errores o faltan implementar cosas realiza las modificaciones que necesites en tilcai en una nueva rama (no toques el docker de tilcai)
+
+### Salida
+
+Se atendió junto con el prompt de las 07:57:54Z: ver esa entrada para el resumen completo. Confirma que las cuentas las emite TilcAI, y autoriza los cambios en TilcAI en una rama nueva; el contenedor `tilcai` en uso no se tocó (las pruebas corrieron en una instancia aparte, en `:8799`, con su propia base).
+
+**En este repositorio.** Sin cambios adicionales: lo de este repositorio está descrito en la entrada de las 07:57:54Z.
+
+## 2026-10-09T12:04:49Z · SaulChoque · Claude Code (claude-opus-5-5)
+
+- **Sesión:** https://claude.ai/code/session_018g3RyDatWoLTxJc1Ef3L4w
+- **Rama:** `feat/sca-evm-cuentas`
+- **Repositorios:** `tilcai-infrastructure`, `tilcai-web`, `documentation` (TilcAI) y `optipagos-backend`, `optipagos-frontend` (Optus)
+
+### Prompt
+
+> Continua
+
+### Salida
+
+Reanuda el trabajo de los prompts de las 07:57:54Z y 08:00:23Z, que se había detenido por el límite de uso. No es un pedido nuevo: el resultado está en la entrada de las 07:57:54Z.
+
+**En este repositorio.** Sin cambios adicionales: lo de este repositorio está descrito en la entrada de las 07:57:54Z.
+
+## 2026-10-09T12:05:05Z · SaulChoque · Claude Code (claude-opus-5-5)
+
+- **Sesión:** https://claude.ai/code/session_018g3RyDatWoLTxJc1Ef3L4w
+- **Rama:** `feat/sca-evm-cuentas`
+- **Repositorios:** `tilcai-infrastructure`, `tilcai-web`, `documentation` (TilcAI) y `optipagos-backend`, `optipagos-frontend` (Optus)
+
+### Prompt
+
+> Continua
+
+### Salida
+
+Reanuda el trabajo de los prompts de las 07:57:54Z y 08:00:23Z, que se había detenido por el límite de uso. No es un pedido nuevo: el resultado está en la entrada de las 07:57:54Z.
+
+**En este repositorio.** Sin cambios adicionales: lo de este repositorio está descrito en la entrada de las 07:57:54Z.

@@ -37,6 +37,10 @@ spec:
               value: "0x297ce6a2787484db4bB18A96a8F28A9881Fc163C"
             - name: VAULT_FUJI
               value: "0x841dD47Db3124839be1D878DD277e1b07D6932b6"
+            - name: ACCOUNT_FACTORY_FUJI
+              value: "0x55a5b0ed47c5dfb168cfe2b431a56455576d51b8"
+            - name: CCTP_ROUTER_V2_FUJI
+              value: "0x09483803916e6cb2027741c9287361ad55507a66"
             - name: LITESTREAM_REPLICA_URL
               value: gcs://BUCKET/tilcai
             - name: LOG_LEVEL
