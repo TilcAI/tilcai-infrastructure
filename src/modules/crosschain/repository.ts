@@ -2,6 +2,7 @@ import type { DatabaseSync } from "node:sqlite";
 import { tx } from "../../db/sqlite.ts";
 import type { Hex } from "../../shared/hex.ts";
 import type { RouteQuoteId } from "../../shared/ids.ts";
+import { LEGACY_TENANT_ID, type TenantId } from "../tenants/ports.ts";
 import type { PaymentAttemptId } from "tilcai-core/src/contracts.ts";
 import type { CrosschainPayment, CrosschainState, PaymentEvent, RouteQuote } from "./domain.ts";
 
@@ -16,7 +17,8 @@ export interface CrosschainRepository {
   getQuote(id: RouteQuoteId): RouteQuote | undefined;
   insertPayment(p: CrosschainPayment, ev: PaymentEvent): void;
   getPayment(id: PaymentAttemptId): CrosschainPayment | undefined;
-  getByIdempotencyKey(key: string): CrosschainPayment | undefined;
+  /** Idempotency keys belong to a tenant: two tenants may use the same key without meeting. Defaults to the legacy tenant. */
+  getByIdempotencyKey(key: string, tenantId?: TenantId): CrosschainPayment | undefined;
   findByBurnTx(sourceNetwork: string, hash: Hex): CrosschainPayment | undefined;
   /** Optimistic update: fails if `expectedVersion` is stale. Appends the event atomically. */
   update(p: CrosschainPayment, expectedVersion: number, ev?: PaymentEvent): CrosschainPayment;
@@ -25,6 +27,14 @@ export interface CrosschainRepository {
   insertReceipt(r: { id: string; paymentId: PaymentAttemptId; orderId: string | null; evidence: unknown; createdAt: string }): void;
   getReceipt(paymentId: PaymentAttemptId): { id: string; evidence: unknown; createdAt: string } | undefined;
 }
+
+/**
+ * The column `idempotency_key` is globally unique (phase 1). To keep keys per tenant without rebuilding the table,
+ * the legacy tenant's keys are stored as sent (so every replay from before tenants still works) and the others as
+ * `<tenantId>:<key>`. Clients cannot forge that form: a key may only contain letters, digits, "_" and "-".
+ */
+const scopeKey = (tenantId: TenantId, key: string): string => (tenantId === LEGACY_TENANT_ID ? key : `${tenantId}:${key}`);
+const unscopeKey = (tenantId: TenantId, stored: string): string => (stored.startsWith(`${tenantId}:`) ? stored.slice(tenantId.length + 1) : stored);
 
 const big = (v: unknown): bigint | null => (v === null || v === undefined ? null : BigInt(v as string));
 const str = (v: bigint | null): string | null => (v === null ? null : v.toString());
@@ -36,13 +46,13 @@ export class SqliteCrosschainRepository implements CrosschainRepository {
   insertQuote(q: RouteQuote): void {
     this.db
       .prepare(
-        `INSERT INTO route_quotes (id, source_network, destination_network, source_domain, destination_domain, pay_to,
+        `INSERT INTO route_quotes (id, tenant_id, source_network, destination_network, source_domain, destination_domain, pay_to,
           destination_amount_atomic, burn_amount_atomic, max_fee_atomic, fee_bps_hundredths, finality, burn_token,
           mint_recipient, destination_caller, hook_data, preflight_json, created_at, expires_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       )
       .run(
-        q.id, q.sourceNetwork, q.destinationNetwork, q.sourceDomain, q.destinationDomain, q.payTo,
+        q.id, q.tenantId, q.sourceNetwork, q.destinationNetwork, q.sourceDomain, q.destinationDomain, q.payTo,
         q.destinationAmountAtomic.toString(), q.burnAmountAtomic.toString(), q.maxFeeAtomic.toString(),
         q.feeBpsHundredths.toString(), q.finality, q.burnToken, q.target.mintRecipient, q.target.destinationCaller,
         q.target.hookData, json(q.preflight), q.createdAt, q.expiresAt,
@@ -54,6 +64,7 @@ export class SqliteCrosschainRepository implements CrosschainRepository {
     if (!r) return undefined;
     return {
       id: r.id,
+      tenantId: r.tenant_id,
       sourceNetwork: r.source_network,
       destinationNetwork: r.destination_network,
       sourceDomain: r.source_domain,
@@ -74,16 +85,18 @@ export class SqliteCrosschainRepository implements CrosschainRepository {
 
   insertPayment(p: CrosschainPayment, ev: PaymentEvent): void {
     tx(this.db, () => {
-      this.db
+      const res = this.db
         .prepare(
-          `INSERT INTO crosschain_payments (id, quote_id, state, uncertain, mode, payer, order_id, idempotency_key,
+          `INSERT INTO crosschain_payments (id, quote_id, tenant_id, state, uncertain, mode, payer, order_id, idempotency_key,
             request_hash, source_network, attempts, next_check_at, created_at, updated_at, version)
-           SELECT ?,?,?,?,?,?,?,?,?, q.source_network, 0, ?, ?, ?, 0 FROM route_quotes q WHERE q.id = ?`,
+           SELECT ?,?,?,?,?,?,?,?,?,?, q.source_network, 0, ?, ?, ?, 0 FROM route_quotes q WHERE q.id = ? AND q.tenant_id = ?`,
         )
         .run(
-          p.id, p.quoteId, p.state, p.uncertain ? 1 : 0, p.mode, p.payer, p.orderId, p.idempotencyKey, p.requestHash,
-          p.nextCheckAt, p.createdAt, p.updatedAt, p.quoteId,
+          p.id, p.quoteId, p.tenantId, p.state, p.uncertain ? 1 : 0, p.mode, p.payer, p.orderId, scopeKey(p.tenantId, p.idempotencyKey),
+          p.requestHash, p.nextCheckAt, p.createdAt, p.updatedAt, p.quoteId, p.tenantId,
         );
+      // The payment is inserted FROM its quote: a quote of another tenant matches nothing, and nothing is stored.
+      if (Number(res.changes) !== 1) throw new Error("quote not found for this tenant");
       this.appendEvent(ev);
     });
   }
@@ -93,8 +106,8 @@ export class SqliteCrosschainRepository implements CrosschainRepository {
     return r ? this.toPayment(r as Record<string, any>) : undefined;
   }
 
-  getByIdempotencyKey(key: string): CrosschainPayment | undefined {
-    const r = this.db.prepare("SELECT * FROM crosschain_payments WHERE idempotency_key = ?").get(key);
+  getByIdempotencyKey(key: string, tenantId: TenantId = LEGACY_TENANT_ID): CrosschainPayment | undefined {
+    const r = this.db.prepare("SELECT * FROM crosschain_payments WHERE idempotency_key = ? AND tenant_id = ?").get(scopeKey(tenantId, key), tenantId);
     return r ? this.toPayment(r as Record<string, any>) : undefined;
   }
 
@@ -172,13 +185,14 @@ export class SqliteCrosschainRepository implements CrosschainRepository {
   private toPayment(r: Record<string, any>): CrosschainPayment {
     return {
       id: r.id,
+      tenantId: r.tenant_id,
       quoteId: r.quote_id,
       state: r.state as CrosschainState,
       uncertain: r.uncertain === 1,
       mode: r.mode,
       payer: r.payer,
       orderId: r.order_id,
-      idempotencyKey: r.idempotency_key,
+      idempotencyKey: unscopeKey(r.tenant_id, r.idempotency_key),
       requestHash: r.request_hash,
       burnAuthorization: r.burn_auth_json ? JSON.parse(r.burn_auth_json) : null,
       burnSubmissionId: r.burn_submission_id,

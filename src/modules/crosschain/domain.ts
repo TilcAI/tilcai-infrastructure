@@ -1,6 +1,7 @@
 import { canTransition, type PaymentAttemptId, type PaymentState } from "tilcai-core/src/contracts.ts";
 import type { Hex } from "../../shared/hex.ts";
 import type { RouteQuoteId } from "../../shared/ids.ts";
+import type { TenantId } from "../tenants/ports.ts";
 import type { MintTarget } from "./cctp/encoding.ts";
 
 /**
@@ -71,6 +72,8 @@ export interface Preflight {
 
 export interface RouteQuote {
   id: RouteQuoteId;
+  /** Who asked for it. Calls made on behalf of another tenant see it as not found. */
+  tenantId: TenantId;
   sourceNetwork: "eip155:43113";
   destinationNetwork: "stellar:testnet";
   sourceDomain: number;
@@ -100,6 +103,8 @@ export interface StoredAuthorization {
 
 export interface CrosschainPayment {
   id: PaymentAttemptId;
+  /** Owner of the payment; always the owner of its quote. Never changes. */
+  tenantId: TenantId;
   quoteId: RouteQuoteId;
   state: CrosschainState;
   uncertain: boolean;
