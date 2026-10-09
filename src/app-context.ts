@@ -179,6 +179,7 @@ export function createAppContext(name: string, env: Env = loadEnv()): AppContext
     relayerIds: [env.RELAYER_FUJI_ID, env.RELAYER_STELLAR_ID],
     vault,
     usdcDecimals: nets.avalancheFuji.usdc.decimals,
+    otherVaults: stellarVault ? [{ network: nets.stellarTestnet.id, service: stellarVault, usdcDecimals: nets.stellarTestnet.usdc.decimals }] : [],
     monitor: { head: () => monitorRepo.head(), sinks: () => monitorRepo.sinks() },
     now: systemClock.now,
   });

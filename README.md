@@ -17,7 +17,7 @@ Plan y arquitectura completos: [`documentation/TILCAI_PLAN_ARQUITECTURA_BACKEND_
 | Cobro con QR Simple: mock de la API de Vendis («QR Dinámico para Pagos» v1.3) con página «Simular depósito» | **Implementado como mock** (2026-10-09): no hay banco ni dinero. Verificado de extremo a extremo con optipagos-backend: QR → depósito simulado → notificación → desembolso del vault en Fuji |
 | Monitorización: registro de eventos, recursos y alertas; avisos del relayer por webhook; envío firmado a tilcai-web | **Implementado** (2026-10-09). El receptor de avisos del relayer está probado con avisos firmados de prueba; falta apuntar el relayer real a TilcAI |
 | Fase SCA, EVM — cuentas de contrato con passkey para terceros (`TilcaiAccountFactory`, Fuji `0x55a5b0ed47c5dfb168cfe2b431a56455576d51b8`; `TilcaiCctpRouterV2`, Fuji `0x09483803916e6cb2027741c9287361ad55507a66`) | **Desplegado en testnet y verificado** (2026-10-09, `npm run sca -- verify`): una cuenta emitida por la factory pagó USDC real de Fuji con una firma de passkey (ERC-1271 + ERC-7739). API `/v1/accounts`, claves por tercero con permisos y modo de pago `account`. Contratos **sin auditar: solo testnet**. Falta: delegación a claves de agente (M4) y envío de UserOperations |
-| Fase SCA, Stellar — emisión de cuentas (`tilcai_account_factory`) y vault de USDC (`tilcai_vault`) | **Desplegado en testnet y verificado** (2026-10-09, `npm run stellar -- verify-account` y `verify-vault`): el relayer despliega la cuenta del tercero por la factory sin que el dueño tenga XLM, y desembolsa USDC desde el vault igual que en Avalanche. API `/v1/accounts` con `network:"stellar:testnet"` y `/v1/vault?network=stellar:testnet`. 17 tests de Soroban + 14 unitarios. **Sin auditar: solo testnet.** Falta: delegación a claves de agente (M3) y que el tablero muestre el vault de Stellar |
+| Fase SCA, Stellar — emisión de cuentas (`tilcai_account_factory`) y vault de USDC (`tilcai_vault`) | **Desplegado en testnet y verificado** (2026-10-09, `npm run stellar -- verify-account` y `verify-vault`): el relayer despliega la cuenta del tercero por la factory sin que el dueño tenga XLM, y desembolsa USDC desde el vault igual que en Avalanche. API `/v1/accounts` con `network:"stellar:testnet"` y `/v1/vault?network=stellar:testnet`. 17 tests de Soroban + 14 unitarios. **Sin auditar: solo testnet.** Falta: delegación a claves de agente (M3) |
 | Estructura de módulos de las fases 2–5 (`src/modules/*/ports.ts`) | Interfaces sin implementación |
 | Contratos | EVM: `TilcaiCctpRouter`, `TilcaiVault`, `TilcaiAccountFactory` (+ `TilcaiAccount`) y `TilcaiCctpRouterV2` desplegados en Fuji (38 tests Foundry). Soroban: cuenta, factory, verificadores y política de límite sobre OpenZeppelin `stellar-accounts` 0.7.2, y `tilcai_vault` (19 tests; desplegados en Stellar Testnet salvo la política) |
 
@@ -294,7 +294,8 @@ foto de recursos cada 30 s ────┘        └── GET /v1/monitor/even
   `system.*`, `resources.snapshot`, `alert.*`, `api.request_rejected`,
   `crosschain.payment.*`, `vault.disbursement.*`, `relayer.*` y `qr.*`.
 - **Recursos**: memoria, CPU y retraso del event loop del proceso; tamaño de la base y filas por
-  estado de cada cola; saldo de gas y estado de cada relayer; saldo, límites y pausa del vault.
+  estado de cada cola; saldo de gas y estado de cada relayer; saldo, límites y pausa de cada vault
+  (Fuji y Stellar; las alertas del segundo llevan la red: `VAULT_EMPTY:stellar:testnet`).
 - **Alertas**: lo que está mal ahora (`VAULT_EMPTY`, `VAULT_LOW`, `RELAYER_DOWN`,
   `RELAYER_LOW_GAS:<id>`, `MONITOR_SINK_FAILING:web`…). Un evento cuando aparece y otro cuando
   se resuelve, no uno por cada foto.

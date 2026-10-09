@@ -21,6 +21,27 @@ export interface RelayerResource {
   error?: string;
 }
 
+export interface VaultView {
+  address: string;
+  paused: boolean;
+  operatorIsRelayer: boolean;
+  balance: string;
+  pending: string;
+  maxPerDisbursement: string;
+  dailyLimit: string;
+  availableToday: string;
+}
+
+/** One network's vault in a snapshot: what it holds, or why it could not be read. */
+export interface VaultEntry {
+  network: string;
+  vault: VaultView | null;
+  error?: string;
+}
+
+/** The network of the primary vault: its alerts keep the plain codes (`VAULT_EMPTY`). */
+export const PRIMARY_VAULT_NETWORK = "eip155:43113";
+
 export interface ResourceSnapshot {
   takenAt: string;
   process: {
@@ -48,17 +69,11 @@ export interface ResourceSnapshot {
     monitorEvents: number;
   };
   relayer: { up: boolean; authenticated: boolean; relayers: RelayerResource[] };
-  vault: {
-    address: string;
-    paused: boolean;
-    operatorIsRelayer: boolean;
-    balance: string;
-    pending: string;
-    maxPerDisbursement: string;
-    dailyLimit: string;
-    availableToday: string;
-  } | null;
+  /** The primary vault (Avalanche Fuji's). Kept as it was so a dashboard that predates `vaults` still works. */
+  vault: VaultView | null;
   vaultError?: string;
+  /** Every configured vault, the primary first. Absent when no vault is configured. */
+  vaults?: VaultEntry[];
   monitor: { head: number; sinks: Array<SinkState & { lag: number }> };
   alerts: Array<Omit<MonitorAlert, "since">>;
 }
@@ -72,6 +87,8 @@ export interface ResourceDeps {
   relayerIds: string[];
   vault: VaultDisbursementService | null;
   usdcDecimals: number;
+  /** Vaults of other networks (Stellar's). Their alerts carry the network as target: `VAULT_EMPTY:stellar:testnet`. */
+  otherVaults?: Array<{ network: string; service: VaultDisbursementService; usdcDecimals: number }>;
   monitor: { head(): number; sinks(): SinkState[] };
   now(): Date;
 }
@@ -97,7 +114,7 @@ export class ResourceMonitor {
   }
 
   async snapshot(): Promise<ResourceSnapshot> {
-    const [relayer, vault] = await Promise.all([this.relayer(), this.vault()]);
+    const [relayer, vault, others] = await Promise.all([this.relayer(), this.vault(), this.otherVaults()]);
     const database = this.database();
     const head = this.d.monitor.head();
     const sinks = this.d.monitor.sinks().map((s) => ({ ...s, lag: Math.max(head - s.lastSeq, 0) }));
@@ -109,6 +126,9 @@ export class ResourceMonitor {
       relayer,
       vault: vault.status,
       ...(vault.error ? { vaultError: vault.error } : {}),
+      ...(this.d.vault || others.length > 0
+        ? { vaults: [...(this.d.vault ? [{ network: PRIMARY_VAULT_NETWORK, vault: vault.status, ...(vault.error ? { error: vault.error } : {}) }] : []), ...others] }
+        : {}),
       monitor: { head, sinks },
       alerts: [],
     };
@@ -197,24 +217,37 @@ export class ResourceMonitor {
 
   private async vault(): Promise<{ status: ResourceSnapshot["vault"]; error?: string }> {
     if (!this.d.vault) return { status: null };
-    try {
-      const s = await withTimeout(this.d.vault.status());
-      const usdc = (atomic: bigint) => atomicToDecimal(atomic, this.d.usdcDecimals);
-      return {
-        status: {
-          address: s.address,
-          paused: s.paused,
-          operatorIsRelayer: s.operatorIsRelayer,
-          balance: usdc(s.balanceAtomic),
-          pending: usdc(s.pendingAtomic),
-          maxPerDisbursement: usdc(s.maxPerDisbursementAtomic),
-          dailyLimit: usdc(s.dailyLimitAtomic),
-          availableToday: usdc(s.availableTodayAtomic),
-        },
-      };
-    } catch (e) {
-      return { status: null, error: errText(e) };
-    }
+    return readVault(this.d.vault, this.d.usdcDecimals);
+  }
+
+  private otherVaults(): Promise<VaultEntry[]> {
+    return Promise.all(
+      (this.d.otherVaults ?? []).map(async (v) => {
+        const r = await readVault(v.service, v.usdcDecimals);
+        return { network: v.network, vault: r.status, ...(r.error ? { error: r.error } : {}) };
+      }),
+    );
+  }
+}
+
+async function readVault(service: VaultDisbursementService, decimals: number): Promise<{ status: VaultView | null; error?: string }> {
+  try {
+    const s = await withTimeout(service.status());
+    const usdc = (atomic: bigint) => atomicToDecimal(atomic, decimals);
+    return {
+      status: {
+        address: s.address,
+        paused: s.paused,
+        operatorIsRelayer: s.operatorIsRelayer,
+        balance: usdc(s.balanceAtomic),
+        pending: usdc(s.pendingAtomic),
+        maxPerDisbursement: usdc(s.maxPerDisbursementAtomic),
+        dailyLimit: usdc(s.dailyLimitAtomic),
+        availableToday: usdc(s.availableTodayAtomic),
+      },
+    };
+  } catch (e) {
+    return { status: null, error: errText(e) };
   }
 }
 
@@ -236,15 +269,14 @@ export function alertsOf(s: ResourceSnapshot, vaultConfigured: boolean): Array<O
   }
 
   if (vaultConfigured && !s.vault) add("VAULT_UNREADABLE", "warning", `No se pudo leer el vault: ${s.vaultError ?? "sin respuesta"}`);
-  if (s.vault) {
-    const balance = Number(s.vault.balance);
-    const pending = Number(s.vault.pending);
-    if (s.vault.paused) add("VAULT_PAUSED", "error", "El vault está en pausa: no paga desembolsos.");
-    if (!s.vault.operatorIsRelayer) add("VAULT_OPERATOR_MISMATCH", "error", "El operador del vault no es la cuenta del relayer: los desembolsos revertirían.");
-    if (balance === 0) add("VAULT_EMPTY", "error", `El vault ${s.vault.address} no tiene USDC: ningún desembolso puede pagarse.`);
-    else if (balance < pending) add("VAULT_INSUFFICIENT", "error", `El vault tiene ${s.vault.balance} USDC y debe ${s.vault.pending} USDC en desembolsos en curso.`);
-    else if (balance < Number(s.vault.maxPerDisbursement)) add("VAULT_LOW", "warning", `Al vault le quedan ${s.vault.balance} USDC, menos que su tope por desembolso (${s.vault.maxPerDisbursement}).`);
-    if (Number(s.vault.availableToday) === 0) add("VAULT_DAILY_LIMIT_REACHED", "warning", "El vault agotó su límite diario.");
+  if (s.vault) vaultAlerts(s.vault, "", "El vault", add);
+  // Vaults of other networks: the same alerts, told apart by the network in the code.
+  for (const e of s.vaults ?? []) {
+    if (e.network === PRIMARY_VAULT_NETWORK) continue;
+    const suffix = `:${e.network}`;
+    const name = `El vault de ${e.network}`;
+    if (!e.vault) add(`VAULT_UNREADABLE${suffix}`, "warning", `No se pudo leer el ${name.replace(/^El /, "")}: ${e.error ?? "sin respuesta"}`);
+    else vaultAlerts(e.vault, suffix, name, add);
   }
 
   for (const sink of s.monitor.sinks) {
@@ -253,6 +285,18 @@ export function alertsOf(s: ResourceSnapshot, vaultConfigured: boolean): Array<O
   if (s.database.crosschainPayments.UNCERTAIN) add("PAYMENTS_UNCERTAIN", "warning", `${s.database.crosschainPayments.UNCERTAIN} pago(s) crosschain en estado incierto.`);
   if (s.process.eventLoopDelayMs.p99 > 500) add("EVENT_LOOP_SLOW", "warning", `El proceso responde lento (p99 del event loop: ${s.process.eventLoopDelayMs.p99} ms).`);
   return alerts;
+}
+
+function vaultAlerts(v: VaultView, suffix: string, name: string, add: (code: string, severity: "warning" | "error", message: string) => void): void {
+  const balance = Number(v.balance);
+  const pending = Number(v.pending);
+  const noun = name.replace(/^El /, ""); // "vault" · "vault de stellar:testnet"
+  if (v.paused) add(`VAULT_PAUSED${suffix}`, "error", `${name} está en pausa: no paga desembolsos.`);
+  if (!v.operatorIsRelayer) add(`VAULT_OPERATOR_MISMATCH${suffix}`, "error", `El operador del ${noun} no es la cuenta del relayer: los desembolsos revertirían.`);
+  if (balance === 0) add(`VAULT_EMPTY${suffix}`, "error", `${name} ${v.address} no tiene USDC: ningún desembolso puede pagarse.`);
+  else if (balance < pending) add(`VAULT_INSUFFICIENT${suffix}`, "error", `${name} tiene ${v.balance} USDC y debe ${v.pending} USDC en desembolsos en curso.`);
+  else if (balance < Number(v.maxPerDisbursement)) add(`VAULT_LOW${suffix}`, "warning", `Al ${noun} le quedan ${v.balance} USDC, menos que su tope por desembolso (${v.maxPerDisbursement}).`);
+  if (Number(v.availableToday) === 0) add(`VAULT_DAILY_LIMIT_REACHED${suffix}`, "warning", `${name} agotó su límite diario.`);
 }
 
 /**

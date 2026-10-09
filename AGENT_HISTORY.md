@@ -209,3 +209,17 @@ Cuentas SCA y vault de USDC en Stellar, con la misma API y el mismo servicio que
 ### Salida
 
 Commit y push de la rama `feat/sca-stellar-vault` (tilcai-infrastructure) y de `docs/sca-stellar-estado` (documentation). El contenedor `tilcai` se recreó con la imagen construida desde esa rama y las dos variables nuevas, `ACCOUNT_FACTORY_STELLAR` y `VAULT_STELLAR`: queda `healthy`, `/health` informa `vaultStellar: on` y `accounts: on`, sin errores en el registro, mismo volumen `tilcai-data`, red `host` y política `unless-stopped`. Respaldo previo en `~/backups/docker-pre-stellar-20261009/` (inspección y variables) y la imagen anterior como `tilcai/tilcai:pre-stellar`. La rama no se fusionó en `main`.
+
+## 2026-10-09T21:50:01Z · SaulChoque · Claude Code (Sonnet 5.5)
+
+- **Sesión:** https://claude.ai/code/session_01XXALddBkW59xRAowuFKvD7
+- **Rama:** `feat/sca-stellar-vault`
+- **Repositorios:** `tilcai-infrastructure`, `tilcai-web`, `documentation`
+
+### Prompt
+
+> actualiza el tablero y haz push y actualiza el docker
+
+### Salida
+
+**En este repositorio.** La foto de recursos lleva \`vaults\` (una entrada por red, el de Fuji primero; \`vault\` sigue siendo el de Fuji) y las alertas del vault de otra red llevan la red como destino (\`VAULT_LOW:stellar:testnet\`). 175 pruebas unitarias y \`tsc\` limpios. El contenedor \`tilcai\` se recreó con la imagen nueva (\`healthy\`, sin errores, \`/v1/monitor/resources\` ya informa los dos vaults); la imagen anterior queda como \`tilcai/tilcai:stellar-20261009\`.
