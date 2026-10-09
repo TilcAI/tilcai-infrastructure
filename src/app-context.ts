@@ -12,6 +12,10 @@ import type { MintSubmitter } from "./modules/crosschain/ports.ts";
 import { SqliteCrosschainRepository } from "./modules/crosschain/repository.ts";
 import { CrosschainPaymentService } from "./modules/crosschain/service.ts";
 import { RelayerClient } from "./modules/relayer/client.ts";
+import type { DelegationRepository, SmartAccountRepository } from "./modules/accounts/ports.ts";
+import { SqliteDelegationRepository, SqliteSmartAccountRepository } from "./modules/accounts/repository.ts";
+import type { TenantAdmin, TenantRegistry } from "./modules/tenants/ports.ts";
+import { SqliteTenantRegistry } from "./modules/tenants/registry.ts";
 
 /** Composition root: the only place that knows concrete adapters. */
 export interface AppContext {
@@ -21,6 +25,10 @@ export interface AppContext {
   log: Logger;
   relayer: RelayerClient;
   crosschain: CrosschainPaymentService;
+  /** Fase SCA M1. Authentication and the HTTP API consume these (M1, Omar); the CLI uses `TenantAdmin`. */
+  tenants: TenantRegistry & TenantAdmin;
+  accounts: SmartAccountRepository;
+  delegations: DelegationRepository;
 }
 
 export function createAppContext(name: string, env: Env = loadEnv()): AppContext {
@@ -35,6 +43,14 @@ export function createAppContext(name: string, env: Env = loadEnv()): AppContext
   if (!submitters[env.STELLAR_MINT_SUBMITTER]) {
     log.warn("mint submitter not configured; payments will wait at ATTESTED", { submitter: env.STELLAR_MINT_SUBMITTER });
   }
+
+  // The keys of TILCAI_API_KEYS belong to the legacy tenant (scope `payments`): Optipagos and optus-agentBE keep working.
+  // SQLite runs this to completion before the call returns, so the keys are in place when the context is.
+  const tenants = new SqliteTenantRegistry(db, systemClock);
+  tenants
+    .syncLegacyKeys(env.TILCAI_API_KEYS)
+    .then((r) => log.info("legacy tenant keys synced", r))
+    .catch((e) => log.error("could not sync TILCAI_API_KEYS with the legacy tenant", { error: e instanceof Error ? e.message : String(e) }));
 
   const crosschain = new CrosschainPaymentService({
     repo: new SqliteCrosschainRepository(db),
@@ -54,5 +70,9 @@ export function createAppContext(name: string, env: Env = loadEnv()): AppContext
       minConfirmations: env.EVM_MIN_CONFIRMATIONS,
     },
   });
-  return { env, nets, db, log, relayer, crosschain };
+  return {
+    env, nets, db, log, relayer, crosschain, tenants,
+    accounts: new SqliteSmartAccountRepository(db, systemClock),
+    delegations: new SqliteDelegationRepository(db),
+  };
 }
