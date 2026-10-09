@@ -26,7 +26,7 @@ export interface Tenant {
 /**
  * The tenant that owns everything created before tenants existed. The keys listed in
  * TILCAI_API_KEYS authenticate as this tenant with the `payments` scope only, so Optipagos and
- * optus-agentBE keep working unchanged. Created by migration 3.
+ * optus-agentBE keep working unchanged. Created by migration 5.
  */
 export const LEGACY_TENANT_ID = "tenant_legacy" as TenantId;
 

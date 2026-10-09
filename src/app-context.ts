@@ -25,8 +25,10 @@ import { ViemVault } from "./modules/vault/adapters/evm.ts";
 import { SqliteVaultRepository } from "./modules/vault/repository.ts";
 import { VaultDisbursementService } from "./modules/vault/service.ts";
 import type { DelegationRepository, SmartAccountRepository } from "./modules/accounts/ports.ts";
+import { EvmSmartAccountProvider } from "./modules/accounts/evm/provider.ts";
 import { SqliteDelegationRepository, SqliteSmartAccountRepository } from "./modules/accounts/repository.ts";
-import type { TenantAdmin, TenantRegistry } from "./modules/tenants/ports.ts";
+import { AccountService } from "./modules/accounts/service.ts";
+import type { TenantAdmin, TenantId, TenantRegistry } from "./modules/tenants/ports.ts";
 import { SqliteTenantRegistry } from "./modules/tenants/registry.ts";
 
 /** Composition root: the only place that knows concrete adapters. */
@@ -54,6 +56,8 @@ export interface AppContext {
   tenants: TenantRegistry & TenantAdmin;
   accounts: SmartAccountRepository;
   delegations: DelegationRepository;
+  /** Issues smart accounts for tenants. Null until ACCOUNT_FACTORY_FUJI is configured. */
+  accountService: AccountService | null;
 }
 
 export function createAppContext(name: string, env: Env = loadEnv()): AppContext {
@@ -81,6 +85,13 @@ export function createAppContext(name: string, env: Env = loadEnv()): AppContext
     .then((r) => log.info("legacy tenant keys synced", r))
     .catch((e) => log.error("could not sync TILCAI_API_KEYS with the legacy tenant", { error: e instanceof Error ? e.message : String(e) }));
 
+  const accounts = new SqliteSmartAccountRepository(db, systemClock);
+  const accountProvider = nets.avalancheFuji.accountFactory ? new EvmSmartAccountProvider(nets.avalancheFuji, nets.avalancheFuji.accountFactory, evmSubmitter) : null;
+  const accountService = accountProvider
+    ? new AccountService({ repo: accounts, providers: { [accountProvider.network]: accountProvider }, clock: systemClock, log, events: monitor, options: { pollMs: env.WORKER_POLL_MS } })
+    : null;
+  if (accountProvider && !evmSubmitter) log.warn("ACCOUNT_FACTORY_FUJI is set but RELAYER_API_KEY is not; accounts are issued but never deployed");
+
   const crosschain = new CrosschainPaymentService({
     repo: new SqliteCrosschainRepository(db),
     evm: new ViemEvmCctp(nets.avalancheFuji, env.DEV_EVM_PAYER_PRIVATE_KEY || undefined),
@@ -88,7 +99,15 @@ export function createAppContext(name: string, env: Env = loadEnv()): AppContext
     iris: new IrisClient(env.IRIS_API_URL),
     submitters,
     activeSubmitter: env.STELLAR_MINT_SUBMITTER,
-    ...(evmSubmitter && nets.avalancheFuji.cctpRouter ? { evmSubmitter } : {}),
+    ...(evmSubmitter && (nets.avalancheFuji.cctpRouter || nets.avalancheFuji.cctpRouterV2) ? { evmSubmitter } : {}),
+    ...(accountService && accountProvider
+      ? {
+          accounts: {
+            isActiveAccount: async (tenantId, address) => Boolean(await accountService.activeByAddress(tenantId as TenantId, accountProvider.network, address)),
+            isValidSignature: (account, hash, signature) => accountProvider.isValidSignature(account, hash, signature),
+          },
+        }
+      : {}),
     source: nets.avalancheFuji,
     destination: nets.stellarTestnet,
     clock: systemClock,
@@ -155,7 +174,8 @@ export function createAppContext(name: string, env: Env = loadEnv()): AppContext
   if (qrMock && !env.QR_MOCK_CALLBACK_URL) log.warn("QR mock without QR_MOCK_CALLBACK_URL: payments are only visible by polling the QR status");
   return {
     env, nets, db, log, relayer, crosschain, vault, role, monitor, resources, forwarder, correlate: sqliteCorrelate(db), qrMock, tenants,
-    accounts: new SqliteSmartAccountRepository(db, systemClock),
+    accounts,
+    accountService,
     delegations: new SqliteDelegationRepository(db),
   };
 }

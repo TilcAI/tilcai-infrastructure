@@ -26,6 +26,8 @@ export const MONITOR_EVENT_TYPES = [
   "vault.disbursement.transition", // a vault payout changed state (from = null when created)
   "vault.disbursement.uncertain", // a relayer call ended without an answer
   "vault.disbursement.rejected", // the vault could not take a payout (no funds, paused, limits)
+  "account.transition", // a smart account was issued or changed state (from = null when created)
+  "account.deploy_delayed", // the relayer keeps refusing an account deployment; it is still retried
   "relayer.transaction_update", // webhook: a relayer transaction moved (sent, mined, failed…)
   "relayer.state_update", // webhook: a relayer was disabled or enabled again
   "relayer.notification", // webhook: any other notification, kept as it came

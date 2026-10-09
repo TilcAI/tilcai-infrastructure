@@ -21,6 +21,10 @@ export interface EvmNetwork {
   usdc: { address: `0x${string}`; decimals: 6; eip712Name: string; eip712Version: string };
   /** TilcaiCctpRouter (gasless source leg). Absent until deployed on the network. */
   cctpRouter?: `0x${string}`;
+  /** TilcaiCctpRouterV2 (payers that are smart accounts: EIP-3009 with a `bytes` signature). */
+  cctpRouterV2?: `0x${string}`;
+  /** TilcaiAccountFactory: issues the smart accounts of the SCA phase. */
+  accountFactory?: `0x${string}`;
   cctpV2: { tokenMessenger: `0x${string}`; messageTransmitter: `0x${string}` };
   /** TilcaiVault (pays purchases settled off-chain). Absent until deployed on the network. */
   vault?: `0x${string}`;
@@ -64,6 +68,8 @@ export function networks(env: Env): NetworkRegistry {
     cctpDomain: 1,
     usdc: { address: "0x5425890298aed601595a70AB815c96711a31Bc65", decimals: 6, eip712Name: "USD Coin", eip712Version: "2" },
     ...(env.CCTP_ROUTER_FUJI ? { cctpRouter: env.CCTP_ROUTER_FUJI as `0x${string}` } : {}),
+    ...(env.CCTP_ROUTER_V2_FUJI ? { cctpRouterV2: env.CCTP_ROUTER_V2_FUJI as `0x${string}` } : {}),
+    ...(env.ACCOUNT_FACTORY_FUJI ? { accountFactory: env.ACCOUNT_FACTORY_FUJI as `0x${string}` } : {}),
     ...(env.VAULT_FUJI ? { vault: env.VAULT_FUJI as `0x${string}` } : {}),
     // Same CREATE2 address on every EVM testnet.
     cctpV2: {

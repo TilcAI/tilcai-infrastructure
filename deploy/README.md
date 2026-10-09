@@ -96,6 +96,8 @@ decide un pago por ellos.
 | `RELAYER_URL` | no | URL del relayer |
 | `RELAYER_API_KEY` | sí | La misma `API_KEY` del relayer |
 | `CCTP_ROUTER_FUJI` | no | `TilcaiCctpRouter` desplegado; habilita los modos gasless |
+| `ACCOUNT_FACTORY_FUJI` | no | `TilcaiAccountFactory` desplegada; habilita `/v1/accounts` (fase SCA). Las cuentas las piden terceros con claves de `npm run tenant -- key` |
+| `CCTP_ROUTER_V2_FUJI` | no | `TilcaiCctpRouterV2` desplegado; habilita el modo de pago `account` |
 | `VAULT_FUJI` | no | `TilcaiVault` desplegado; habilita `/v1/vault`. Su operador debe ser la cuenta del relayer `RELAYER_FUJI_ID`. Quien tenga una clave de `TILCAI_API_KEYS` puede pedir pagos hasta los límites del contrato |
 | `LITESTREAM_REPLICA_URL` | no | `gcs://bucket/ruta`, `s3://bucket/ruta` o `abs://…`. Vacía, la base vive solo en `/data` |
 | `RELAYER_WEBHOOK_SIGNING_KEY` | sí | La `WEBHOOK_SIGNING_KEY` del relayer. Vacía, `/v1/webhooks/relayer` solo acepta avisos sin firmar desde el propio host |

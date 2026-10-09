@@ -19,12 +19,13 @@ admin-cli.ts   `npm run tenant -- …`
   a hint for lists. The key is shown once, when it is issued.
 - `authenticate(key)` finds the row by hash and compares the digests in constant time (also on a miss). A revoked
   key, a suspended tenant or an unknown key all answer `undefined`: the caller cannot tell them apart.
-- Scopes: `payments`, `accounts:read`, `accounts:write`. Checking them is the API's job (Omar); the registry only
-  returns them.
+- Scopes: `payments`, `accounts:read`, `accounts:write`. The API checks them (`requirementOf` in `apps/api/server.ts`): `/v1/accounts`
+  needs the accounts scopes, everything else `payments`, and the vault, the event log and the relayer status are
+  reserved to the legacy tenant (the operator).
 
 ## The legacy tenant
 
-Migration 3 creates `tenant_legacy` and gives it every quote and payment that existed. The keys in
+Migration 5 creates `tenant_legacy` and gives it every quote and payment that existed. The keys in
 `TILCAI_API_KEYS` are synced to it with scope `payments` **every time a process starts** (`createAppContext`):
 new keys are added, keys removed from the variable are revoked, so rotating a key out of the list works as before.
 Optipagos and optus-agentBE need no change. Its quota is 1 000 000 per day: today's sponsored burns and mints are

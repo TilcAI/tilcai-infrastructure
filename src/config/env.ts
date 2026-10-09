@@ -36,6 +36,12 @@ const schema = z.object({
   /** Deployed TilcaiCctpRouter on Avalanche Fuji (enables gasless modes). */
   CCTP_ROUTER_FUJI: z.string().regex(/^0x[0-9a-fA-F]{40}$/).or(z.literal("")).default(""),
   /**
+   * Fase SCA: deployed TilcaiAccountFactory on Avalanche Fuji (enables /v1/accounts) and
+   * TilcaiCctpRouterV2 (enables `mode: "account"` payments). `npm run sca -- deploy` prints both.
+   */
+  ACCOUNT_FACTORY_FUJI: z.string().regex(/^0x[0-9a-fA-F]{40}$/).or(z.literal("")).default(""),
+  CCTP_ROUTER_V2_FUJI: z.string().regex(/^0x[0-9a-fA-F]{40}$/).or(z.literal("")).default(""),
+  /**
    * Deployed TilcaiVault on Avalanche Fuji (enables /v1/vault). Its operator must be the
    * RELAYER_FUJI_ID account, which sends the payouts.
    */
