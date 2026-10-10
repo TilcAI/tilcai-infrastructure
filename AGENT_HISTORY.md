@@ -249,3 +249,78 @@ Se propuso usar la Mini App de Stellar como cliente de pruebas, tras verificar d
 ### Salida
 
 Se explicó que la wallet C… es una cuenta de Stellar que puede recibir activos emitidos allí, mientras que las redes de origen necesitan sus propias cuentas. La API productiva de TilcAI solo habilita Fuji → Stellar Testnet; el motor CCTP de laboratorio modela más redes pero no las expone en esa API ni garantiza gasless. Se identificó que el laboratorio consulta saldos Stellar por Horizon y no mide el saldo USDC de una smart wallet C… en Soroban. Se propuso validar primero recepción y gasto con passkey, luego un CCTP Fuji → C… con hashes y saldos Soroban, y finalmente Base/Ethereum Sepolia una por una. Se corrigió que la cuenta EVM Fuji ya existe y que una misma passkey no produce automáticamente la misma dirección en todas las redes. No se modificó código ni se ejecutaron transferencias.
+## 2026-10-09T21:22:59Z · SaulChoque · Claude Code (Sonnet 5.5)
+
+- **Sesión:** https://claude.ai/code/session_01XXALddBkW59xRAowuFKvD7
+- **Rama:** `feat/sca-stellar-vault`
+- **Repositorios:** `tilcai-infrastructure`, `documentation`
+
+### Prompt
+
+> genial, ahora implementa la emision de stellar scas accounts y la creacion de un vault de usdc al igual que avalanche
+
+### Salida
+
+Cuentas SCA y vault de USDC en Stellar, con la misma API y el mismo servicio que en Avalanche, desplegados y verificados en Stellar Testnet. Sin commit ni push; la rama `feat/sca-stellar-vault` queda con los cambios en el árbol.
+
+- **Contratos Soroban** (`contracts/soroban`): `account-factory` (deriva la dirección de la clave del dueño, Ed25519 o passkey; sin autorización, la paga el relayer) y `vault` (gemelo de `TilcaiVault.sol`: un pago por id, tope por pago y por día UTC, pausa, retiro, dueño en dos pasos). 17 tests nuevos; el espacio de trabajo pasa 19.
+- **Backend:** `StellarSmartAccountProvider` (`/v1/accounts` con `network:"stellar:testnet"`, dueño Ed25519 o passkey), `SorobanVault` y `StellarVaultSubmitter` (`/v1/vault?network=` y `network` en el desembolso). El servicio de desembolsos es el mismo para las dos redes; la conciliación se filtra por red. `AccountDeployer` pasó a `accounts/ports.ts`.
+- **Verificado en testnet:** `npm run stellar -- verify-account` y `verify-vault --pay` (desembolso real con evento `disbursed`), y por la API de una instancia temporal: cuenta `ACTIVE` y desembolso `CONFIRMED` a esa cuenta. Contratos: factory `CCQCZQGQ…U2ZB`, vault `CDQ5KG2W…VI6`.
+- **Pruebas:** 174 unitarias (160 existentes + 14 nuevas) y `tsc` limpios.
+- **Pendiente:** `ACCOUNT_FACTORY_STELLAR` y `VAULT_STELLAR` no se pusieron en el `.env` ni se reinició el contenedor `tilcai`; falta la regla de agente (M3), que el tablero muestre el vault de Stellar y la auditoría.
+
+## 2026-10-09T21:33:48Z · SaulChoque · Claude Code (Sonnet 5.5)
+
+- **Sesión:** https://claude.ai/code/session_01XXALddBkW59xRAowuFKvD7
+- **Rama:** `feat/sca-stellar-vault`
+- **Repositorios:** `tilcai-infrastructure`, `documentation`
+
+### Prompt
+
+> sí, haz commit y push y reinicia tilcai
+
+### Salida
+
+Commit y push de la rama `feat/sca-stellar-vault` (tilcai-infrastructure) y de `docs/sca-stellar-estado` (documentation). El contenedor `tilcai` se recreó con la imagen construida desde esa rama y las dos variables nuevas, `ACCOUNT_FACTORY_STELLAR` y `VAULT_STELLAR`: queda `healthy`, `/health` informa `vaultStellar: on` y `accounts: on`, sin errores en el registro, mismo volumen `tilcai-data`, red `host` y política `unless-stopped`. Respaldo previo en `~/backups/docker-pre-stellar-20261009/` (inspección y variables) y la imagen anterior como `tilcai/tilcai:pre-stellar`. La rama no se fusionó en `main`.
+
+## 2026-10-09T21:50:01Z · SaulChoque · Claude Code (Sonnet 5.5)
+
+- **Sesión:** https://claude.ai/code/session_01XXALddBkW59xRAowuFKvD7
+- **Rama:** `feat/sca-stellar-vault`
+- **Repositorios:** `tilcai-infrastructure`, `tilcai-web`, `documentation`
+
+### Prompt
+
+> actualiza el tablero y haz push y actualiza el docker
+
+### Salida
+
+**En este repositorio.** La foto de recursos lleva \`vaults\` (una entrada por red, el de Fuji primero; \`vault\` sigue siendo el de Fuji) y las alertas del vault de otra red llevan la red como destino (\`VAULT_LOW:stellar:testnet\`). 175 pruebas unitarias y \`tsc\` limpios. El contenedor \`tilcai\` se recreó con la imagen nueva (\`healthy\`, sin errores, \`/v1/monitor/resources\` ya informa los dos vaults); la imagen anterior queda como \`tilcai/tilcai:stellar-20261009\`.
+
+## 2026-10-09T21:55:57Z · SaulChoque · Claude Code (Sonnet 5.5)
+
+- **Sesión:** https://claude.ai/code/session_01XXALddBkW59xRAowuFKvD7
+- **Rama:** `main`
+- **Repositorios:** `tilcai-infrastructure`, `tilcai-web`, `documentation`
+
+### Prompt
+
+> si, mergea a main
+
+### Salida
+
+**En este repositorio.** Fusionado en `main` por PR: tilcai-infrastructure #25 (`d17fde3`), tilcai-web #29 (`981afc9`, después de traer 5 commits nuevos de `main` con 76 pruebas y `tsc` limpios) y documentation #3 (`3106636`). Los contenedores `tilcai` y `tilcai-web` siguen con las imágenes construidas desde las ramas; la de tilcai-web no incluye los 5 commits de la landing que llegaron a `main` mientras tanto.
+
+## 2026-10-09T22:51:54Z · SaulChoque · Claude Code (Sonnet 5.5)
+
+- **Sesión:** https://claude.ai/code/session_01XXALddBkW59xRAowuFKvD7
+- **Rama:** `main`
+- **Repositorios:** `tilcai-infrastructure`, `tilcai-web`
+
+### Prompt
+
+> Genial, ahora quita del dashboard de eventos cualquier mención de mock o demo
+
+### Salida
+
+**En este repositorio.** Los resúmenes de los eventos de QR Simple dejan de decir «(mock)» y el pagador y el banco por defecto pasan a «NO INFORMADO» (antes «PAGADOR DE PRUEBA» y «BANCO MOCK»; es lo que recibe quien cobra en el aviso de pago). 175 pruebas y `tsc` limpios. Sin commit ni despliegue.

@@ -22,10 +22,14 @@ import { SqliteQrMockRepository } from "./modules/qrsimple/repository.ts";
 import { QrSimpleMock } from "./modules/qrsimple/service.ts";
 import { RelayerClient } from "./modules/relayer/client.ts";
 import { ViemVault } from "./modules/vault/adapters/evm.ts";
+import { SorobanVault, StellarVaultSubmitter } from "./modules/vault/adapters/stellar.ts";
 import { SqliteVaultRepository } from "./modules/vault/repository.ts";
 import { VaultDisbursementService } from "./modules/vault/service.ts";
 import type { DelegationRepository, SmartAccountRepository } from "./modules/accounts/ports.ts";
 import { EvmSmartAccountProvider } from "./modules/accounts/evm/provider.ts";
+import { StellarSmartAccountProvider } from "./modules/accounts/stellar/provider.ts";
+import { RelayerStellarSubmitter } from "./modules/stellar/relayer-submitter.ts";
+import type { AccountDeployer } from "./modules/accounts/ports.ts";
 import { SqliteDelegationRepository, SqliteSmartAccountRepository } from "./modules/accounts/repository.ts";
 import { AccountService } from "./modules/accounts/service.ts";
 import type { TenantAdmin, TenantId, TenantRegistry } from "./modules/tenants/ports.ts";
@@ -39,8 +43,10 @@ export interface AppContext {
   log: Logger;
   relayer: RelayerClient;
   crosschain: CrosschainPaymentService;
-  /** Payouts from the TilcaiVault. Null until VAULT_FUJI and the relayer key are configured. */
+  /** Payouts from the TilcaiVault on Fuji. Null until VAULT_FUJI and the relayer key are configured. */
   vault: VaultDisbursementService | null;
+  /** Every network's vault service (Fuji's included): the HTTP API and the worker go through this. */
+  vaults: Partial<Record<"eip155:43113" | "stellar:testnet", VaultDisbursementService>>;
   /** all | api | worker: which process this is. */
   role: string;
   /** The event log behind the dashboard in tilcai-web. */
@@ -56,7 +62,7 @@ export interface AppContext {
   tenants: TenantRegistry & TenantAdmin;
   accounts: SmartAccountRepository;
   delegations: DelegationRepository;
-  /** Issues smart accounts for tenants. Null until ACCOUNT_FACTORY_FUJI is configured. */
+  /** Issues smart accounts for tenants. Null until ACCOUNT_FACTORY_FUJI or ACCOUNT_FACTORY_STELLAR is configured. */
   accountService: AccountService | null;
 }
 
@@ -87,10 +93,19 @@ export function createAppContext(name: string, env: Env = loadEnv()): AppContext
 
   const accounts = new SqliteSmartAccountRepository(db, systemClock);
   const accountProvider = nets.avalancheFuji.accountFactory ? new EvmSmartAccountProvider(nets.avalancheFuji, nets.avalancheFuji.accountFactory, evmSubmitter) : null;
-  const accountService = accountProvider
-    ? new AccountService({ repo: accounts, providers: { [accountProvider.network]: accountProvider }, clock: systemClock, log, events: monitor, options: { pollMs: env.WORKER_POLL_MS } })
+  const stellarSubmitter = env.RELAYER_API_KEY ? new RelayerStellarSubmitter(relayer, env.RELAYER_STELLAR_ID, nets.stellarTestnet) : null;
+  const stellarAccountProvider = nets.stellarTestnet.accountFactory
+    ? new StellarSmartAccountProvider(nets.stellarTestnet, nets.stellarTestnet.accountFactory, stellarSubmitter, env.STELLAR_SIMULATION_SOURCE || undefined)
     : null;
+  const providers: Partial<Record<AccountDeployer["network"], AccountDeployer>> = {};
+  if (accountProvider) providers[accountProvider.network] = accountProvider;
+  if (stellarAccountProvider) providers[stellarAccountProvider.network] = stellarAccountProvider;
+  const accountService =
+    accountProvider || stellarAccountProvider
+      ? new AccountService({ repo: accounts, providers, clock: systemClock, log, events: monitor, options: { pollMs: env.WORKER_POLL_MS } })
+      : null;
   if (accountProvider && !evmSubmitter) log.warn("ACCOUNT_FACTORY_FUJI is set but RELAYER_API_KEY is not; accounts are issued but never deployed");
+  if (stellarAccountProvider && !stellarSubmitter) log.warn("ACCOUNT_FACTORY_STELLAR is set but RELAYER_API_KEY is not; accounts are issued but never deployed");
 
   const crosschain = new CrosschainPaymentService({
     repo: new SqliteCrosschainRepository(db),
@@ -135,6 +150,26 @@ export function createAppContext(name: string, env: Env = loadEnv()): AppContext
       : null;
   if (nets.avalancheFuji.vault && !vault) log.warn("VAULT_FUJI is set but RELAYER_API_KEY is not; vault payouts are disabled");
 
+  // Same repository, one service per network: each reconciles only the payouts of its own vault.
+  const stellarVault =
+    stellarSubmitter && nets.stellarTestnet.vault
+      ? new VaultDisbursementService({
+          repo: new SqliteVaultRepository(db),
+          vault: new SorobanVault(nets.stellarTestnet, nets.stellarTestnet.vault, env.STELLAR_SIMULATION_SOURCE || undefined),
+          submitter: new StellarVaultSubmitter(stellarSubmitter),
+          network: nets.stellarTestnet,
+          clock: systemClock,
+          log,
+          events: monitor,
+          // A Stellar ledger closes in about 5 s and is final: one confirmation is enough.
+          options: { pollMs: env.WORKER_POLL_MS, minConfirmations: 1 },
+        })
+      : null;
+  if (nets.stellarTestnet.vault && !stellarVault) log.warn("VAULT_STELLAR is set but RELAYER_API_KEY is not; Stellar vault payouts are disabled");
+  const vaults: AppContext["vaults"] = {};
+  if (vault) vaults[nets.avalancheFuji.id] = vault;
+  if (stellarVault) vaults[nets.stellarTestnet.id] = stellarVault;
+
   const resources = new ResourceMonitor({
     role,
     db,
@@ -144,6 +179,7 @@ export function createAppContext(name: string, env: Env = loadEnv()): AppContext
     relayerIds: [env.RELAYER_FUJI_ID, env.RELAYER_STELLAR_ID],
     vault,
     usdcDecimals: nets.avalancheFuji.usdc.decimals,
+    otherVaults: stellarVault ? [{ network: nets.stellarTestnet.id, service: stellarVault, usdcDecimals: nets.stellarTestnet.usdc.decimals }] : [],
     monitor: { head: () => monitorRepo.head(), sinks: () => monitorRepo.sinks() },
     now: systemClock.now,
   });
@@ -173,7 +209,7 @@ export function createAppContext(name: string, env: Env = loadEnv()): AppContext
     : null;
   if (qrMock && !env.QR_MOCK_CALLBACK_URL) log.warn("QR mock without QR_MOCK_CALLBACK_URL: payments are only visible by polling the QR status");
   return {
-    env, nets, db, log, relayer, crosschain, vault, role, monitor, resources, forwarder, correlate: sqliteCorrelate(db), qrMock, tenants,
+    env, nets, db, log, relayer, crosschain, vault, vaults, role, monitor, resources, forwarder, correlate: sqliteCorrelate(db), qrMock, tenants,
     accounts,
     accountService,
     delegations: new SqliteDelegationRepository(db),

@@ -2,7 +2,7 @@
 # (audited library, pinned). Own logic lives only in the crates marked "own" in README.md.
 [workspace]
 resolver = "2"
-members = ["account", "verifier-ed25519", "verifier-webauthn", "policy-spending-limit"]
+members = ["account", "account-factory", "vault", "verifier-ed25519", "verifier-webauthn", "policy-spending-limit"]
 
 [workspace.package]
 edition = "2021"

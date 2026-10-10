@@ -12,6 +12,8 @@ export function announceStart(ctx: AppContext): void {
       node: process.version,
       env: ctx.env.TILCAI_ENV,
       vault: ctx.nets.avalancheFuji.vault ?? null,
+      vaultStellar: ctx.nets.stellarTestnet.vault ?? null,
+      accountFactoryStellar: ctx.nets.stellarTestnet.accountFactory ?? null,
       cctpRouter: ctx.nets.avalancheFuji.cctpRouter ?? null,
       qrMock: Boolean(ctx.qrMock),
       monitorPush: Boolean(ctx.forwarder),

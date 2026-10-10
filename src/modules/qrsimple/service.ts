@@ -86,7 +86,7 @@ export class QrSimpleMock {
       type: "qr.token_issued",
       source: "qr-simple",
       subject: `token:${token.id}`,
-      summary: `QR Simple (mock): token «${name}» emitido, vigente un año`,
+      summary: `QR Simple: token «${name}» emitido, vigente un año`,
       data: { tokenId: token.id, name, expiresAt: token.expiresAt },
     });
     return { access_token: this.rawToken(token.id) };
@@ -159,7 +159,7 @@ export class QrSimpleMock {
       type: "qr.created",
       source: "qr-simple",
       subject: `qr:${code.qrId}`,
-      summary: `QR Simple (mock) #${code.qrId} por Bs ${centsToAmount(code.amountCents)} — ${code.description}`,
+      summary: `QR Simple #${code.qrId} por Bs ${centsToAmount(code.amountCents)} — ${code.description}`,
       data: { qrId: code.qrId, amount: centsToAmount(code.amountCents), currency: "BOB", description: code.description, deviceId, modifyAmount: code.modifyAmount, multiUse: code.multiUse, expiresAt: code.expiresAt },
     });
     return { qr_image: this.png(code).toString("base64"), qr_url: this.imageUrl(code), qr_id: code.qrId };
@@ -243,8 +243,8 @@ export class QrSimpleMock {
       code.qrId,
       {
         amountCents,
-        payerName: name(input.payerName, "PAGADOR DE PRUEBA"),
-        payerBank: name(input.payerBank, "BANCO MOCK"),
+        payerName: name(input.payerName, "PAGADOR NO INFORMADO"),
+        payerBank: name(input.payerBank, "BANCO NO INFORMADO"),
         paidAt: iso(now),
         callbackState: hasCallback ? "PENDING" : "SKIPPED",
         callbackAttempts: 0,
@@ -260,7 +260,7 @@ export class QrSimpleMock {
       type: "qr.paid",
       source: "qr-simple",
       subject: `qr:${code.qrId}`,
-      summary: `QR Simple (mock) #${code.qrId}: depósito simulado de Bs ${centsToAmount(amountCents)}`,
+      summary: `QR Simple #${code.qrId}: depósito simulado de Bs ${centsToAmount(amountCents)}`,
       data: { qrId: code.qrId, paymentId: payment.id, amount: centsToAmount(amountCents), currency: "BOB", payerName: payment.payerName, payerBank: payment.payerBank, description: code.description },
     });
     // Notified right away; if the caller is not there, the worker retries.
@@ -310,7 +310,7 @@ export class QrSimpleMock {
         type: "qr.callback_delivered",
         source: "qr-simple",
         subject,
-        summary: `QR Simple (mock) #${code.qrId}: notificación de pago entregada${attempts > 1 ? ` al intento ${attempts}` : ""}`,
+        summary: `QR Simple #${code.qrId}: notificación de pago entregada${attempts > 1 ? ` al intento ${attempts}` : ""}`,
         data: { qrId: code.qrId, paymentId: payment.id, attempts, url: this.d.config.callbackUrl },
       });
       return { state: "DELIVERED", attempts, error: null };
@@ -332,8 +332,8 @@ export class QrSimpleMock {
       subject,
       summary:
         state === "FAILED"
-          ? `QR Simple (mock) #${code.qrId}: notificación de pago sin entregar tras ${attempts} intentos — ${error}`
-          : `QR Simple (mock) #${code.qrId}: notificación de pago falló (intento ${attempts}); se reintenta — ${error}`,
+          ? `QR Simple #${code.qrId}: notificación de pago sin entregar tras ${attempts} intentos — ${error}`
+          : `QR Simple #${code.qrId}: notificación de pago falló (intento ${attempts}); se reintenta — ${error}`,
       data: { qrId: code.qrId, paymentId: payment.id, attempts, final: state === "FAILED", error, url: this.d.config.callbackUrl },
     });
     return { state, attempts, error };
@@ -347,7 +347,7 @@ export class QrSimpleMock {
         type: "qr.expired",
         source: "qr-simple",
         subject: `qr:${code.qrId}`,
-        summary: `QR Simple (mock) #${code.qrId} venció sin pago`,
+        summary: `QR Simple #${code.qrId} venció sin pago`,
         data: { qrId: code.qrId, amount: centsToAmount(code.amountCents), description: code.description, expiresAt: code.expiresAt },
       });
     }

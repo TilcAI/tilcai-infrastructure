@@ -62,8 +62,11 @@ function requirementOf(method: string, path: string): { scope: TenantScope; oper
   const operator = ["/v1/vault", "/v1/monitor", "/v1/relayer"].some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
   return { scope: "payments", operator };
 }
+const VAULT_NETWORKS = ["eip155:43113", "stellar:testnet"] as const;
 const DisbursementBody = z.strictObject({
-  to: z.string().max(42),
+  /** Which network's vault pays. Without it: the one vault configured, Fuji's when both are. */
+  network: z.enum(VAULT_NETWORKS).optional(),
+  to: z.string().max(69),
   amount: z.string().max(40),
   reference: z.string().max(160).optional(),
 });
@@ -143,6 +146,7 @@ export function buildServer(ctx: AppContext): FastifyInstance {
       env: ctx.env.TILCAI_ENV,
       relayer: relayer ? "up" : "down",
       vault: ctx.vault ? "on" : "off",
+      vaultStellar: ctx.vaults["stellar:testnet"] ? "on" : "off",
       accounts: ctx.accountService ? "on" : "off",
       qrMock: ctx.qrMock ? "on" : "off",
       monitor: ctx.forwarder ? "push" : "local",
@@ -266,11 +270,24 @@ export function buildServer(ctx: AppContext): FastifyInstance {
 
   // ── Vault: payouts of purchases settled off-chain ─────────────────────────
 
-  const vault = (): VaultDisbursementService => {
-    if (!ctx.vault) throw new DomainError("SERVICE_UNAVAILABLE", "vault not configured (VAULT_FUJI)");
-    return ctx.vault;
+  /** The vault service of a network; without `network`, Fuji's (the original one) or the only one configured. */
+  const vaultOf = (network?: string): VaultDisbursementService => {
+    const found = network ? ctx.vaults[network as (typeof VAULT_NETWORKS)[number]] : (ctx.vault ?? Object.values(ctx.vaults)[0]);
+    if (found) return found;
+    if (network && !(VAULT_NETWORKS as readonly string[]).includes(network)) throw new DomainError("INVALID_INPUT", `unknown network ${network}`);
+    const hint = network === "stellar:testnet" ? "VAULT_STELLAR" : "VAULT_FUJI";
+    throw new DomainError("SERVICE_UNAVAILABLE", `vault not configured (${hint})`);
   };
-  const usdc = (atomic: bigint) => atomicToDecimal(atomic, ctx.nets.avalancheFuji.usdc.decimals);
+  /** The service that owns a payout, found by its id through the shared repository. */
+  const vaultOfDisbursement = (id: string): { service: VaultDisbursementService; disbursement: VaultDisbursement } => {
+    const any = vaultOf();
+    const disbursement = any.mustGet(id);
+    return { service: vaultOf(disbursement.network), disbursement };
+  };
+  const usdcOf = (network: string) => {
+    const net = ctx.nets.byId(network);
+    return { decimals: net?.usdc.decimals ?? 6, asset: net?.family === "stellar" ? (net as { usdc: { sac: string } }).usdc.sac : (net as { usdc: { address: string } } | undefined)?.usdc.address, explorer: net?.explorer };
+  };
   const publicDisbursement = (d: VaultDisbursement) => ({
     id: d.id,
     state: d.state,
@@ -280,7 +297,7 @@ export function buildServer(ctx: AppContext): FastifyInstance {
     to: d.to,
     asset: "USDC",
     amountAtomic: d.amountAtomic,
-    amount: usdc(d.amountAtomic),
+    amount: atomicToDecimal(d.amountAtomic, usdcOf(d.network).decimals),
     reference: d.reference,
     submissionId: d.submissionId,
     txHash: d.txHash,
@@ -292,15 +309,20 @@ export function buildServer(ctx: AppContext): FastifyInstance {
     createdAt: d.createdAt,
     updatedAt: d.updatedAt,
   });
-  const txLink = (d: VaultDisbursement) => ({ tx: d.txHash ? `${ctx.nets.avalancheFuji.explorer}/tx/${d.txHash}` : null });
+  const txLink = (d: VaultDisbursement) => ({ tx: d.txHash ? `${usdcOf(d.network).explorer}/tx/${d.txHash}` : null });
 
-  app.get("/v1/vault", async (_req, reply) => {
-    const s = await vault().status();
+  app.get("/v1/vault", async (req, reply) => {
+    const network = z.object({ network: z.enum(VAULT_NETWORKS).optional() }).parse(req.query).network;
+    const service = vaultOf(network);
+    const s = await service.status();
+    const net = network ?? (ctx.vault ? "eip155:43113" : (Object.keys(ctx.vaults)[0] as string));
+    const { decimals, asset, explorer } = usdcOf(net);
+    const usdc = (atomic: bigint) => atomicToDecimal(atomic, decimals);
     return send(reply, 200, {
       vault: {
-        network: ctx.nets.avalancheFuji.id,
+        network: net,
         address: s.address,
-        asset: ctx.nets.avalancheFuji.usdc.address,
+        asset,
         owner: s.owner,
         operator: s.operator,
         relayer: s.relayer,
@@ -311,25 +333,27 @@ export function buildServer(ctx: AppContext): FastifyInstance {
         maxPerDisbursement: usdc(s.maxPerDisbursementAtomic),
         dailyLimit: usdc(s.dailyLimitAtomic),
         availableToday: usdc(s.availableTodayAtomic),
-        explorer: `${ctx.nets.avalancheFuji.explorer}/address/${s.address}`,
+        explorer: `${explorer}/${net === "stellar:testnet" ? "contract" : "address"}/${s.address}`,
       },
     });
   });
 
   app.post("/v1/vault/disbursements", async (req, reply) => {
-    const body = DisbursementBody.parse(req.body);
-    const r = await vault().create({ ...body, idempotencyKey: idemKey(req) });
+    const { network, ...body } = DisbursementBody.parse(req.body);
+    const r = await vaultOf(network).create({ ...body, idempotencyKey: idemKey(req) });
     return send(reply, r.replayed ? 200 : 201, { disbursement: publicDisbursement(r.disbursement), links: txLink(r.disbursement) });
   });
 
   app.get<{ Params: { id: string } }>("/v1/vault/disbursements/:id", async (req, reply) => {
-    const v = vault().view(req.params.id);
+    const { service } = vaultOfDisbursement(req.params.id);
+    const v = service.view(req.params.id);
     return send(reply, 200, { disbursement: publicDisbursement(v.disbursement), links: v.links, events: v.events });
   });
 
   /** Runs one reconciliation step now (the worker does the same on its own cadence). */
   app.post<{ Params: { id: string } }>("/v1/vault/disbursements/:id/reconcile", async (req, reply) => {
-    const d = await vault().step(vault().mustGet(req.params.id));
+    const { service, disbursement } = vaultOfDisbursement(req.params.id);
+    const d = await service.step(disbursement);
     return send(reply, 200, { disbursement: publicDisbursement(d), links: txLink(d) });
   });
 

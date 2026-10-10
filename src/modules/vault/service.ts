@@ -1,5 +1,4 @@
 import { createHash } from "node:crypto";
-import type { EvmNetwork } from "../../config/networks.ts";
 import { atomicToDecimal, decimalToAtomic } from "../../shared/amount.ts";
 import { iso, type Clock } from "../../shared/clock.ts";
 import { DomainError } from "../../shared/errors.ts";
@@ -8,9 +7,9 @@ import { newVaultDisbursementId, parseVaultDisbursementId } from "../../shared/i
 import type { Logger } from "../../shared/log.ts";
 import { SubmissionRejected } from "../crosschain/ports.ts";
 import type { EventSink } from "../monitor/domain.ts";
-import { disbursementIdBytes32 } from "./adapters/evm.ts";
+import { disbursementIdBytes32 } from "./disbursement-id.ts";
 import { canMove, isTerminal, type DisbursementState, type VaultDisbursement } from "./domain.ts";
-import type { VaultPort, VaultStatus, VaultSubmitter } from "./ports.ts";
+import type { VaultNetwork, VaultPort, VaultStatus, VaultSubmitter } from "./ports.ts";
 import { ConcurrentUpdateError, type VaultRepository } from "./repository.ts";
 
 export interface VaultDeps {
@@ -18,7 +17,7 @@ export interface VaultDeps {
   vault: VaultPort;
   /** Sends `disburse` from the relayer's account, which must be the vault's operator. */
   submitter: VaultSubmitter;
-  network: EvmNetwork;
+  network: VaultNetwork;
   clock: Clock;
   log: Logger;
   /** Where state changes and refusals are announced for the dashboard. */
@@ -34,11 +33,11 @@ export interface VaultDeps {
 }
 
 const MAX_BACKOFF_MS = 10 * 60_000;
-const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
 /**
- * Pays purchases out of the TilcaiVault: the relayer sends `disburse(id, to, amount)` and pays
- * the gas, the buyer receives USDC.
+ * Pays purchases out of a network's vault (the EVM TilcaiVault or the Soroban `tilcai_vault`):
+ * the relayer sends `disburse(id, to, amount)` and pays the fee, the buyer receives USDC.
+ * One service per network; they share the repository and each reconciles only its own payouts.
  *
  * Safety rules:
  *  - the vault pays a disbursement id at most once, so a payout is retried freely and a
@@ -51,7 +50,7 @@ export class VaultDisbursementService {
   constructor(private readonly d: VaultDeps) {}
 
   /** The vault as it is on-chain, plus what TilcAI has promised and not paid yet. */
-  async status(): Promise<VaultStatus & { relayer: Hex; operatorIsRelayer: boolean; pendingAtomic: bigint }> {
+  async status(): Promise<VaultStatus & { relayer: string; operatorIsRelayer: boolean; pendingAtomic: bigint }> {
     const [status, relayer] = await Promise.all([this.d.vault.status(), this.d.submitter.sender()]);
     return {
       ...status,
@@ -63,8 +62,11 @@ export class VaultDisbursementService {
 
   async create(input: { to: string; amount: string; reference?: string; idempotencyKey: string }): Promise<{ disbursement: VaultDisbursement; replayed: boolean }> {
     if (!/^[A-Za-z0-9_-]{8,128}$/.test(input.idempotencyKey)) throw new DomainError("INVALID_INPUT", "bad idempotency key");
-    if (!/^0x[0-9a-fA-F]{40}$/.test(input.to) || sameHex(input.to, ZERO_ADDRESS) || sameHex(input.to, this.d.vault.address())) {
-      throw new DomainError("INVALID_INPUT", "to must be an EVM address other than the vault");
+    let to: string;
+    try {
+      to = this.d.vault.parseRecipient(input.to);
+    } catch (e) {
+      throw new DomainError("INVALID_INPUT", e instanceof Error ? e.message : "invalid recipient");
     }
     if (input.reference !== undefined && !/^[A-Za-z0-9._:-]{1,160}$/.test(input.reference)) {
       throw new DomainError("INVALID_INPUT", "bad reference");
@@ -73,10 +75,9 @@ export class VaultDisbursementService {
     try {
       amount = decimalToAtomic(input.amount, this.d.network.usdc.decimals);
     } catch {
-      throw new DomainError("INVALID_INPUT", "amount must be a decimal with at most 6 decimals");
+      throw new DomainError("INVALID_INPUT", `amount must be a decimal with at most ${this.d.network.usdc.decimals} decimals`);
     }
     if (amount <= 0n) throw new DomainError("INVALID_INPUT", "amount must be positive");
-    const to = input.to.toLowerCase() as Hex;
     const requestHash = sha256(JSON.stringify(["vault-disbursement-v1", to, amount.toString(), input.reference ?? null]));
 
     const existing = this.d.repo.getByIdempotencyKey(input.idempotencyKey);
@@ -170,7 +171,7 @@ export class VaultDisbursementService {
   // ── Reconciliation (worker) ───────────────────────────────────────────────
 
   async processDue(limit = 20): Promise<number> {
-    const due = this.d.repo.listDue(iso(this.d.clock.now()), limit);
+    const due = this.d.repo.listDue(iso(this.d.clock.now()), limit, this.d.network.id);
     for (const d of due) {
       try {
         await this.step(d);
@@ -238,7 +239,7 @@ export class VaultDisbursementService {
       // Mined without the expected payout: never report it as paid.
       return this.reschedule(d, { error: "DISBURSED_EVENT_MISMATCH", uncertain: true, backoff: true });
     }
-    return this.move(d, "CONFIRMED", "Disbursed event verified", { txHash: st.txHash.toLowerCase() as Hex, blockNumber: r.blockNumber, lastError: null });
+    return this.move(d, "CONFIRMED", "Disbursed event verified", { txHash: st.txHash.toLowerCase(), blockNumber: r.blockNumber, lastError: null });
   }
 
   /** The submission did not pay. If nobody else paid the id either, it goes back to the queue. */
@@ -261,7 +262,7 @@ export class VaultDisbursementService {
       return this.reschedule(d, { error: "DISBURSED_EVENT_MISMATCH", uncertain: true, backoff: true });
     }
     return this.move(d, "CONFIRMED", note, {
-      txHash: found ? (found.txHash.toLowerCase() as Hex) : d.txHash,
+      txHash: found?.txHash ? found.txHash.toLowerCase() : d.txHash,
       blockNumber: found?.blockNumber ?? d.blockNumber,
       lastError: null,
     });

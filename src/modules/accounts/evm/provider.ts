@@ -3,7 +3,7 @@ import type { EvmNetwork } from "../../../config/networks.ts";
 import type { Hex } from "../../../shared/hex.ts";
 import { viemChain } from "../../crosschain/adapters/evm.ts";
 import type { EvmSubmissionStatus, EvmTxSubmitter } from "../../crosschain/ports.ts";
-import type { Delegation, DelegationRule, OwnerCredential, OwnerSignRequest, SmartAccount, SmartAccountProvider } from "../ports.ts";
+import type { AccountDeployer, Delegation, DelegationRule, OwnerCredential, OwnerSignRequest, SmartAccount } from "../ports.ts";
 import { p256Point } from "./passkey.ts";
 
 export const ACCOUNT_FACTORY_ABI = parseAbi([
@@ -21,12 +21,7 @@ export const ACCOUNT_ABI = parseAbi([
 
 const ERC1271_MAGIC = "0x1626ba7e";
 
-/** What the account service needs beyond issuing: the fate of a deployment it sent. */
-export interface AccountDeployer extends SmartAccountProvider {
-  /** Code the accounts run (the factory's implementation). */
-  codeRef(): Promise<string>;
-  deployStatus(submissionId: string): Promise<EvmSubmissionStatus>;
-}
+export type { AccountDeployer };
 
 /**
  * TilcaiAccount on an EVM chain. The factory derives the address from the owner's key, so

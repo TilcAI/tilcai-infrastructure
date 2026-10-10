@@ -46,6 +46,13 @@ const schema = z.object({
    * RELAYER_FUJI_ID account, which sends the payouts.
    */
   VAULT_FUJI: z.string().regex(/^0x[0-9a-fA-F]{40}$/).or(z.literal("")).default(""),
+  /**
+   * Fase SCA on Stellar: deployed `tilcai_account_factory` (enables /v1/accounts on stellar:testnet)
+   * and `tilcai_vault` (enables /v1/vault?network=stellar:testnet). `contracts/soroban/deploy-testnet.sh`
+   * prints both. The vault's operator must be the RELAYER_STELLAR_ID account.
+   */
+  ACCOUNT_FACTORY_STELLAR: z.string().regex(/^C[A-Z2-7]{55}$/).or(z.literal("")).default(""),
+  VAULT_STELLAR: z.string().regex(/^C[A-Z2-7]{55}$/).or(z.literal("")).default(""),
   RELAYER_X402_PLUGIN_ID: z.string().default("x402"),
 
   /** Who submits `CctpForwarder.mint_and_forward` on Stellar. */

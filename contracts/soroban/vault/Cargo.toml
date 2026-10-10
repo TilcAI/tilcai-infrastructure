@@ -1,0 +1,20 @@
+[package]
+name = "tilcai-vault"
+description = "TilcAI vault: holds the USDC that backs off-chain purchases and pays each one out once."
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+repository.workspace = true
+
+[package.metadata.stellar]
+cargo_inherit = true
+
+[lib]
+crate-type = ["cdylib"]
+doctest = false
+
+[dependencies]
+soroban-sdk = { workspace = true }
+
+[dev-dependencies]
+soroban-sdk = { workspace = true, features = ["testutils"] }
