@@ -1,16 +1,36 @@
 /**
- * Network and asset registry (testnet). Identifiers use CAIP-2 so they line up
- * with x402 `network` values. CCTP and USDC addresses verified on-chain on 2026-10-02 by
- * tilcai-cctp-engine (`npm run verify`) and Circle's references:
- *   https://developers.circle.com/cctp/evm-smart-contracts
- *   https://developers.circle.com/cctp/references/stellar-contracts
+ * Network and asset registry. Identifiers use CAIP-2 so they line up with x402.
+ * Protocol addresses come from Circle, Stellar and Avalanche official references;
+ * TilcAI-owned contract addresses always come from the environment.
  */
 import type { Env } from "./env.ts";
 
-export type NetworkId = "eip155:43113" | "stellar:testnet";
+/** Official protocol values. TilcAI deployment tools import these instead of duplicating them. */
+export const AVALANCHE_MAINNET = {
+  chainId: 43114,
+  id: "eip155:43114" as const,
+  usdc: "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E" as const,
+  tokenMessengerV2: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d" as const,
+  messageTransmitterV2: "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64" as const,
+  p256Precompile: "0x0000000000000000000000000000000000000100" as const,
+};
+
+export const STELLAR_MAINNET = {
+  id: "stellar:pubnet" as const,
+  passphrase: "Public Global Stellar Network ; September 2015",
+  usdcIssuer: "GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN",
+  usdcSac: "CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75",
+  tokenMessengerMinter: "CAE2G5Z77UP7GYPYGFOWFGW7C7J6I4YP2AFGSADRKQY62SYUFLPNFTXL",
+  messageTransmitter: "CACMENFFJPJMSDAJQLX4R7K3SFZIW2LJSE3R2UMLGSWHFHS353FVXAZV",
+  cctpForwarder: "CBZL2IH7F6BIDAA3WBNXYKIXSATJGMSW7K5P5MJ6STX5RXN47TZJDF5T",
+};
+
+export type EvmNetworkId = "eip155:43113" | "eip155:43114";
+export type StellarNetworkId = "stellar:testnet" | "stellar:pubnet";
+export type NetworkId = EvmNetworkId | StellarNetworkId;
 
 export interface EvmNetwork {
-  id: "eip155:43113";
+  id: EvmNetworkId;
   family: "evm";
   name: string;
   chainId: number;
@@ -35,7 +55,7 @@ export interface EvmNetwork {
 }
 
 export interface StellarNetwork {
-  id: "stellar:testnet";
+  id: StellarNetworkId;
   family: "stellar";
   name: string;
   rpc: string;
@@ -55,8 +75,15 @@ export interface StellarNetwork {
 export type Network = EvmNetwork | StellarNetwork;
 
 export interface NetworkRegistry {
+  environment: Env["TILCAI_ENV"];
+  /** Active source and destination. Application code must use these two. */
+  avalanche: EvmNetwork;
+  stellar: StellarNetwork;
+  /** Complete registry is exposed for validation and backwards-compatible test helpers. */
   avalancheFuji: EvmNetwork;
   stellarTestnet: StellarNetwork;
+  avalancheMainnet: EvmNetwork;
+  stellarMainnet: StellarNetwork;
   byId(id: string): Network | undefined;
 }
 
@@ -107,6 +134,67 @@ export function networks(env: Env): NetworkRegistry {
     ...(env.ACCOUNT_FACTORY_STELLAR ? { accountFactory: env.ACCOUNT_FACTORY_STELLAR } : {}),
     ...(env.VAULT_STELLAR ? { vault: env.VAULT_STELLAR } : {}),
   };
-  const all: Network[] = [avalancheFuji, stellarTestnet];
-  return { avalancheFuji, stellarTestnet, byId: (id) => all.find((n) => n.id === id) };
+
+  const avalancheMainnet: EvmNetwork = {
+    id: AVALANCHE_MAINNET.id,
+    family: "evm",
+    name: "Avalanche C-Chain",
+    chainId: AVALANCHE_MAINNET.chainId,
+    rpc: env.RPC_AVALANCHE_MAINNET,
+    explorer: "https://explorer.avax.network/c-chain",
+    nativeSymbol: "AVAX",
+    cctpDomain: 1,
+    // https://developers.circle.com/stablecoins/usdc-contract-addresses
+    usdc: { address: AVALANCHE_MAINNET.usdc, decimals: 6, eip712Name: "USD Coin", eip712Version: "2" },
+    ...(env.CCTP_ROUTER_AVALANCHE_MAINNET ? { cctpRouter: env.CCTP_ROUTER_AVALANCHE_MAINNET as `0x${string}` } : {}),
+    ...(env.CCTP_ROUTER_V2_AVALANCHE_MAINNET ? { cctpRouterV2: env.CCTP_ROUTER_V2_AVALANCHE_MAINNET as `0x${string}` } : {}),
+    ...(env.ACCOUNT_FACTORY_AVALANCHE_MAINNET ? { accountFactory: env.ACCOUNT_FACTORY_AVALANCHE_MAINNET as `0x${string}` } : {}),
+    ...(env.VAULT_AVALANCHE_MAINNET ? { vault: env.VAULT_AVALANCHE_MAINNET as `0x${string}` } : {}),
+    // https://developers.circle.com/cctp/references/contract-addresses
+    cctpV2: {
+      tokenMessenger: AVALANCHE_MAINNET.tokenMessengerV2,
+      messageTransmitter: AVALANCHE_MAINNET.messageTransmitterV2,
+    },
+    // Deliberately has no default: phase 2 must verify this deployment's bytecode on C-Chain.
+    erc4337: { entryPoint: env.ERC4337_ENTRYPOINT_AVALANCHE_MAINNET as `0x${string}`, version: "0.9" },
+    // ACP-204, active on Avalanche C-Chain.
+    p256Precompile: AVALANCHE_MAINNET.p256Precompile,
+  };
+  const stellarMainnet: StellarNetwork = {
+    id: STELLAR_MAINNET.id,
+    family: "stellar",
+    name: "Stellar Public Network",
+    rpc: env.RPC_STELLAR_MAINNET,
+    horizon: env.HORIZON_STELLAR_MAINNET,
+    passphrase: STELLAR_MAINNET.passphrase,
+    explorer: "https://stellar.expert/explorer/public",
+    cctpDomain: 27,
+    // https://developers.stellar.org/docs/build/agentic-payments/x402
+    usdc: {
+      code: "USDC",
+      issuer: STELLAR_MAINNET.usdcIssuer,
+      sac: STELLAR_MAINNET.usdcSac,
+      decimals: 7,
+    },
+    // https://developers.circle.com/cctp/references/stellar-contracts
+    cctpV2: {
+      tokenMessengerMinter: STELLAR_MAINNET.tokenMessengerMinter,
+      messageTransmitter: STELLAR_MAINNET.messageTransmitter,
+      cctpForwarder: STELLAR_MAINNET.cctpForwarder,
+    },
+    ...(env.ACCOUNT_FACTORY_STELLAR_MAINNET ? { accountFactory: env.ACCOUNT_FACTORY_STELLAR_MAINNET } : {}),
+    ...(env.VAULT_STELLAR_MAINNET ? { vault: env.VAULT_STELLAR_MAINNET } : {}),
+  };
+  const all: Network[] = [avalancheFuji, stellarTestnet, avalancheMainnet, stellarMainnet];
+  const mainnet = env.TILCAI_ENV === "mainnet";
+  return {
+    environment: env.TILCAI_ENV,
+    avalanche: mainnet ? avalancheMainnet : avalancheFuji,
+    stellar: mainnet ? stellarMainnet : stellarTestnet,
+    avalancheFuji,
+    stellarTestnet,
+    avalancheMainnet,
+    stellarMainnet,
+    byId: (id) => all.find((n) => n.id === id),
+  };
 }

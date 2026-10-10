@@ -9,15 +9,16 @@ import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { rpc, xdr } from "@stellar/stellar-sdk";
 import { createPublicClient, http, toFunctionSelector } from "viem";
-import { loadEnv } from "../../config/env.ts";
+import { activeConfig, loadEnv } from "../../config/env.ts";
 import { networks } from "../../config/networks.ts";
 import { viemChain } from "../../modules/crosschain/adapters/evm.ts";
 import { RelayerClient } from "../../modules/relayer/client.ts";
 
 const env = loadEnv();
+const active = activeConfig(env);
 const nets = networks(env);
-const fuji = nets.avalancheFuji;
-const stellar = nets.stellarTestnet;
+const fuji = nets.avalanche;
+const stellar = nets.stellar;
 const repo = (path: string) => fileURLToPath(new URL(`../../../${path}`, import.meta.url));
 
 let failures = 0;
@@ -81,14 +82,14 @@ if (network) {
 }
 
 // ── Relayer: it deploys the accounts and pays every fee ──
-console.log(`\nRelayer ${env.RELAYER_URL}`);
-const relayer = new RelayerClient(env.RELAYER_URL, env.RELAYER_API_KEY);
+console.log(`\nRelayer ${active.relayerUrl}`);
+const relayer = new RelayerClient(active.relayerUrl, active.relayerApiKey);
 const up = await relayer.health();
 line(up, "GET /api/v1/health");
-if (!env.RELAYER_API_KEY) line(false, "RELAYER_API_KEY set");
-if (up && env.RELAYER_API_KEY) {
+if (!active.relayerApiKey) line(false, "active relayer API key set");
+if (up && active.relayerApiKey) {
   const relayers = (await attempt("GET /api/v1/relayers", () => relayer.listRelayers())) ?? [];
-  for (const id of [env.RELAYER_STELLAR_ID, env.RELAYER_FUJI_ID]) {
+  for (const id of [active.stellarRelayerId, active.evmRelayerId]) {
     const found = relayers.find((x) => x.id === id);
     const balance = found ? await relayer.getBalance(id).catch(() => null) : null;
     line(Boolean(found) && !found!.paused, `relayer '${id}' enabled`, balance ? `balance ${balance.balance} ${balance.unit}` : found ? "balance ?" : "not found");

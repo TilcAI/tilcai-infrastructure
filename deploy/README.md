@@ -41,6 +41,8 @@ Archivos de esta carpeta:
 
 TilcAI se construye con `tilcai-core` al lado de este repositorio (`../tilcai-core`, o
 `TILCAI_CORE_DIR`). El relayer se compila desde el fork (`RELAYER_SOURCE`, `RELAYER_REF`): la
+referencia es obligatoriamente un commit inmutable de 40 hexadecimales; las ramas como `main`
+son rechazadas. La
 primera vez tarda varios minutos porque compila Rust. `RELAYER_BASE=<imagen>` reutiliza una
 base ya compilada.
 
@@ -58,6 +60,17 @@ administrado con TLS). `RELAYER_FEATURES=""` la compila sin TLS.
 
 Ninguna imagen lleva secretos. Todo entra por variables de entorno.
 
+> **Mainnet, Fase 1:** Compose transporta las variables separadas de mainnet, pero el relayer
+> incluido continúa configurado solo para Fuji/Stellar Testnet y no debe reutilizar su firmante.
+> `TILCAI_ENV=mainnet` falla si faltan contratos, credenciales, RPC o base separados, y
+> `MAINNET_TRANSACTIONS_ENABLED=false` mantiene deshabilitados los envíos. Esta fase no es un
+> procedimiento de despliegue productivo.
+
+La preparación separada de Fase 2, sus comandos bloqueados y el inventario de aprobaciones están
+en [`MAINNET_DEPLOYMENT.md`](MAINNET_DEPLOYMENT.md). No ejecutes
+`docker-compose.mainnet.yml`: es un artefacto para revisión, con relayers pausados y transacciones
+deshabilitadas.
+
 **Relayer**
 
 | Variable | Secreto | Notas |
@@ -72,7 +85,8 @@ Ninguna imagen lleva secretos. Todo entra por variables de entorno.
 | `PORT` | no | Si la plataforma lo define, el relayer escucha ahí |
 
 El keystore es la identidad on-chain del relayer: sus direcciones pagan el gas (AVAX en Fuji,
-XLM en Stellar). **Reutiliza el keystore que ya tiene fondos.** Con uno nuevo hay que fondear
+XLM en Stellar). **En testnet, reutiliza el keystore de test que ya tiene fondos; nunca lo uses
+en mainnet.** Con uno nuevo hay que fondear
 ambas cuentas antes de arrancar: el relayer de Stellar queda deshabilitado mientras su cuenta
 no exista en la red.
 

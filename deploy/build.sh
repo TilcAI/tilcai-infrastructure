@@ -15,7 +15,7 @@
 #   TILCAI_CORE_DIR    path to tilcai-core (default: ../tilcai-core, next to this repo)
 #   RELAYER_SOURCE     where the relayer fork lives: a local clone or a git URL
 #                      (default: https://github.com/SaulChoque/openzeppelin-relayer.git)
-#   RELAYER_REF        commit, tag or branch of the fork to build (default: main)
+#   RELAYER_REF        immutable 40-hex commit of the fork (required when building the relayer)
 #   RELAYER_FEATURES   cargo features of the relayer. `redis-tls-rustls` lets it talk to
 #                      managed Redis over TLS (rediss://); set to "" to build without it
 #   RELAYER_BASE       reuse an already built relayer base image instead of compiling it
@@ -28,7 +28,7 @@ core="${TILCAI_CORE_DIR:-$(dirname "$repo")/tilcai-core}"
 REGISTRY="${REGISTRY:-tilcai}"
 TAG="${TAG:-local}"
 RELAYER_SOURCE="${RELAYER_SOURCE:-https://github.com/SaulChoque/openzeppelin-relayer.git}"
-RELAYER_REF="${RELAYER_REF:-main}"
+RELAYER_REF="${RELAYER_REF:-}"
 RELAYER_FEATURES="${RELAYER_FEATURES-redis-tls-rustls}"
 
 what="${1:-all}"
@@ -53,6 +53,10 @@ build_tilcai() {
 }
 
 build_relayer_base() {
+  [[ "$RELAYER_REF" =~ ^[0-9a-f]{40}$ ]] || {
+    echo "RELAYER_REF must be an immutable 40-hex commit; branches such as main are forbidden" >&2
+    exit 64
+  }
   local image="$REGISTRY/oz-relayer-base:$TAG"
   if [ -d "$RELAYER_SOURCE/.git" ]; then
     # Local clone: send only tracked files, so a local config/ (keystore, .env) never

@@ -57,12 +57,14 @@ export interface CrosschainDeps {
     /** Lifetime of a signed EIP-3009 authorization. */
     authorizationTtlSeconds?: number;
   };
+  /** False keeps mainnet read-only even when every address is configured. */
+  transactionsEnabled?: boolean;
 }
 
 const MAX_BACKOFF_MS = 10 * 60_000;
 
 /**
- * Orchestrates Avalanche Fuji → Stellar Testnet USDC payments over CCTP V2.
+ * Orchestrates the active Avalanche → Stellar USDC route over CCTP V2.
  *
  * Safety rules (report §19, payment-rail-environment §6.2):
  *  - the source tx hash is persisted before any further step;
@@ -144,13 +146,14 @@ export class CrosschainPaymentService {
     idempotencyKey: string;
     tenantId?: TenantId;
   }): Promise<{ payment: CrosschainPayment; calls: UnsignedEvmCall[]; authorization?: AuthorizationRequest; replayed: boolean }> {
+    if (this.d.transactionsEnabled === false) throw new DomainError("SERVICE_UNAVAILABLE", "transactions are disabled for this environment");
     if (!/^[A-Za-z0-9_-]{8,128}$/.test(input.idempotencyKey)) throw new DomainError("INVALID_INPUT", "bad idempotency key");
     if (input.mode === "account") {
       if (!this.d.evm.routerV2Address() || !this.d.evmSubmitter || !this.d.accounts) {
-        throw new DomainError("SERVICE_UNAVAILABLE", "account mode needs CCTP_ROUTER_V2_FUJI, ACCOUNT_FACTORY_FUJI and an EVM relayer");
+        throw new DomainError("SERVICE_UNAVAILABLE", "account mode needs the active CCTP router v2, account factory and EVM relayer");
       }
     } else if (isGaslessMode(input.mode) && (!this.d.evm.routerAddress() || !this.d.evmSubmitter)) {
-      throw new DomainError("SERVICE_UNAVAILABLE", "gasless modes need CCTP_ROUTER_FUJI and an EVM relayer");
+      throw new DomainError("SERVICE_UNAVAILABLE", "gasless modes need the active CCTP router and EVM relayer");
     }
     const tenantId = input.tenantId ?? LEGACY_TENANT_ID;
     const payer = this.resolvePayer(input.mode, input.payer);

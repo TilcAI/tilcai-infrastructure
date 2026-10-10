@@ -1,4 +1,5 @@
 import type { VaultDisbursementId } from "../../shared/ids.ts";
+import type { NetworkId } from "../../config/networks.ts";
 
 /**
  * Payout of a purchase that was paid off-chain (bank transfer, QR): the TilcaiVault sends
@@ -35,7 +36,7 @@ export interface VaultDisbursement {
   state: DisbursementState;
   /** A relayer call ended without an answer: a transaction may exist that TilcAI cannot see. */
   uncertain: boolean;
-  network: "eip155:43113" | "stellar:testnet";
+  network: NetworkId;
   vault: string;
   to: string;
   amountAtomic: bigint;

@@ -22,8 +22,8 @@ const send = (reply: FastifyReply, status: number, body: unknown) =>
   reply.code(status).type("application/json; charset=utf-8").send(json(body));
 
 const QuoteBody = z.strictObject({
-  sourceNetwork: z.literal("eip155:43113"),
-  destinationNetwork: z.literal("stellar:testnet"),
+  sourceNetwork: z.enum(["eip155:43113", "eip155:43114"]),
+  destinationNetwork: z.enum(["stellar:testnet", "stellar:pubnet"]),
   amount: z.string().max(40),
   payTo: z.string().max(69),
 });
@@ -62,9 +62,9 @@ function requirementOf(method: string, path: string): { scope: TenantScope; oper
   const operator = ["/v1/vault", "/v1/monitor", "/v1/relayer"].some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
   return { scope: "payments", operator };
 }
-const VAULT_NETWORKS = ["eip155:43113", "stellar:testnet"] as const;
+const VAULT_NETWORKS = ["eip155:43113", "stellar:testnet", "eip155:43114", "stellar:pubnet"] as const;
 const DisbursementBody = z.strictObject({
-  /** Which network's vault pays. Without it: the one vault configured, Fuji's when both are. */
+  /** Which network's vault pays. Without it: the active Avalanche vault, or the only configured vault. */
   network: z.enum(VAULT_NETWORKS).optional(),
   to: z.string().max(69),
   amount: z.string().max(40),
@@ -79,7 +79,7 @@ export function buildServer(ctx: AppContext): FastifyInstance {
     forceCloseConnections: true,
   });
 
-  const keys = ctx.env.TILCAI_API_KEYS;
+  const keys = ctx.runtime.apiKeys;
   const callers = new WeakMap<FastifyRequest, Caller>();
   if (keys.length === 0) app.log.warn("TILCAI_API_KEYS empty: API only reachable unauthenticated on loopback");
 
@@ -144,9 +144,11 @@ export function buildServer(ctx: AppContext): FastifyInstance {
     return send(reply, 200, {
       ok: true,
       env: ctx.env.TILCAI_ENV,
+      transactionsEnabled: ctx.runtime.transactionsEnabled,
       relayer: relayer ? "up" : "down",
       vault: ctx.vault ? "on" : "off",
-      vaultStellar: ctx.vaults["stellar:testnet"] ? "on" : "off",
+      networks: [ctx.nets.avalanche.id, ctx.nets.stellar.id],
+      vaultStellar: ctx.vaults[ctx.nets.stellar.id] ? "on" : "off",
       accounts: ctx.accountService ? "on" : "off",
       qrMock: ctx.qrMock ? "on" : "off",
       monitor: ctx.forwarder ? "push" : "local",
@@ -165,10 +167,11 @@ export function buildServer(ctx: AppContext): FastifyInstance {
       routes: [
         {
           protocol: "cctp-v2",
-          source: { network: ctx.nets.avalancheFuji.id, asset: ctx.nets.avalancheFuji.usdc.address, domain: ctx.nets.avalancheFuji.cctpDomain },
-          destination: { network: ctx.nets.stellarTestnet.id, asset: ctx.nets.stellarTestnet.usdc.sac, domain: ctx.nets.stellarTestnet.cctpDomain },
+          source: { network: ctx.nets.avalanche.id, asset: ctx.nets.avalanche.usdc.address, domain: ctx.nets.avalanche.cctpDomain },
+          destination: { network: ctx.nets.stellar.id, asset: ctx.nets.stellar.usdc.sac, domain: ctx.nets.stellar.cctpDomain },
           finality: "standard",
           mintSubmitter: ctx.env.STELLAR_MINT_SUBMITTER,
+          transactionsEnabled: ctx.runtime.transactionsEnabled,
         },
       ],
     }),
@@ -270,13 +273,12 @@ export function buildServer(ctx: AppContext): FastifyInstance {
 
   // ── Vault: payouts of purchases settled off-chain ─────────────────────────
 
-  /** The vault service of a network; without `network`, Fuji's (the original one) or the only one configured. */
+  /** The vault service of a network; without `network`, active Avalanche or the only configured vault. */
   const vaultOf = (network?: string): VaultDisbursementService => {
     const found = network ? ctx.vaults[network as (typeof VAULT_NETWORKS)[number]] : (ctx.vault ?? Object.values(ctx.vaults)[0]);
     if (found) return found;
     if (network && !(VAULT_NETWORKS as readonly string[]).includes(network)) throw new DomainError("INVALID_INPUT", `unknown network ${network}`);
-    const hint = network === "stellar:testnet" ? "VAULT_STELLAR" : "VAULT_FUJI";
-    throw new DomainError("SERVICE_UNAVAILABLE", `vault not configured (${hint})`);
+    throw new DomainError("SERVICE_UNAVAILABLE", `vault not configured for ${network ?? "the active environment"}`);
   };
   /** The service that owns a payout, found by its id through the shared repository. */
   const vaultOfDisbursement = (id: string): { service: VaultDisbursementService; disbursement: VaultDisbursement } => {
@@ -315,7 +317,7 @@ export function buildServer(ctx: AppContext): FastifyInstance {
     const network = z.object({ network: z.enum(VAULT_NETWORKS).optional() }).parse(req.query).network;
     const service = vaultOf(network);
     const s = await service.status();
-    const net = network ?? (ctx.vault ? "eip155:43113" : (Object.keys(ctx.vaults)[0] as string));
+    const net = network ?? (ctx.vault ? ctx.nets.avalanche.id : (Object.keys(ctx.vaults)[0] as string));
     const { decimals, asset, explorer } = usdcOf(net);
     const usdc = (atomic: bigint) => atomicToDecimal(atomic, decimals);
     return send(reply, 200, {
@@ -333,7 +335,7 @@ export function buildServer(ctx: AppContext): FastifyInstance {
         maxPerDisbursement: usdc(s.maxPerDisbursementAtomic),
         dailyLimit: usdc(s.dailyLimitAtomic),
         availableToday: usdc(s.availableTodayAtomic),
-        explorer: `${explorer}/${net === "stellar:testnet" ? "contract" : "address"}/${s.address}`,
+        explorer: `${explorer}/${net.startsWith("stellar:") ? "contract" : "address"}/${s.address}`,
       },
     });
   });
@@ -359,10 +361,10 @@ export function buildServer(ctx: AppContext): FastifyInstance {
 
   app.get("/v1/relayer/status", async (_req, reply) => {
     const up = await ctx.relayer.health();
-    if (!up || !ctx.env.RELAYER_API_KEY) return send(reply, 200, { up, authenticated: false });
+    if (!up || !ctx.runtime.relayerApiKey) return send(reply, 200, { up, authenticated: false });
     const [supported, stellar] = await Promise.allSettled([
-      ctx.relayer.x402(ctx.env.RELAYER_X402_PLUGIN_ID, "/supported"),
-      ctx.relayer.getRelayer(ctx.env.RELAYER_STELLAR_ID),
+      ctx.relayer.x402(ctx.runtime.x402PluginId, "/supported"),
+      ctx.relayer.getRelayer(ctx.runtime.stellarRelayerId),
     ]);
     return send(reply, 200, {
       up,

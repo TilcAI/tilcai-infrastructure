@@ -1,0 +1,81 @@
+# Review-only Mainnet stack definition. Do not start it during phase 2.
+# It has a distinct project name, services, ports, volumes, database and signer variables.
+name: tilcai-mainnet-preparation
+
+services:
+  redis-mainnet:
+    image: redis:7-bookworm
+    command: [redis-server, --appendonly, "yes", --save, "60", "1"]
+    volumes: [tilcai-mainnet-redis:/data]
+    security_opt: [no-new-privileges]
+    restart: "no"
+
+  relayer-mainnet:
+    image: ${MAINNET_REGISTRY:-tilcai}/relayer:${MAINNET_TAG:?set an immutable Mainnet image tag}
+    environment:
+      CONFIG_FILE_NAME: config.mainnet.json
+      API_KEY: ${MAINNET_RELAYER_API_KEY:?set an independent Mainnet relayer API key}
+      MAINNET_EVM_KEYSTORE_PASSPHRASE: ${MAINNET_EVM_KEYSTORE_PASSPHRASE:?set via a secret manager}
+      MAINNET_STELLAR_KEYSTORE_PASSPHRASE: ${MAINNET_STELLAR_KEYSTORE_PASSPHRASE:?set via a secret manager}
+      MAINNET_EVM_KEYSTORE_JSON_B64: ${MAINNET_EVM_KEYSTORE_JSON_B64:?set an independent EVM keystore}
+      MAINNET_STELLAR_KEYSTORE_JSON_B64: ${MAINNET_STELLAR_KEYSTORE_JSON_B64:?set an independent Stellar keystore}
+      MAINNET_WEBHOOK_SIGNING_KEY: ${MAINNET_WEBHOOK_SIGNING_KEY:?set an independent webhook key}
+      REDIS_URL: redis://redis-mainnet:6379
+      REPOSITORY_STORAGE_TYPE: redis
+      STORAGE_ENCRYPTION_KEY: ${MAINNET_RELAYER_STORAGE_ENCRYPTION_KEY:?set via a secret manager}
+      RESET_STORAGE_ON_START: "false"
+      RATE_LIMIT_REQUESTS_PER_SECOND: "10"
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    depends_on: [redis-mainnet]
+    ports: ["127.0.0.1:${MAINNET_RELAYER_PORT:-18080}:8080"]
+    security_opt: [no-new-privileges]
+    restart: "no"
+
+  tilcai-mainnet:
+    image: ${MAINNET_REGISTRY:-tilcai}/tilcai:${MAINNET_TAG:?set an immutable Mainnet image tag}
+    environment:
+      TILCAI_ENV: mainnet
+      MAINNET_TRANSACTIONS_ENABLED: "false"
+      API_HOST: 0.0.0.0
+      TILCAI_API_KEYS: ""
+      TILCAI_API_KEYS_MAINNET: ${MAINNET_TILCAI_API_KEYS:?set independent Mainnet API keys}
+      DATABASE_PATH: /data/unused-testnet.db
+      DATABASE_PATH_MAINNET: /data/tilcai-mainnet.db
+      RELAYER_URL: http://unused-testnet-relayer.invalid
+      RELAYER_API_KEY: ""
+      RELAYER_URL_MAINNET: http://relayer-mainnet:8080
+      RELAYER_API_KEY_MAINNET: ${MAINNET_RELAYER_API_KEY:?set the Mainnet relayer API key}
+      RELAYER_AVALANCHE_MAINNET_ID: avalanche-mainnet-relayer
+      RELAYER_STELLAR_MAINNET_ID: stellar-mainnet-relayer
+      RELAYER_X402_PLUGIN_ID_MAINNET: x402-mainnet
+      RELAYER_WEBHOOK_SIGNING_KEY_MAINNET: ${MAINNET_WEBHOOK_SIGNING_KEY:?set the Mainnet webhook key}
+      RPC_AVALANCHE_MAINNET: ${RPC_AVALANCHE_MAINNET:?set an Avalanche Mainnet RPC}
+      RPC_STELLAR_MAINNET: ${RPC_STELLAR_MAINNET:?set a Stellar Mainnet Soroban RPC}
+      HORIZON_STELLAR_MAINNET: ${HORIZON_STELLAR_MAINNET:?set a Stellar Mainnet Horizon endpoint}
+      IRIS_API_URL_MAINNET: https://iris-api.circle.com
+      STELLAR_SIMULATION_SOURCE_MAINNET: ${MAINNET_STELLAR_SIMULATION_SOURCE:?set a public G account}
+      CCTP_ROUTER_AVALANCHE_MAINNET: ${CCTP_ROUTER_AVALANCHE_MAINNET:?pending deployment}
+      CCTP_ROUTER_V2_AVALANCHE_MAINNET: ${CCTP_ROUTER_V2_AVALANCHE_MAINNET:?pending deployment}
+      ACCOUNT_FACTORY_AVALANCHE_MAINNET: ${ACCOUNT_FACTORY_AVALANCHE_MAINNET:?pending deployment}
+      VAULT_AVALANCHE_MAINNET: ${VAULT_AVALANCHE_MAINNET:?pending deployment}
+      ERC4337_ENTRYPOINT_AVALANCHE_MAINNET: ${ERC4337_ENTRYPOINT_AVALANCHE_MAINNET:?pending bytecode verification}
+      ACCOUNT_FACTORY_STELLAR_MAINNET: ${ACCOUNT_FACTORY_STELLAR_MAINNET:?pending deployment}
+      VAULT_STELLAR_MAINNET: ${VAULT_STELLAR_MAINNET:?pending deployment}
+      STELLAR_MINT_SUBMITTER: relayer
+      STELLAR_OPERATOR_SECRET: ""
+      DEV_EVM_PAYER_PRIVATE_KEY: ""
+      QR_MOCK_ENABLED: "false"
+      MONITOR_WEB_URL_MAINNET: ${MONITOR_WEB_URL_MAINNET:-}
+      MONITOR_WEB_SECRET_MAINNET: ${MONITOR_WEB_SECRET_MAINNET:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes: [tilcai-mainnet-data:/data]
+    depends_on: [relayer-mainnet]
+    ports: ["127.0.0.1:${MAINNET_TILCAI_PORT:-18787}:8787"]
+    security_opt: [no-new-privileges]
+    restart: "no"
+
+volumes:
+  tilcai-mainnet-redis:
+    name: tilcai-mainnet-preparation-redis
+  tilcai-mainnet-data:
+    name: tilcai-mainnet-preparation-data

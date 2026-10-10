@@ -1,5 +1,5 @@
 import { xdr } from "@stellar/stellar-sdk";
-import type { StellarNetwork } from "../../../config/networks.ts";
+import type { StellarNetwork, StellarNetworkId } from "../../../config/networks.ts";
 import { hexToBytes, type Hex } from "../../../shared/hex.ts";
 import { SorobanReader, type SorobanView } from "../../stellar/soroban.ts";
 import { bytesArg, type StellarInvoker, type StellarSubmissionStatus } from "../../stellar/relayer-submitter.ts";
@@ -19,7 +19,7 @@ type FactoryCall = { create: "create_ed25519" | "create_webauthn"; address: "add
  * WebAuthn verifier on-chain). Both are registered as `External(verifier, key)` signers.
  */
 export class StellarSmartAccountProvider implements AccountDeployer {
-  readonly network = "stellar:testnet" as const;
+  readonly network: StellarNetworkId;
   private readonly reader: SorobanView;
   private wasmHash: string | null = null;
 
@@ -30,6 +30,7 @@ export class StellarSmartAccountProvider implements AccountDeployer {
     simulationSource?: string,
     reader?: SorobanView,
   ) {
+    this.network = net.id;
     this.reader = reader ?? new SorobanReader(net, simulationSource);
   }
 

@@ -24,6 +24,7 @@ import { disbursementIdBytes32 } from "../../modules/vault/disbursement-id.ts";
 
 const { values: a, positionals } = parseArgs({ allowPositionals: true, options: { pay: { type: "string" }, amount: { type: "string", default: "0.1" } } });
 const env = loadEnv();
+if (env.TILCAI_ENV === "mainnet") throw new Error("Stellar deployment/operation CLI is disabled on mainnet in phase 1");
 const net = networks(env).stellarTestnet;
 const usdc = (atomic: bigint) => `${atomicToDecimal(atomic, net.usdc.decimals)} USDC`;
 const link = (kind: "contract" | "account" | "tx", id: string) => `${net.explorer}/${kind}/${id}`;

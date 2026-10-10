@@ -1,0 +1,87 @@
+{
+  "relayers": [
+    {
+      "id": "avalanche-mainnet-relayer",
+      "name": "Avalanche Mainnet Relayer (PAUSED)",
+      "network": "avalanche-c-chain",
+      "paused": true,
+      "signer_id": "evm-mainnet-signer",
+      "notification_id": "tilcai-mainnet-monitor",
+      "network_type": "evm",
+      "policies": {
+        "min_balance": 500000000000000000,
+        "gas_price_cap": 100000000000,
+        "gas_limit_estimation": true,
+        "eip1559_pricing": true
+      }
+    },
+    {
+      "id": "stellar-mainnet-relayer",
+      "name": "Stellar Mainnet Relayer (PAUSED)",
+      "network": "mainnet",
+      "paused": true,
+      "signer_id": "stellar-mainnet-signer",
+      "notification_id": "tilcai-mainnet-monitor",
+      "network_type": "stellar",
+      "policies": {
+        "fee_payment_strategy": "relayer",
+        "min_balance": 100000000
+      }
+    }
+  ],
+  "notifications": [
+    {
+      "id": "tilcai-mainnet-monitor",
+      "type": "webhook",
+      "url": "http://tilcai-mainnet:8787/v1/webhooks/relayer",
+      "signing_key": { "type": "env", "value": "MAINNET_WEBHOOK_SIGNING_KEY" }
+    }
+  ],
+  "signers": [
+    {
+      "id": "evm-mainnet-signer",
+      "type": "local",
+      "config": {
+        "path": "config/keys/evm-mainnet-signer.json",
+        "passphrase": { "type": "env", "value": "MAINNET_EVM_KEYSTORE_PASSPHRASE" }
+      }
+    },
+    {
+      "id": "stellar-mainnet-signer",
+      "type": "local",
+      "config": {
+        "path": "config/keys/stellar-mainnet-signer.json",
+        "passphrase": { "type": "env", "value": "MAINNET_STELLAR_KEYSTORE_PASSPHRASE" }
+      }
+    }
+  ],
+  "networks": "./config/networks",
+  "plugins": [
+    {
+      "id": "x402-mainnet",
+      "path": "x402/index.ts",
+      "timeout": 30,
+      "emit_logs": false,
+      "emit_traces": false,
+      "forward_logs": true,
+      "raw_response": true,
+      "allow_get_invocation": true,
+      "config": {
+        "networks": [
+          {
+            "network": "eip155:43114",
+            "type": "evm",
+            "relayer_id": "avalanche-mainnet-relayer",
+            "assets": ["0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E"]
+          },
+          {
+            "network": "stellar:pubnet",
+            "type": "stellar",
+            "relayer_id": "stellar-mainnet-relayer",
+            "assets": ["CCW67TSZV3SSS2HXMBQ5JFGCKJNXKZM7UQUWUZPUTHXSTZLEO7SJMI75"]
+          }
+        ]
+      }
+    }
+  ]
+}

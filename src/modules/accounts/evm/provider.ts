@@ -1,5 +1,5 @@
 import { createPublicClient, encodeFunctionData, getAddress, http, parseAbi, type PublicClient } from "viem";
-import type { EvmNetwork } from "../../../config/networks.ts";
+import type { EvmNetwork, EvmNetworkId } from "../../../config/networks.ts";
 import type { Hex } from "../../../shared/hex.ts";
 import { viemChain } from "../../crosschain/adapters/evm.ts";
 import type { EvmSubmissionStatus, EvmTxSubmitter } from "../../crosschain/ports.ts";
@@ -29,7 +29,7 @@ export type { AccountDeployer };
  * The relayer pays the deployment; it is never a signer of the account.
  */
 export class EvmSmartAccountProvider implements AccountDeployer {
-  readonly network = "eip155:43113" as const;
+  readonly network: EvmNetworkId;
   private readonly pub: PublicClient;
   private implementation: Hex | null = null;
 
@@ -38,6 +38,7 @@ export class EvmSmartAccountProvider implements AccountDeployer {
     private readonly factory: Hex,
     private readonly submitter: EvmTxSubmitter | null,
   ) {
+    this.network = net.id;
     this.pub = createPublicClient({ chain: viemChain(net), transport: http(net.rpc, { retryCount: 3 }) }) as PublicClient;
   }
 

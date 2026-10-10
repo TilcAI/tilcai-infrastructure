@@ -1,9 +1,10 @@
 // Phase 1–2 · owner: Jhamil. Provider identity, operators and versioned payout destinations (report §12.10).
 import type { BusinessId, PrincipalId } from "tilcai-core/src/contracts.ts";
+import type { StellarNetworkId } from "../../config/networks.ts";
 
 export interface PayoutDestination {
   /** CAIP-2 network + exact asset contract; "USDC" alone is never an asset id (§14.4). */
-  network: "stellar:testnet" | "stellar:mainnet";
+  network: StellarNetworkId;
   assetId: string;
   payTo: string;
   version: number;
