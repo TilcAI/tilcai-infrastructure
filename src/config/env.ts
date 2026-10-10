@@ -18,7 +18,7 @@ const stellarAccount = z.string().regex(/^G[A-Z2-7]{55}$/).or(z.literal("")).def
 
 const schema = z.object({
   TILCAI_ENV: z.enum(["testnet", "mainnet"]).default("testnet"),
-  /** Second, explicit switch. Mainnet remains read-only until an operator opts in later. */
+  /** Second, explicit switch: a mainnet process is read-only (quotes, status) until this is true. */
   MAINNET_TRANSACTIONS_ENABLED: flag,
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace"]).default("info"),
 
@@ -64,8 +64,8 @@ const schema = z.object({
   VAULT_STELLAR: stellarContract,
   RELAYER_X402_PLUGIN_ID: z.string().default("x402"),
 
-  // TilcAI contracts are not deployed on mainnet yet. They have no defaults on purpose:
-  // a mainnet process must not start until every audited deployment is supplied explicitly.
+  // Mainnet contracts have no defaults on purpose: each address is supplied explicitly once its
+  // deployment is verified. Only the gasless router is required; each of the others turns a feature on.
   CCTP_ROUTER_AVALANCHE_MAINNET: evmAddress,
   CCTP_ROUTER_V2_AVALANCHE_MAINNET: evmAddress,
   ACCOUNT_FACTORY_AVALANCHE_MAINNET: evmAddress,
@@ -148,50 +148,48 @@ const checked = schema.superRefine((env, ctx) => {
   need(!env.QR_MOCK_ENABLED || Boolean(env.QR_MOCK_EMAIL), "QR_MOCK_EMAIL", "required with QR_MOCK_ENABLED");
   need(!env.QR_MOCK_ENABLED || env.QR_MOCK_PASSWORD.length >= 8, "QR_MOCK_PASSWORD", "8+ characters with QR_MOCK_ENABLED");
   if (env.TILCAI_ENV === "mainnet") {
+    // What a mainnet process cannot run without: its own state, a relayer for each chain, the
+    // gasless router and production endpoints.
     const required: Array<[keyof Env, string]> = [
       ["DATABASE_PATH_MAINNET", env.DATABASE_PATH_MAINNET],
       ["RELAYER_URL_MAINNET", env.RELAYER_URL_MAINNET],
       ["RELAYER_API_KEY_MAINNET", env.RELAYER_API_KEY_MAINNET],
       ["RELAYER_AVALANCHE_MAINNET_ID", env.RELAYER_AVALANCHE_MAINNET_ID],
       ["RELAYER_STELLAR_MAINNET_ID", env.RELAYER_STELLAR_MAINNET_ID],
-      ["RELAYER_X402_PLUGIN_ID_MAINNET", env.RELAYER_X402_PLUGIN_ID_MAINNET],
       ["CCTP_ROUTER_AVALANCHE_MAINNET", env.CCTP_ROUTER_AVALANCHE_MAINNET],
-      ["CCTP_ROUTER_V2_AVALANCHE_MAINNET", env.CCTP_ROUTER_V2_AVALANCHE_MAINNET],
-      ["ACCOUNT_FACTORY_AVALANCHE_MAINNET", env.ACCOUNT_FACTORY_AVALANCHE_MAINNET],
-      ["VAULT_AVALANCHE_MAINNET", env.VAULT_AVALANCHE_MAINNET],
-      ["ERC4337_ENTRYPOINT_AVALANCHE_MAINNET", env.ERC4337_ENTRYPOINT_AVALANCHE_MAINNET],
-      ["ACCOUNT_FACTORY_STELLAR_MAINNET", env.ACCOUNT_FACTORY_STELLAR_MAINNET],
-      ["VAULT_STELLAR_MAINNET", env.VAULT_STELLAR_MAINNET],
       ["STELLAR_SIMULATION_SOURCE_MAINNET", env.STELLAR_SIMULATION_SOURCE_MAINNET],
       ["RPC_AVALANCHE_MAINNET", env.RPC_AVALANCHE_MAINNET],
       ["RPC_STELLAR_MAINNET", env.RPC_STELLAR_MAINNET],
       ["HORIZON_STELLAR_MAINNET", env.HORIZON_STELLAR_MAINNET],
-      ["RELAYER_WEBHOOK_SIGNING_KEY_MAINNET", env.RELAYER_WEBHOOK_SIGNING_KEY_MAINNET],
     ];
     for (const [path, value] of required) need(Boolean(value), path, "required in mainnet");
+    // Everything else is a feature that stays off until its contract is deployed and verified:
+    // smart accounts (factory, router v2, EntryPoint), the vaults, x402 and the relayer webhooks.
+    need(!env.ACCOUNT_FACTORY_AVALANCHE_MAINNET || Boolean(env.ERC4337_ENTRYPOINT_AVALANCHE_MAINNET), "ERC4337_ENTRYPOINT_AVALANCHE_MAINNET", "required with ACCOUNT_FACTORY_AVALANCHE_MAINNET");
+    need(!env.CCTP_ROUTER_V2_AVALANCHE_MAINNET || Boolean(env.ACCOUNT_FACTORY_AVALANCHE_MAINNET), "ACCOUNT_FACTORY_AVALANCHE_MAINNET", "required with CCTP_ROUTER_V2_AVALANCHE_MAINNET");
     need(env.TILCAI_API_KEYS_MAINNET.length > 0, "TILCAI_API_KEYS_MAINNET", "at least one key is required in mainnet");
     need(env.DATABASE_PATH_MAINNET !== env.DATABASE_PATH, "DATABASE_PATH_MAINNET", "must be separate from testnet");
-    need(env.RELAYER_URL_MAINNET !== env.RELAYER_URL, "RELAYER_URL_MAINNET", "must be separate from testnet");
-    need(env.RELAYER_API_KEY_MAINNET !== env.RELAYER_API_KEY, "RELAYER_API_KEY_MAINNET", "must be separate from testnet");
+    // One OpenZeppelin Relayer may serve both environments (same URL and key): what keeps them
+    // apart is the relayer id, which selects the network and the account that signs.
     need(env.RELAYER_AVALANCHE_MAINNET_ID !== env.RELAYER_FUJI_ID, "RELAYER_AVALANCHE_MAINNET_ID", "must be separate from testnet");
     need(env.RELAYER_STELLAR_MAINNET_ID !== env.RELAYER_STELLAR_ID, "RELAYER_STELLAR_MAINNET_ID", "must be separate from testnet");
-    need(env.RELAYER_X402_PLUGIN_ID_MAINNET !== env.RELAYER_X402_PLUGIN_ID, "RELAYER_X402_PLUGIN_ID_MAINNET", "must be separate from testnet");
+    need(env.RELAYER_AVALANCHE_MAINNET_ID !== env.RELAYER_STELLAR_MAINNET_ID, "RELAYER_STELLAR_MAINNET_ID", "must not be the Avalanche relayer");
     need(!env.TILCAI_API_KEYS_MAINNET.some((key) => env.TILCAI_API_KEYS.includes(key)), "TILCAI_API_KEYS_MAINNET", "must not reuse testnet keys");
     need(!env.MONITOR_WEB_SECRET || env.MONITOR_WEB_SECRET_MAINNET !== env.MONITOR_WEB_SECRET, "MONITOR_WEB_SECRET_MAINNET", "must not reuse the testnet secret");
-    need(env.RELAYER_WEBHOOK_SIGNING_KEY_MAINNET !== env.RELAYER_WEBHOOK_SIGNING_KEY, "RELAYER_WEBHOOK_SIGNING_KEY_MAINNET", "must not reuse the testnet key");
+    need(!env.RELAYER_WEBHOOK_SIGNING_KEY || env.RELAYER_WEBHOOK_SIGNING_KEY_MAINNET !== env.RELAYER_WEBHOOK_SIGNING_KEY, "RELAYER_WEBHOOK_SIGNING_KEY_MAINNET", "must not reuse the testnet key");
     need(env.RPC_AVALANCHE_MAINNET !== env.RPC_AVALANCHE_FUJI, "RPC_AVALANCHE_MAINNET", "must be separate from testnet");
     need(env.RPC_STELLAR_MAINNET !== env.RPC_STELLAR_TESTNET, "RPC_STELLAR_MAINNET", "must be separate from testnet");
     need(env.HORIZON_STELLAR_MAINNET !== env.HORIZON_STELLAR_TESTNET, "HORIZON_STELLAR_MAINNET", "must be separate from testnet");
-    const distinctAddress = (mainnet: string, testnet: string, path: keyof Env) => need(!testnet || mainnet.toLowerCase() !== testnet.toLowerCase(), path, "must not reuse the testnet address");
+    const distinctAddress = (mainnet: string, testnet: string, path: keyof Env) => need(!mainnet || !testnet || mainnet.toLowerCase() !== testnet.toLowerCase(), path, "must not reuse the testnet address");
     distinctAddress(env.CCTP_ROUTER_AVALANCHE_MAINNET, env.CCTP_ROUTER_FUJI, "CCTP_ROUTER_AVALANCHE_MAINNET");
     distinctAddress(env.CCTP_ROUTER_V2_AVALANCHE_MAINNET, env.CCTP_ROUTER_V2_FUJI, "CCTP_ROUTER_V2_AVALANCHE_MAINNET");
     distinctAddress(env.ACCOUNT_FACTORY_AVALANCHE_MAINNET, env.ACCOUNT_FACTORY_FUJI, "ACCOUNT_FACTORY_AVALANCHE_MAINNET");
     distinctAddress(env.VAULT_AVALANCHE_MAINNET, env.VAULT_FUJI, "VAULT_AVALANCHE_MAINNET");
     distinctAddress(env.ACCOUNT_FACTORY_STELLAR_MAINNET, env.ACCOUNT_FACTORY_STELLAR, "ACCOUNT_FACTORY_STELLAR_MAINNET");
     distinctAddress(env.VAULT_STELLAR_MAINNET, env.VAULT_STELLAR, "VAULT_STELLAR_MAINNET");
-    const evmContracts = [env.CCTP_ROUTER_AVALANCHE_MAINNET, env.CCTP_ROUTER_V2_AVALANCHE_MAINNET, env.ACCOUNT_FACTORY_AVALANCHE_MAINNET, env.VAULT_AVALANCHE_MAINNET].map((value) => value.toLowerCase());
+    const evmContracts = [env.CCTP_ROUTER_AVALANCHE_MAINNET, env.CCTP_ROUTER_V2_AVALANCHE_MAINNET, env.ACCOUNT_FACTORY_AVALANCHE_MAINNET, env.VAULT_AVALANCHE_MAINNET].filter(Boolean).map((value) => value.toLowerCase());
     need(new Set(evmContracts).size === evmContracts.length, "CCTP_ROUTER_AVALANCHE_MAINNET", "mainnet EVM contract addresses must be distinct");
-    need(env.ACCOUNT_FACTORY_STELLAR_MAINNET !== env.VAULT_STELLAR_MAINNET, "ACCOUNT_FACTORY_STELLAR_MAINNET", "mainnet Stellar contract addresses must be distinct");
+    need(!env.ACCOUNT_FACTORY_STELLAR_MAINNET || env.ACCOUNT_FACTORY_STELLAR_MAINNET !== env.VAULT_STELLAR_MAINNET, "ACCOUNT_FACTORY_STELLAR_MAINNET", "mainnet Stellar contract addresses must be distinct");
     need(!env.DEV_EVM_PAYER_PRIVATE_KEY, "DEV_EVM_PAYER_PRIVATE_KEY", "forbidden in mainnet");
     need(!env.STELLAR_OPERATOR_SECRET, "STELLAR_OPERATOR_SECRET", "local signing is forbidden in mainnet");
     need(env.STELLAR_MINT_SUBMITTER === "relayer", "STELLAR_MINT_SUBMITTER", "must be relayer in mainnet");

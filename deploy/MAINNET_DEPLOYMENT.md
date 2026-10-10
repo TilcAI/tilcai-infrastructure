@@ -1,8 +1,99 @@
-# Preparación de despliegue Mainnet
+# Mainnet: estado, operación y despliegues pendientes
 
-> Estado: **Fase 2, preparación solamente**. Los contratos propios no están auditados y los
-> relayers Mainnet están configurados con `paused: true`. No habilitar transacciones ni usar
-> fondos reales. Esta guía no autoriza ningún despliegue.
+> Estado al 2026-10-10: **los pagos crosschain Avalanche → Stellar funcionan en mainnet** con una
+> instancia propia de TilcAI. Ningún contrato propio tiene auditoría independiente. Las cuentas de
+> contrato, los vaults y x402 siguen apagados en mainnet: sus contratos no están desplegados y las
+> secciones 1 a 6 describen cómo prepararlos. Los subcomandos `deploy` siguen bloqueados.
+
+## 0. Lo que está en mainnet y cómo se opera
+
+### Contratos propios
+
+| Red | Contrato | Dirección | Estado |
+| --- | --- | --- | --- |
+| Avalanche C-Chain | `TilcaiCctpRouter` | `0xf6a2EdE00c441863519C6B30A1eb2d04E61847AB` | Desplegado el 2026-10-10 (tx `0x9eb993567b075ee653c53f349217076177d96d3f0c03a82a010c8ed9b4116457`), sin owner ni upgrade |
+| Avalanche C-Chain | `TilcaiCctpRouterV2`, `TilcaiAccountFactory`, `TilcaiVault` | — | Sin desplegar |
+| Stellar Public Network | `tilcai_account_factory`, `tilcai_vault`, verificadores | — | Sin desplegar |
+
+El router se desplegó desde la cuenta EVM del relayer, con el init code del artefacto compilado
+(hash `0xea7cb485e207cda00c9eb5423f99d0ea6f36d69c4acaf95376027bf16d1cd63a`). `npm run mainnet:preflight`
+con `CCTP_ROUTER_AVALANCHE_MAINNET` definido compara el código desplegado con el artefacto, byte a
+byte fuera de sus `immutable`.
+
+Primer pago real (gasless, 0.01 USDC, comisión CCTP 0, unos 27 s): burn
+`0x3bfdc1021f1d1277e7ae05065b157c7346a4f8e072fea4c03ab430ee0b739056` en C-Chain y mint
+`cead8c23f46687dc90feba1242a20382756454366fc287f7b66b11ffe10ebbc0` en Stellar.
+
+Segundo pago, ya contra la instancia `tilcai-mainnet` y por su API con `npm run e2e:gasless`
+(0.01 USDC, liquidado en 1 min 45 s; el mint tardó 78 s en confirmarse): burn
+`0xcfb8bb2d8aa214d09d93ce6ecdb3d2a0883c7a92f8f05ad523173431051c4413` y mint
+`43c32917b08c685abeca884188302531eca6a2caad63bdf9a25e81b2bd124821`.
+
+### La instancia
+
+Testnet y mainnet son dos procesos de la misma imagen. Cada uno tiene su base SQLite, sus claves de
+API, su puerto y su secreto del tablero; `TILCAI_ENV` elige las redes y un proceso nunca atiende
+las dos. La definición está en [`docker-compose.mainnet.yml`](docker-compose.mainnet.yml) y sus
+valores en [`.env.mainnet.example`](.env.mainnet.example).
+
+```bash
+docker compose -f deploy/docker-compose.mainnet.yml --env-file deploy/.env.mainnet up -d
+curl -s http://127.0.0.1:18787/health
+```
+
+Para arrancar, mainnet exige: base propia, al menos una clave de API que no sea de testnet, un
+relayer por cadena con ids distintos de los de testnet, `CCTP_ROUTER_AVALANCHE_MAINNET`, RPC de
+Avalanche y Stellar, Horizon y una cuenta `G…` para simulaciones. El resto son funciones que
+quedan apagadas mientras su variable esté vacía: `CCTP_ROUTER_V2_AVALANCHE_MAINNET` y
+`ACCOUNT_FACTORY_AVALANCHE_MAINNET` (cuentas; piden además `ERC4337_ENTRYPOINT_AVALANCHE_MAINNET`),
+`VAULT_AVALANCHE_MAINNET`, `ACCOUNT_FACTORY_STELLAR_MAINNET`, `VAULT_STELLAR_MAINNET`,
+`RELAYER_X402_PLUGIN_ID_MAINNET` y `RELAYER_WEBHOOK_SIGNING_KEY_MAINNET`. Siguen prohibidos en
+mainnet `DEV_EVM_PAYER_PRIVATE_KEY`, `STELLAR_OPERATOR_SECRET` y `QR_MOCK_ENABLED`: los modos
+`dev_signer` y `dev_gasless` no existen ahí, y quien paga firma en su propia billetera.
+
+`MAINNET_TRANSACTIONS_ENABLED=false` deja la instancia en solo lectura (cotiza y consulta; no crea
+pagos). Con `true` mueve fondos reales.
+
+### El relayer
+
+Un mismo OpenZeppelin Relayer puede atender los dos entornos: lo que los separa es el id de
+relayer, que fija la red y la cuenta que firma. Es la configuración en uso (relayers
+`avalanche-relayer` y `stellar-relayer`), y tiene costos que conviene conocer:
+
+- La clave del firmante es la misma que en testnet. La recomendación de la sección 1 sigue siendo
+  un relayer propio con firmantes independientes (`--profile relayer` en el Compose).
+- No hay `whitelist_receivers`: quien tenga la clave de la API del relayer puede hacerle enviar
+  cualquier transacción y gastar su AVAX y XLM. El relayer no custodia USDC de usuarios.
+- Sus avisos por webhook no llegan a la instancia de mainnet: los pagos avanzan igual por sondeo,
+  y el tablero no muestra eventos `relayer.*` de mainnet.
+
+El relayer paga el gas: unos 0.006 AVAX y 0.015 XLM por pago. El tablero avisa cuando baja.
+
+### Probar de extremo a extremo
+
+`npm run e2e:gasless` hace un pago contra una instancia en marcha por su API, como lo haría un
+tercero: la clave de quien paga queda en el proceso de la prueba y TilcAI solo recibe la firma.
+
+```bash
+E2E_API_URL=http://127.0.0.1:18787 E2E_API_KEY=… E2E_PAYER_PRIVATE_KEY=0x… \
+  npm run e2e:gasless -- --amount 0.01 --to G…
+```
+
+En mainnet mueve USDC reales. La cuenta que paga no necesita AVAX; el destino necesita una
+trustline de USDC.
+
+### Tablero
+
+`tilcai-web` muestra un bloque por backend, con mainnet primero y etiquetado como fondos reales.
+Acepta los eventos de mainnet solo con `MONITOR_INGEST_SECRET_MAINNET`, que es el
+`MONITOR_WEB_SECRET_MAINNET` de la instancia y no puede repetir el de testnet.
+
+### Pendiente
+
+- Auditoría independiente de Solidity y Soroban.
+- Desplegar y verificar los demás contratos (secciones 5 y 6) para encender cuentas y vaults.
+- Relayer propio de mainnet con firmantes independientes, `whitelist_receivers` y webhooks.
+- RPC administrados con SLA, y reemplazar SQLite antes de operar con volumen (sección 8).
 
 ## 1. Prerrequisitos y separación
 
@@ -21,7 +112,8 @@
   son una interfaz transitoria, no la arquitectura productiva recomendada.
 
 No se comparten con Testnet proyectos Compose, puertos, bases SQLite, volúmenes Redis, claves de
-API, webhooks, firmantes ni IDs de relayer. La plantilla es
+API, webhooks ni IDs de relayer. Los firmantes tampoco deberían compartirse; la instalación actual
+lo hace (sección 0, «El relayer»). La plantilla es
 [`docker-compose.mainnet.yml`](docker-compose.mainnet.yml) y sus valores están documentados en
 [`.env.mainnet.example`](.env.mainnet.example).
 
@@ -134,12 +226,9 @@ fork y permanece `PENDING` hasta que `/supported` del artefacto fijado anuncie `
 
 ## 8. Docker y datos
 
-La definición Mainnet tiene `restart: "no"`, nombres/volúmenes/puertos propios y fija
-`MAINNET_TRANSACTIONS_ENABLED=false`. No debe ejecutarse todavía. Para una revisión sintáctica:
-
-```bash
-docker compose -f deploy/docker-compose.mainnet.yml --env-file deploy/.env.mainnet.example config
-```
+La definición Mainnet tiene nombres, volúmenes y puertos propios, y arranca en solo lectura salvo
+que `MAINNET_TRANSACTIONS_ENABLED=true` (sección 0). Su relayer propio es opcional
+(`--profile relayer`) y se configura con `config.mainnet.json`, que nace con los relayers pausados.
 
 No usar la SQLite/Litestream actual con fondos reales. Un reemplazo por PostgreSQL requiere una
 decisión separada: driver y repositorios transaccionales, migraciones versionadas, bloqueo de

@@ -80,10 +80,50 @@ test("incomplete mainnet configuration fails closed", () => {
 
 test("mainnet rejects test endpoints, reused credentials and development signers", () => {
   assert.throws(() => loadEnv(mainnetSource({ RPC_AVALANCHE_MAINNET: "https://api.avax-test.network/ext/bc/C/rpc" })), /RPC_AVALANCHE_MAINNET/);
-  assert.throws(() => loadEnv(mainnetSource({ RELAYER_API_KEY_MAINNET: "testnet-relayer-key" })), /RELAYER_API_KEY_MAINNET/);
+  assert.throws(() => loadEnv(mainnetSource({ RELAYER_AVALANCHE_MAINNET_ID: "avalanche-fuji-relayer" })), /RELAYER_AVALANCHE_MAINNET_ID/);
+  assert.throws(() => loadEnv(mainnetSource({ RELAYER_STELLAR_MAINNET_ID: "stellar-example" })), /RELAYER_STELLAR_MAINNET_ID/);
+  assert.throws(() => loadEnv(mainnetSource({ RELAYER_STELLAR_MAINNET_ID: "avalanche-mainnet-relayer" })), /RELAYER_STELLAR_MAINNET_ID/);
+  assert.throws(() => loadEnv(mainnetSource({ DATABASE_PATH_MAINNET: "./data/testnet.db" })), /DATABASE_PATH_MAINNET/);
+  assert.throws(() => loadEnv(mainnetSource({ STELLAR_OPERATOR_SECRET: "local-signing" })), /STELLAR_OPERATOR_SECRET/);
   assert.throws(() => loadEnv(mainnetSource({ TILCAI_API_KEYS_MAINNET: "testnet-api-key" })), /TILCAI_API_KEYS_MAINNET/);
   assert.throws(() => loadEnv(mainnetSource({ RELAYER_WEBHOOK_SIGNING_KEY: "mainnet-webhook-signing-key" })), /RELAYER_WEBHOOK_SIGNING_KEY_MAINNET/);
   assert.throws(() => loadEnv(mainnetSource({ CCTP_ROUTER_FUJI: EVM_ROUTER })), /CCTP_ROUTER_AVALANCHE_MAINNET/);
   assert.throws(() => loadEnv(mainnetSource({ DEV_EVM_PAYER_PRIVATE_KEY: "development-only" })), /DEV_EVM_PAYER_PRIVATE_KEY/);
   assert.throws(() => loadEnv(mainnetSource({ QR_MOCK_ENABLED: "true", QR_MOCK_EMAIL: "mock@example.invalid", QR_MOCK_PASSWORD: "not-a-secret" })), /QR_MOCK_ENABLED/);
+});
+
+/** Only what the crosschain route needs: the gasless router and a relayer per chain. */
+const minimalMainnet = (over: Record<string, string> = {}): NodeJS.ProcessEnv => {
+  const source = mainnetSource(over);
+  for (const name of [
+    "CCTP_ROUTER_V2_AVALANCHE_MAINNET", "ACCOUNT_FACTORY_AVALANCHE_MAINNET", "VAULT_AVALANCHE_MAINNET", "ERC4337_ENTRYPOINT_AVALANCHE_MAINNET",
+    "ACCOUNT_FACTORY_STELLAR_MAINNET", "VAULT_STELLAR_MAINNET", "RELAYER_X402_PLUGIN_ID_MAINNET", "RELAYER_WEBHOOK_SIGNING_KEY_MAINNET",
+  ]) if (!(name in over)) delete source[name];
+  return source;
+};
+
+test("mainnet starts with the router alone: accounts, vaults, x402 and webhooks are features that stay off", () => {
+  const env = loadEnv(minimalMainnet({ MAINNET_TRANSACTIONS_ENABLED: "true" }));
+  const nets = networks(env);
+  assert.equal(nets.avalanche.cctpRouter, EVM_ROUTER);
+  assert.equal(nets.avalanche.cctpRouterV2, undefined);
+  assert.equal(nets.avalanche.accountFactory, undefined);
+  assert.equal(nets.avalanche.vault, undefined);
+  assert.equal(nets.stellar.accountFactory, undefined);
+  assert.equal(nets.stellar.vault, undefined);
+  assert.equal(activeConfig(env).x402PluginId, "");
+  assert.equal(activeConfig(env).transactionsEnabled, true);
+
+  assert.throws(() => loadEnv(minimalMainnet({ CCTP_ROUTER_AVALANCHE_MAINNET: "" })), /CCTP_ROUTER_AVALANCHE_MAINNET/, "the router is not optional");
+  assert.throws(() => loadEnv(minimalMainnet({ ACCOUNT_FACTORY_AVALANCHE_MAINNET: EVM_FACTORY })), /ERC4337_ENTRYPOINT_AVALANCHE_MAINNET/, "accounts need a verified EntryPoint");
+  assert.throws(() => loadEnv(minimalMainnet({ CCTP_ROUTER_V2_AVALANCHE_MAINNET: EVM_ROUTER_V2 })), /ACCOUNT_FACTORY_AVALANCHE_MAINNET/, "router v2 is only for smart accounts");
+  assert.throws(() => loadEnv(minimalMainnet({ VAULT_AVALANCHE_MAINNET: EVM_ROUTER })), /CCTP_ROUTER_AVALANCHE_MAINNET/, "two contracts never share an address");
+});
+
+test("one relayer may serve both environments: the relayer ids keep them apart", () => {
+  const shared = { RELAYER_URL: "http://localhost:8080", RELAYER_URL_MAINNET: "http://localhost:8080", RELAYER_API_KEY: "one-relayer-key", RELAYER_API_KEY_MAINNET: "one-relayer-key" };
+  const active = activeConfig(loadEnv(minimalMainnet(shared)));
+  assert.equal(active.relayerUrl, "http://localhost:8080");
+  assert.deepEqual([active.evmRelayerId, active.stellarRelayerId], ["avalanche-mainnet-relayer", "stellar-mainnet-relayer"]);
+  assert.throws(() => loadEnv(minimalMainnet({ ...shared, RELAYER_FUJI_ID: "avalanche-mainnet-relayer" })), /RELAYER_AVALANCHE_MAINNET_ID/);
 });

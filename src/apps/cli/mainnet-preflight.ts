@@ -7,7 +7,7 @@ import { parseArgs } from "node:util";
 import { rpc, xdr } from "@stellar/stellar-sdk";
 import { createPublicClient, http, toFunctionSelector, type Hex } from "viem";
 import { AVALANCHE_MAINNET, STELLAR_MAINNET } from "../../config/networks.ts";
-import { assertPreparationOnlyEnv, check, EVM_ARTIFACT_PATHS, sha256File, type PreflightCheck } from "../../mainnet/deployment.ts";
+import { assertPreparationOnlyEnv, check, EVM_ARTIFACT_PATHS, readEvmArtifact, runtimeMatchesArtifact, sha256File, type PreflightCheck } from "../../mainnet/deployment.ts";
 
 const { values } = parseArgs({ options: { offline: { type: "boolean", default: false }, json: { type: "boolean", default: false } } });
 assertPreparationOnlyEnv(process.env);
@@ -87,6 +87,17 @@ if (values.offline) {
     for (const [name, address] of [["USDC", AVALANCHE_MAINNET.usdc], ["TokenMessengerV2", AVALANCHE_MAINNET.tokenMessengerV2], ["MessageTransmitterV2", AVALANCHE_MAINNET.messageTransmitterV2]] as const) {
       const code = await client.getCode({ address });
       add(code && code !== "0x" ? "PASS" : "FAIL", "avalanche", `${name} deployed`, address);
+    }
+    // TilcAI's own contracts: once an address is configured, its code must be the compiled artifact.
+    for (const [name, variable] of [["TilcaiCctpRouter", "CCTP_ROUTER_AVALANCHE_MAINNET"], ["TilcaiCctpRouterV2", "CCTP_ROUTER_V2_AVALANCHE_MAINNET"], ["TilcaiAccountFactory", "ACCOUNT_FACTORY_AVALANCHE_MAINNET"], ["TilcaiVault", "VAULT_AVALANCHE_MAINNET"]] as const) {
+      const address = process.env[variable] as Hex | undefined;
+      const artifactPath = repo(EVM_ARTIFACT_PATHS[name]);
+      if (!address) add("PENDING", "avalanche", `${name} deployed`, `${variable} not configured`);
+      else if (!existsSync(artifactPath)) add("PENDING", "avalanche", `${name} matches the artifact`, "run forge build to compare");
+      else {
+        const match = runtimeMatchesArtifact(await client.getCode({ address }), readEvmArtifact(artifactPath));
+        add(match.ok ? "PASS" : "FAIL", "avalanche", `${name} matches the artifact`, `${address}: ${match.detail}`);
+      }
     }
     const entryPoint = process.env.ERC4337_ENTRYPOINT_AVALANCHE_MAINNET as Hex | undefined;
     if (!entryPoint) add("PENDING", "avalanche", "EntryPoint v0.9", "address not approved/configured");

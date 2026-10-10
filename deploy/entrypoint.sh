@@ -30,7 +30,8 @@ case "$role" in
     ;;
 esac
 
-if [ -z "${TILCAI_API_KEYS:-}" ] && [ "$role" != "worker" ]; then
+# A mainnet process has its own keys and refuses to start without them (src/config/env.ts).
+if [ "${TILCAI_ENV:-testnet}" != "mainnet" ] && [ -z "${TILCAI_API_KEYS:-}" ] && [ "$role" != "worker" ]; then
   echo "tilcai: TILCAI_API_KEYS is empty. Without keys the API only answers loopback" >&2
   echo "tilcai: requests, so nothing outside this container can use it." >&2
 fi

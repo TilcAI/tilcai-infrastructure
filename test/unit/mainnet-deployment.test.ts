@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseAbi, type Hex } from "viem";
 import { AVALANCHE_MAINNET, STELLAR_MAINNET } from "../../src/config/networks.ts";
-import { assertPreparationOnlyEnv, buildEvmDeploymentPlan, checkEvmProtocolCode, checkStellarProtocolContracts, type EvmArtifact } from "../../src/mainnet/deployment.ts";
+import { assertPreparationOnlyEnv, buildEvmDeploymentPlan, checkEvmProtocolCode, checkStellarProtocolContracts, runtimeMatchesArtifact, type EvmArtifact } from "../../src/mainnet/deployment.ts";
 
 const bytecode = "0x60006000" as Hex;
 const artifact = (abi: EvmArtifact["abi"]): EvmArtifact => ({ abi, bytecode: { object: bytecode } });
@@ -48,4 +48,15 @@ test("read-only protocol checks distinguish PASS and FAIL with mocked readers", 
   assert.deepEqual(evm.map((x) => x.state), ["PASS", "PASS", "FAIL"]);
   const stellar = await checkStellarProtocolContracts(async (address) => address !== STELLAR_MAINNET.cctpForwarder);
   assert.deepEqual(stellar.map((x) => x.state), ["PASS", "PASS", "PASS", "FAIL"]);
+});
+
+test("deployed code is compared with the artifact outside its immutables", () => {
+  // Bytes 2..3 are an immutable: zeros in the artifact, the constructor's value on chain.
+  const compiled: EvmArtifact = { abi: [], bytecode: { object: "0x6000" }, deployedBytecode: { object: "0x6001000060026003", immutableReferences: { "7": [{ start: 2, length: 2 }] } } };
+  assert.equal(runtimeMatchesArtifact("0x6001abcd60026003", compiled).ok, true);
+  assert.match(runtimeMatchesArtifact("0x6001abcd60026003", compiled).detail, /2 immutable bytes skipped/);
+  assert.match(runtimeMatchesArtifact("0x6001abcd60026004", compiled).detail, /1 bytes differ/);
+  assert.match(runtimeMatchesArtifact("0x6001abcd6002", compiled).detail, /runtime is 6 bytes/);
+  assert.equal(runtimeMatchesArtifact("0x", compiled).ok, false);
+  assert.equal(runtimeMatchesArtifact("0x6000", { abi: [], bytecode: { object: "0x6000" } }).ok, false, "no runtime in the artifact is not a match");
 });
