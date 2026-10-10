@@ -54,8 +54,11 @@ export function buildEvmDeploymentPlan(input: EvmDeploymentInput, artifacts: Rec
   const deployer = getAddress(input.deployer);
   const owner = getAddress(input.owner);
   const operator = getAddress(input.operator);
+  const zero = getAddress(`0x${"00".repeat(20)}`);
+  if ([deployer, owner, operator].includes(zero)) throw new Error("deployer, owner and operator must be nonzero addresses");
   if (deployer === owner) throw new Error("deployer and final vault owner must be different");
   if (owner === operator) throw new Error("vault owner and operator must be different");
+  if (input.deployerNonce !== undefined && input.deployerNonce < 0n) throw new Error("deployer nonce must be nonnegative");
   const max = parseUnits(input.maxPerDisbursement, 6);
   const daily = parseUnits(input.dailyLimit, 6);
   if (max <= 0n || daily <= 0n || max > daily) throw new Error("vault limits must satisfy 0 < max <= daily");

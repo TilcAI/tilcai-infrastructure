@@ -35,6 +35,8 @@ test("Avalanche plan rejects unsafe ownership and invalid limits", () => {
   const same = `0x${"11".repeat(20)}`;
   assert.throws(() => buildEvmDeploymentPlan({ deployer: same, owner: same, operator: `0x${"33".repeat(20)}`, maxPerDisbursement: "1", dailyLimit: "2" }, artifacts), /deployer and final vault owner/);
   assert.throws(() => buildEvmDeploymentPlan({ deployer: same, owner: `0x${"22".repeat(20)}`, operator: `0x${"33".repeat(20)}`, maxPerDisbursement: "3", dailyLimit: "2" }, artifacts), /0 < max <= daily/);
+  assert.throws(() => buildEvmDeploymentPlan({ deployer: same, owner: `0x${"00".repeat(20)}`, operator: `0x${"33".repeat(20)}`, maxPerDisbursement: "1", dailyLimit: "2" }, artifacts), /nonzero addresses/);
+  assert.throws(() => buildEvmDeploymentPlan({ deployer: same, owner: `0x${"22".repeat(20)}`, operator: `0x${"33".repeat(20)}`, maxPerDisbursement: "1", dailyLimit: "2", deployerNonce: -1n }, artifacts), /nonce must be nonnegative/);
 });
 
 test("preparation environment rejects transaction switches and private material", () => {
