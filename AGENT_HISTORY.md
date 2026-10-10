@@ -175,3 +175,77 @@ Llegó mientras se atendía el prompt de las 15:49:06Z y se hizo a continuación
 - Volver atrás exige restaurar los datos además de las imágenes: las versiones anteriores no entienden el esquema nuevo.
 
 **En este repositorio.** Sin cambios en archivos versionados. La imagen `tilcai/tilcai:local` se construyó con `deploy/build.sh tilcai` desde `main`.
+
+## 2026-10-09T21:13:52Z · Omar · Codex (GPT-6)
+
+- **Sesión:** 01a11f48-77ad-75f2-a07a-7e01949c0d42
+- **Rama:** `main`
+- **Repositorios:** `tilcai-infrastructure`, `tilcai-web`, `documentation`, `tilcai-cctp-engine`, `tilcai-core`, `.github`
+
+### Prompt
+
+> Acabo de traer nuevos cambios de los repos:
+>
+> Revisalos:
+>
+> [adjunto: captura de los seis repositorios de TilcAI]
+> [adjunto: salida de PowerShell de las actualizaciones con git pull]
+
+### Salida
+
+Revisión de solo lectura del nuevo `main`: CCTP Fuji → Stellar, vault, mock QR Simple, monitoreo, tenants, cuentas inteligentes EVM en Fuji y Docker Compose. Se comprobó que `/v1/accounts` requiere una clave de tenant con `accounts:write`; la clave operativa anterior cubre pagos, no esa emisión. El bot local v0.2 usa otra arquitectura, Stellar SCA mediante Smart Account Kit, cuyo pago de extremo a extremo aún no se ha comprobado. Las pruebas de infraestructura no se ejecutaron porque no hay `node_modules` local. No se cambió código; esta entrada registra la revisión.
+
+## 2026-10-09T21:30:18Z · Omar · Codex GPT-6
+
+- **Sesión:** n/d
+- **Rama:** main
+- **Repositorios:** doc, tilcai-infrastructure
+
+### Prompt
+
+> [adjuntos: seis capturas del bot de Telegram y la Mini App de TilcAI, incluidos menú de usuario, onboarding, passkey, wallet Stellar y estado]
+>
+> Que debemos hacer ahora?
+>
+> De acuerdo a los apuntes de la reunion, y los cambios actualizados: que issues debería designar ahora?
+>
+> - Ayer estabamos hablando de hacer pruebas en mainnet.
+>
+> PS [REDACTADO]> curl http://[REDACTADO]:8787/health
+> {"ok":true,"env":"testnet","relayer":"up","vault":"on","accounts":"on","qrMock":"on","monitor":"push"}
+>
+> *Lo del bot de telegram es para que yo haga puebas
+>
+> *Hicer otro proyecto con mini app y llegué hasta crear una wallet con passkeys, podemos usar esa?
+
+### Salida
+
+Se propuso usar la Mini App de Stellar como cliente de pruebas, tras verificar despliegue, control por passkey y transferencia en cadena. Se identificó que el bot actual solo consulta el estado y las rutas del backend TilcAI, por lo que falta integrarlo con QR mock, orden, aprobación y pago. Se priorizaron issues existentes de prueba testnet e integración, y una issue nueva acotada para conectar el bot. Se explicó que el backend actual rechaza mainnet y que una prueba con dinero real requiere habilitación y validación separadas. No se modificó código funcional ni se crearon issues.
+
+## 2026-10-09T21:40:21Z · Omar · Codex GPT-6
+
+- **Sesión:** n/d
+- **Rama:** main
+- **Repositorios:** tilcai-infrastructure, tilcai-cctp-engine
+
+### Prompt
+
+> Que podemos hacer ahora con lo actualizado en los repos?
+>
+> Para hacer pruebas en testnet de cualquier red hacia stellar, que nos faltaria?
+>
+> ..................
+>
+> Que opinas?
+>
+> La wallet solo es para cripto de stellar verdad?
+>
+> Como puedo hacer que la wallet acepte diferentes redes?
+>
+> Quiero fondear avalanche fuji o base o eth u otro.
+>
+> [Texto pegado por el usuario: propuesta de una wallet Stellar C… que recibe USDC desde otras redes por CCTP, o una smart account por red controlada por la misma passkey; recomienda primero Fuji → Stellar, luego Base y Ethereum Sepolia, y pregunta por backend y fondos testnet.]
+
+### Salida
+
+Se explicó que la wallet C… es una cuenta de Stellar que puede recibir activos emitidos allí, mientras que las redes de origen necesitan sus propias cuentas. La API productiva de TilcAI solo habilita Fuji → Stellar Testnet; el motor CCTP de laboratorio modela más redes pero no las expone en esa API ni garantiza gasless. Se identificó que el laboratorio consulta saldos Stellar por Horizon y no mide el saldo USDC de una smart wallet C… en Soroban. Se propuso validar primero recepción y gasto con passkey, luego un CCTP Fuji → C… con hashes y saldos Soroban, y finalmente Base/Ethereum Sepolia una por una. Se corrigió que la cuenta EVM Fuji ya existe y que una misma passkey no produce automáticamente la misma dirección en todas las redes. No se modificó código ni se ejecutaron transferencias.
