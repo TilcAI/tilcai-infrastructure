@@ -363,7 +363,8 @@ export function buildServer(ctx: AppContext): FastifyInstance {
     const up = await ctx.relayer.health();
     if (!up || !ctx.runtime.relayerApiKey) return send(reply, 200, { up, authenticated: false });
     const [supported, stellar] = await Promise.allSettled([
-      ctx.relayer.x402(ctx.runtime.x402PluginId, "/supported"),
+      // No plugin id (mainnet before x402 is enabled there): nothing to ask the relayer.
+      ctx.runtime.x402PluginId ? ctx.relayer.x402(ctx.runtime.x402PluginId, "/supported") : Promise.resolve({ body: { configured: false } }),
       ctx.relayer.getRelayer(ctx.runtime.stellarRelayerId),
     ]);
     return send(reply, 200, {

@@ -10,6 +10,7 @@
     "worker": "tsx src/apps/worker/main.ts",
     "start": "tsx src/apps/all-in-one.ts",
     "xpay": "tsx src/apps/cli/crosschain-pay.ts",
+    "e2e:gasless": "tsx src/apps/cli/e2e-gasless.ts",
     "relayer:check": "tsx src/apps/cli/relayer-check.ts",
     "sca:preflight": "tsx src/apps/cli/sca-preflight.ts",
     "mainnet:preflight": "tsx src/apps/cli/mainnet-preflight.ts",

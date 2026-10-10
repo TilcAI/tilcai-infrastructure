@@ -11,7 +11,7 @@ export const check = (state: CheckState, area: string, name: string, detail: str
 export interface EvmArtifact {
   abi: Abi;
   bytecode: { object: Hex };
-  deployedBytecode?: { object?: Hex };
+  deployedBytecode?: { object?: Hex; immutableReferences?: Record<string, Array<{ start: number; length: number }>> };
 }
 
 export interface EvmDeploymentInput {
@@ -83,6 +83,29 @@ export function buildEvmDeploymentPlan(input: EvmDeploymentInput, artifacts: Rec
       ...(nonce === undefined ? {} : { expectedAddress: getContractAddress({ from: deployer, nonce }) }),
     };
   });
+}
+
+/**
+ * Compares deployed code with the compiled artifact. The compiler leaves zeros where the
+ * constructor writes the `immutable` values, so those bytes are skipped: a plain hash of the
+ * two never matches for a contract that has immutables.
+ */
+export function runtimeMatchesArtifact(deployed: Hex | undefined, artifact: EvmArtifact): { ok: boolean; detail: string } {
+  const expected = artifact.deployedBytecode?.object;
+  if (!expected || expected === "0x") return { ok: false, detail: "the artifact has no runtime bytecode" };
+  if (!deployed || deployed === "0x") return { ok: false, detail: "no code at the address" };
+  const a = deployed.slice(2).toLowerCase();
+  const b = expected.slice(2).toLowerCase();
+  if (a.length !== b.length) return { ok: false, detail: `runtime is ${a.length / 2} bytes, the artifact ${b.length / 2}` };
+  const skipped = new Set<number>();
+  for (const ref of Object.values(artifact.deployedBytecode?.immutableReferences ?? {}).flat()) {
+    for (let i = ref.start; i < ref.start + ref.length; i++) skipped.add(i);
+  }
+  let differing = 0;
+  for (let i = 0; i < b.length / 2; i++) if (!skipped.has(i) && a.slice(2 * i, 2 * i + 2) !== b.slice(2 * i, 2 * i + 2)) differing++;
+  return differing === 0
+    ? { ok: true, detail: `${b.length / 2} bytes match the artifact (${skipped.size} immutable bytes skipped)` }
+    : { ok: false, detail: `${differing} bytes differ from the artifact outside its immutables` };
 }
 
 export function sha256File(path: string): string {

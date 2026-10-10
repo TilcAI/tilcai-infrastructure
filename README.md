@@ -4,19 +4,20 @@ Backend e infraestructura de TilcAI: gateway, rieles de pago (x402 sobre Stellar
 
 Plan y arquitectura completos: [`documentation/TILCAI_PLAN_ARQUITECTURA_BACKEND_INFRA_2026-10-02.md`](../documentation/TILCAI_PLAN_ARQUITECTURA_BACKEND_INFRA_2026-10-02.md).
 
-> **Mainnet todavía no está habilitada para operar.** La Fase 1 añade selección segura de
-> `testnet`/`mainnet`, direcciones oficiales de USDC y CCTP y aislamiento de configuración. Los
-> contratos TilcAI no están auditados ni desplegados en mainnet, sus direcciones son obligatorias
-> y no tienen valores por defecto. Además, `MAINNET_TRANSACTIONS_ENABLED=false` mantiene la API
-> mainnet en modo sin transacciones. No cambies ese interruptor antes de la revisión de Fase 2.
-> La preparación de despliegue, exclusivamente de lectura/dry-run, está en
+> **Mainnet: pagos crosschain habilitados, sin auditoría.** Una instancia con `TILCAI_ENV=mainnet`
+> corre junto a la de testnet (misma imagen, base, claves y puerto propios). En mainnet existe solo
+> `TilcaiCctpRouter` (`0xf6a2EdE00c441863519C6B30A1eb2d04E61847AB`, Avalanche C-Chain), con el que se
+> liquidó un pago real de 0.01 USDC hacia Stellar el 2026-10-10. Cuentas de contrato, vaults y x402
+> siguen apagados en mainnet hasta desplegar y verificar sus contratos, y ningún contrato propio
+> tiene auditoría independiente. `MAINNET_TRANSACTIONS_ENABLED=false` deja la instancia en solo
+> lectura. Estado, operación y pendientes en
 > [`deploy/MAINNET_DEPLOYMENT.md`](deploy/MAINNET_DEPLOYMENT.md).
 
 ## Estado
 
 | Capacidad | Estado |
 | --- | --- |
-| Soporte Mainnet — Avalanche C-Chain + Stellar Public Network | **Fase 1 implementada, no operativa**: selección multired, configuración aislada y validación fail-closed. Sin despliegues, fondos ni transacciones mainnet. |
+| Soporte Mainnet — Avalanche C-Chain + Stellar Public Network | **Pagos crosschain operativos, sin auditoría**: instancia propia junto a testnet, router gasless desplegado y un pago real liquidado (2026-10-10). Cuentas, vaults y x402 apagados hasta desplegar sus contratos. |
 | Fase 1 — pago USDC Avalanche Fuji → Stellar Testnet (CCTP V2 + CctpForwarder) | **Implementado y verificado con transferencias reales** (2026-10-02). 25 tests unitarios + 3 de integración on-chain. |
 | Origen gasless: el pagador firma EIP-3009 y el OZ Relayer envía el burn (`TilcaiCctpRouter`, Fuji `0x297ce6a2787484db4bB18A96a8F28A9881Fc163C`) | **Desplegado y verificado**: burn enviado por la cuenta del relayer; el pagador no gastó AVAX |
 | Destino gasless: el Relayer envía `mint_and_forward` y paga el XLM | Verificado (fee account = firmante del relayer) |

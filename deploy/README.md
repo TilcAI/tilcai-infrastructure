@@ -62,16 +62,22 @@ administrado con TLS). `RELAYER_FEATURES=""` la compila sin TLS.
 
 Ninguna imagen lleva secretos. Todo entra por variables de entorno.
 
-> **Mainnet, Fase 1:** Compose transporta las variables separadas de mainnet, pero el relayer
-> incluido continúa configurado solo para Fuji/Stellar Testnet y no debe reutilizar su firmante.
-> `TILCAI_ENV=mainnet` falla si faltan contratos, credenciales, RPC o base separados, y
-> `MAINNET_TRANSACTIONS_ENABLED=false` mantiene deshabilitados los envíos. Esta fase no es un
-> procedimiento de despliegue productivo.
+**Mainnet** corre como una segunda instancia de la misma imagen, definida en
+[`docker-compose.mainnet.yml`](docker-compose.mainnet.yml) con los valores de
+[`.env.mainnet.example`](.env.mainnet.example): proyecto, contenedor (`tilcai-mainnet`), puerto
+(`127.0.0.1:18787`), volumen y claves de API propios. No comparte nada con testnet salvo,
+opcionalmente, el relayer.
 
-La preparación separada de Fase 2, sus comandos bloqueados y el inventario de aprobaciones están
-en [`MAINNET_DEPLOYMENT.md`](MAINNET_DEPLOYMENT.md). No ejecutes
-`docker-compose.mainnet.yml`: es un artefacto para revisión, con relayers pausados y transacciones
-deshabilitadas.
+```bash
+cp deploy/.env.mainnet.example deploy/.env.mainnet      # completar secretos
+docker compose -f deploy/docker-compose.mainnet.yml --env-file deploy/.env.mainnet up -d
+curl -s http://127.0.0.1:18787/health                   # env: mainnet, transactionsEnabled
+```
+
+`TILCAI_ENV=mainnet` exige base, claves de API, ids de relayer, RPC y router propios, y rechaza la
+clave de desarrollo, la firma local en Stellar y el simulador de QR. Arranca en solo lectura:
+mueve fondos reales únicamente con `MAINNET_TRANSACTIONS_ENABLED=true`. El estado de los
+contratos, la operación y lo pendiente están en [`MAINNET_DEPLOYMENT.md`](MAINNET_DEPLOYMENT.md).
 
 **Relayer**
 

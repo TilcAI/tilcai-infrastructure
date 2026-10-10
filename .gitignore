@@ -2,7 +2,7 @@ node_modules/
 .env
 .env.*
 !.env.example
-!deploy/.env.mainnet.example
+!.env.mainnet.example
 data/
 scratch/
 *.log
