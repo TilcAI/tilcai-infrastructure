@@ -3,7 +3,8 @@
 TilcAI y lo que necesita para funcionar, empaquetado para correr en un host con Docker o en
 una plataforma de contenedores (Google Cloud Run, AWS, Azure).
 
-> **Solo testnet.** La configuración sigue rechazando cualquier entorno distinto de `testnet`.
+> Este documento describe el despliegue Testnet. La configuración Mainnet está preparada por
+> separado en [`MAINNET_DEPLOYMENT.md`](MAINNET_DEPLOYMENT.md); aún no autoriza contratos ni fondos reales.
 
 ## Piezas
 
@@ -31,6 +32,7 @@ Archivos de esta carpeta:
 | `relayer/config/` | `config.json` (relayers, firmante, plugin) y las redes Avalanche y Stellar. Sin secretos |
 | `build.sh` | Construye y, con `PUSH=1`, publica las imágenes |
 | `docker-compose.yml`, `.env.example` | Las tres piezas en un host |
+| `docker-compose.mainnet.yml`, `.env.mainnet.example` | Preparación aislada de Mainnet; no arrancar en esta fase |
 | `cloud-run/*.yaml` | Servicios de Cloud Run listos para completar |
 
 ## Construir
