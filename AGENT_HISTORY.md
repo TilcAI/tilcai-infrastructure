@@ -523,3 +523,21 @@ Desplegado y probado. La persona ejecutó el despliegue: `tilcai-mainnet` (`127.
 En `tilcai-web` los cambios se pasaron de `feat/monitor-vault-stellar`, que estaba 18 commits detrás, a una rama sobre `origin/main` (`feat/monitor-mainnet`), con un conflicto resuelto en `src/lib/monitor/copy.ts`; 106 pruebas pasan y `tsc` no reporta errores. Incluye la limpieza de «mock/demo» que estaba sin commit de una sesión anterior. El contenedor del tablero en marcha se construyó antes de ese cambio de base.
 
 Commit y push a `main` en los tres repositorios, sin archivos `.env` con secretos. Pendiente: auditoría, relayer propio de mainnet con lista de receptores y webhooks, y los demás contratos.
+
+## 2026-10-10T16:56:00Z · Omar · Codex (GPT-6)
+
+- **Sesión:** n/d
+- **Rama:** `main`
+- **Repositorios:** `tilcai-infrastructure`
+
+### Prompt
+
+> [https://github.com/TilcAI/tilcai-infrastructure/blob/main/deploy/MAINNET_DEPLOYMENT.md](https://github.com/TilcAI/tilcai-infrastructure/blob/main/deploy/MAINNET_DEPLOYMENT.md)
+> Están desplegados, actualizalo
+> [adjunto: captura de la tabla de contratos propios marcada «Sin desplegar»]
+>
+> Aclaración: los tiene mi compañero, ponlo como desplegado
+
+### Salida
+
+Actualicé y publiqué en `main` [MAINNET_DEPLOYMENT.md](https://github.com/TilcAI/tilcai-infrastructure/blob/main/deploy/MAINNET_DEPLOYMENT.md) y el README. RouterV2, factories, vaults y verificadores figuran como **desplegados según confirmación del equipo**. Quedan pendientes sus direcciones, hashes de transacción y verificación on-chain; su despliegue no confirma que las funciones estén activas en la API. `git diff --check` pasó. No se ejecutaron transacciones.

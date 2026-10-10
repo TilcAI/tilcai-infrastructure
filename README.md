@@ -5,27 +5,28 @@ Backend e infraestructura de TilcAI: gateway, rieles de pago (x402 sobre Stellar
 Plan y arquitectura completos: [`documentation/TILCAI_PLAN_ARQUITECTURA_BACKEND_INFRA_2026-10-02.md`](../documentation/TILCAI_PLAN_ARQUITECTURA_BACKEND_INFRA_2026-10-02.md).
 
 > **Mainnet: pagos crosschain habilitados, sin auditoría.** Una instancia con `TILCAI_ENV=mainnet`
-> corre junto a la de testnet (misma imagen, base, claves y puerto propios). En mainnet existe solo
+> corre junto a la de testnet (misma imagen, base, claves y puerto propios). En mainnet se documentó
 > `TilcaiCctpRouter` (`0xf6a2EdE00c441863519C6B30A1eb2d04E61847AB`, Avalanche C-Chain), con el que se
-> liquidó un pago real de 0.01 USDC hacia Stellar el 2026-10-10. Cuentas de contrato, vaults y x402
-> siguen apagados en mainnet hasta desplegar y verificar sus contratos, y ningún contrato propio
-> tiene auditoría independiente. `MAINNET_TRANSACTIONS_ENABLED=false` deja la instancia en solo
-> lectura. Estado, operación y pendientes en
+> liquidó un pago real de 0.01 USDC hacia Stellar el 2026-10-10. El equipo confirma que RouterV2,
+> las factories, los vaults y los verificadores también están desplegados; faltan sus direcciones y
+> transacciones en el repositorio, y verificar su configuración y activación en la API. Ningún
+> contrato propio tiene auditoría independiente. `MAINNET_TRANSACTIONS_ENABLED=false` deja la
+> instancia en solo lectura. Estado, operación y pendientes en
 > [`deploy/MAINNET_DEPLOYMENT.md`](deploy/MAINNET_DEPLOYMENT.md).
 
 ## Estado
 
 | Capacidad | Estado |
 | --- | --- |
-| Soporte Mainnet — Avalanche C-Chain + Stellar Public Network | **Pagos crosschain operativos, sin auditoría**: instancia propia junto a testnet, router gasless desplegado y un pago real liquidado (2026-10-10). Cuentas, vaults y x402 apagados hasta desplegar sus contratos. |
+| Soporte Mainnet — Avalanche C-Chain + Stellar Public Network | **Pagos crosschain operativos, sin auditoría**: instancia propia junto a testnet, router gasless desplegado y un pago real liquidado (2026-10-10). El equipo confirma el despliegue de RouterV2, factories, vaults y verificadores; faltan direcciones y transacciones, verificación on-chain y confirmación de su activación en la API. x402 requiere validación aparte. |
 | Fase 1 — pago USDC Avalanche Fuji → Stellar Testnet (CCTP V2 + CctpForwarder) | **Implementado y verificado con transferencias reales** (2026-10-02). 25 tests unitarios + 3 de integración on-chain. |
 | Origen gasless: el pagador firma EIP-3009 y el OZ Relayer envía el burn (`TilcaiCctpRouter`, Fuji `0x297ce6a2787484db4bB18A96a8F28A9881Fc163C`) | **Desplegado y verificado**: burn enviado por la cuenta del relayer; el pagador no gastó AVAX |
 | Destino gasless: el Relayer envía `mint_and_forward` y paga el XLM | Verificado (fee account = firmante del relayer) |
 | Vault de desembolsos: paga en USDC las compras cobradas fuera de la cadena (`TilcaiVault`, Fuji `0x841dD47Db3124839be1D878DD277e1b07D6932b6`) | **Desplegado** (2026-10-07). El relayer envía `disburse` y paga el gas; el contrato limita cada pago, el total diario y paga cada id una sola vez. 13 tests Foundry + 16 unitarios |
 | Cobro con QR Simple: mock de la API de Vendis («QR Dinámico para Pagos» v1.3) con página «Simular depósito» | **Implementado como mock** (2026-10-09): no hay banco ni dinero. Verificado de extremo a extremo con optipagos-backend: QR → depósito simulado → notificación → desembolso del vault en Fuji |
 | Monitorización: registro de eventos, recursos y alertas; avisos del relayer por webhook; envío firmado a tilcai-web | **Implementado** (2026-10-09). El receptor de avisos del relayer está probado con avisos firmados de prueba; falta apuntar el relayer real a TilcAI |
-| Fase SCA, EVM — cuentas de contrato con passkey para terceros (`TilcaiAccountFactory`, Fuji `0x55a5b0ed47c5dfb168cfe2b431a56455576d51b8`; `TilcaiCctpRouterV2`, Fuji `0x09483803916e6cb2027741c9287361ad55507a66`) | **Desplegado en testnet y verificado** (2026-10-09, `npm run sca -- verify`): una cuenta emitida por la factory pagó USDC real de Fuji con una firma de passkey (ERC-1271 + ERC-7739). API `/v1/accounts`, claves por tercero con permisos y modo de pago `account`. Contratos **sin auditar: solo testnet**. Falta: delegación a claves de agente (M4) y envío de UserOperations |
-| Fase SCA, Stellar — emisión de cuentas (`tilcai_account_factory`) y vault de USDC (`tilcai_vault`) | **Desplegado en testnet y verificado** (2026-10-09, `npm run stellar -- verify-account` y `verify-vault`): el relayer despliega la cuenta del tercero por la factory sin que el dueño tenga XLM, y desembolsa USDC desde el vault igual que en Avalanche. API `/v1/accounts` con `network:"stellar:testnet"` y `/v1/vault?network=stellar:testnet`. 17 tests de Soroban + 14 unitarios. **Sin auditar: solo testnet.** Falta: delegación a claves de agente (M3) |
+| Fase SCA, EVM — cuentas de contrato con passkey para terceros (`TilcaiAccountFactory`, Fuji `0x55a5b0ed47c5dfb168cfe2b431a56455576d51b8`; `TilcaiCctpRouterV2`, Fuji `0x09483803916e6cb2027741c9287361ad55507a66`) | **Desplegado en testnet y verificado** (2026-10-09, `npm run sca -- verify`): una cuenta emitida por la factory pagó USDC real de Fuji con una firma de passkey (ERC-1271 + ERC-7739). API `/v1/accounts`, claves por tercero con permisos y modo de pago `account`. **Sin auditar**; la verificación funcional descrita corresponde a testnet. En mainnet el despliegue está confirmado por el equipo, pendiente de documentar y verificar. Falta: delegación a claves de agente (M4) y envío de UserOperations |
+| Fase SCA, Stellar — emisión de cuentas (`tilcai_account_factory`) y vault de USDC (`tilcai_vault`) | **Desplegado en testnet y verificado** (2026-10-09, `npm run stellar -- verify-account` y `verify-vault`): el relayer despliega la cuenta del tercero por la factory sin que el dueño tenga XLM, y desembolsa USDC desde el vault igual que en Avalanche. API `/v1/accounts` con `network:"stellar:testnet"` y `/v1/vault?network=stellar:testnet`. 17 tests de Soroban + 14 unitarios. **Sin auditar**; la verificación funcional descrita corresponde a testnet. En mainnet el despliegue está confirmado por el equipo, pendiente de documentar y verificar. Falta: delegación a claves de agente (M3) |
 | Estructura de módulos de las fases 2–5 (`src/modules/*/ports.ts`) | Interfaces sin implementación |
 | Contratos | EVM: `TilcaiCctpRouter`, `TilcaiVault`, `TilcaiAccountFactory` (+ `TilcaiAccount`) y `TilcaiCctpRouterV2` desplegados en Fuji (38 tests Foundry). Soroban: cuenta, factory, verificadores y política de límite sobre OpenZeppelin `stellar-accounts` 0.7.2, y `tilcai_vault` (19 tests; desplegados en Stellar Testnet salvo la política) |
 
@@ -199,7 +200,9 @@ npm run tenant -- create --name Optus
 npm run tenant -- key --tenant tenant_… --label backend --scopes payments,accounts:read,accounts:write
 ```
 
-Los contratos no están auditados y la configuración solo admite testnet.
+Los contratos no están auditados. Los comandos y variables Fuji de este ejemplo corresponden a
+testnet; la configuración y la verificación de sus despliegues en mainnet se describen en
+[`deploy/MAINNET_DEPLOYMENT.md`](deploy/MAINNET_DEPLOYMENT.md).
 
 ## Stellar: cuentas y vault (fase SCA)
 

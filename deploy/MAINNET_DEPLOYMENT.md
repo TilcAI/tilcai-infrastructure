@@ -1,9 +1,12 @@
-# Mainnet: estado, operación y despliegues pendientes
+# Mainnet: estado, operación y verificación de despliegues
 
 > Estado al 2026-10-10: **los pagos crosschain Avalanche → Stellar funcionan en mainnet** con una
-> instancia propia de TilcAI. Ningún contrato propio tiene auditoría independiente. Las cuentas de
-> contrato, los vaults y x402 siguen apagados en mainnet: sus contratos no están desplegados y las
-> secciones 1 a 6 describen cómo prepararlos. Los subcomandos `deploy` siguen bloqueados.
+> instancia propia de TilcAI. El equipo confirma el despliegue de RouterV2, factory y vault en
+> Avalanche, y de factory, vault y verificadores en Stellar. Aún faltan en este repositorio sus
+> direcciones, transacciones y la verificación independiente del despliegue. Desplegar un contrato
+> no activa por sí solo cuentas, vaults ni x402 en la API. Ningún contrato propio tiene auditoría
+> independiente. Los subcomandos
+> `deploy` siguen bloqueados.
 
 ## 0. Lo que está en mainnet y cómo se opera
 
@@ -12,8 +15,18 @@
 | Red | Contrato | Dirección | Estado |
 | --- | --- | --- | --- |
 | Avalanche C-Chain | `TilcaiCctpRouter` | `0xf6a2EdE00c441863519C6B30A1eb2d04E61847AB` | Desplegado el 2026-10-10 (tx `0x9eb993567b075ee653c53f349217076177d96d3f0c03a82a010c8ed9b4116457`), sin owner ni upgrade |
-| Avalanche C-Chain | `TilcaiCctpRouterV2`, `TilcaiAccountFactory`, `TilcaiVault` | — | Sin desplegar |
-| Stellar Public Network | `tilcai_account_factory`, `tilcai_vault`, verificadores | — | Sin desplegar |
+| Avalanche C-Chain | `TilcaiCctpRouterV2` | Pendiente de registrar | Desplegado, según confirmación del equipo; falta registrar dirección, tx y verificación on-chain |
+| Avalanche C-Chain | `TilcaiAccountFactory` | Pendiente de registrar | Desplegado, según confirmación del equipo; falta registrar dirección, tx y verificación on-chain |
+| Avalanche C-Chain | `TilcaiVault` | Pendiente de registrar | Desplegado, según confirmación del equipo; falta registrar dirección, tx y verificación on-chain |
+| Stellar Public Network | `tilcai_account_factory` | Pendiente de registrar | Desplegado, según confirmación del equipo; falta registrar ID, tx y verificación on-chain |
+| Stellar Public Network | `tilcai_vault` | Pendiente de registrar | Desplegado, según confirmación del equipo; falta registrar ID, tx y verificación on-chain |
+| Stellar Public Network | Verificadores Ed25519 y WebAuthn/P-256 | Pendientes de registrar | Desplegados, según confirmación del equipo; faltan IDs, tx y verificación on-chain |
+
+La confirmación del equipo acredita el **estado reportado de despliegue**; esta tabla no demuestra
+todavía que el bytecode/WASM, los constructores, los roles y la red coincidan con los artefactos
+aprobados. No introducir direcciones de testnet ni valores de ejemplo en la configuración de
+mainnet. Registrar el acta y completar las lecturas de las secciones 5 y 6 antes de habilitar las
+funciones correspondientes.
 
 El router se desplegó desde la cuenta EVM del relayer, con el init code del artefacto compilado
 (hash `0xea7cb485e207cda00c9eb5423f99d0ea6f36d69c4acaf95376027bf16d1cd63a`). `npm run mainnet:preflight`
@@ -91,7 +104,9 @@ Acepta los eventos de mainnet solo con `MONITOR_INGEST_SECRET_MAINNET`, que es e
 ### Pendiente
 
 - Auditoría independiente de Solidity y Soroban.
-- Desplegar y verificar los demás contratos (secciones 5 y 6) para encender cuentas y vaults.
+- Incorporar las direcciones, transacciones, hashes de artefactos y acta de los despliegues
+  reportados; verificar red, código, parámetros y roles (secciones 5 y 6) antes de configurar
+  cuentas y vaults en la API. Validar por separado la integración x402.
 - Relayer propio de mainnet con firmantes independientes, `whitelist_receivers` y webhooks.
 - RPC administrados con SLA, y reemplazar SQLite antes de operar con volumen (sección 8).
 
@@ -183,14 +198,15 @@ cambios no revisados. `TilcaiCctpRouter.sol` procede del commit histórico
 `6f0671c52f50577e5345cd825074eec101b77d12`; el dry-run muestra además el hash del archivo actual
 para detectar divergencias.
 
-## 5. Orden futuro en Avalanche
+## 5. Verificación de los despliegues en Avalanche
 
-Cuando exista aprobación explícita y un mecanismo de firma productivo:
+El equipo reporta desplegados los cuatro contratos siguientes. Recuperar el acta de despliegue
+y comprobar cada dirección en Avalanche C-Chain (chain ID 43114), sin volver a desplegar:
 
-1. Desplegar `TilcaiCctpRouter(USDC, TokenMessengerV2)`.
-2. Desplegar `TilcaiCctpRouterV2(USDC, TokenMessengerV2)`.
-3. Desplegar `TilcaiAccountFactory()`; su constructor crea la implementación de cuenta.
-4. Desplegar `TilcaiVault(USDC, owner, operator, maxPerDisbursement, dailyLimit)`.
+1. `TilcaiCctpRouter(USDC, TokenMessengerV2)`: dirección y tx registradas en la sección 0.
+2. `TilcaiCctpRouterV2(USDC, TokenMessengerV2)`: registrar dirección, tx e inmutables.
+3. `TilcaiAccountFactory()`: registrar dirección, tx e implementación de cuenta creada por el constructor.
+4. `TilcaiVault(USDC, owner, operator, maxPerDisbursement, dailyLimit)`: registrar dirección, tx y roles/límites.
 
 Los routers y la factory no tienen owner ni upgrade. El vault sí: `owner` debe ser la gobernanza
 aprobada, `operator` el relayer EVM, y nunca se presupone que sean el deployer. Después de cada
@@ -198,21 +214,24 @@ recibo se comprueban chain ID 43114, dirección esperada por nonce, runtime byte
 inmutables/getters y código fuente verificado. Antes de usar la factory se valida su
 `implementation()` y el EntryPoint que devuelve la implementación.
 
-## 6. Orden futuro en Stellar
+## 6. Verificación de los despliegues en Stellar
 
 Passphrase obligatoria: `Public Global Stellar Network ; September 2015`.
 
-1. Subir `tilcai_account.wasm` y registrar el hash WASM devuelto.
-2. Desplegar el verificador Ed25519.
-3. Desplegar el verificador WebAuthn/P-256.
-4. Desplegar `tilcai_account_factory` con el hash y ambos IDs de verificador.
-5. Desplegar `tilcai_vault` con USDC SAC, owner, operator y límites atómicos de 7 decimales.
+El equipo reporta desplegados los verificadores, la factory y el vault. Reconstruir el registro
+de despliegue sin volver a ejecutar `upload`, `deploy` ni `invoke`:
+
+1. Registrar el hash de `tilcai_account.wasm` usado por la factory y contrastarlo con el artefacto aprobado.
+2. Registrar ID y tx del verificador Ed25519.
+3. Registrar ID y tx del verificador WebAuthn/P-256.
+4. Registrar ID y tx de `tilcai_account_factory`, además del hash y los dos IDs de verificador configurados.
+5. Registrar ID y tx de `tilcai_vault`, además de USDC SAC, owner, operator y límites atómicos de 7 decimales.
 
 Después se leen de la factory `account_wasm_hash`, `ed25519_verifier` y
 `webauthn_verifier`; del vault se leen `usdc`, `owner`, `operator`, pausa y límites. Los hashes
 local/remoto deben coincidir. Factory y vault extienden TTL de instancia aproximadamente de 30 a
 90 días al usarse; los registros persistentes del vault se extienden hacia el TTL máximo. Antes
-del despliegue real se debe simular cada operación para presupuestar CPU, memoria, rent, TTL y fee,
+de activar nuevas operaciones se deben simular para presupuestar CPU, memoria, rent, TTL y fee,
 y comprobar reserva mínima/saldo XLM del source sin crear ni fondear cuentas desde este proceso.
 
 ## 7. Relayer y x402
@@ -224,8 +243,8 @@ relayer y umbral en stroops. La API conserva Bearer auth y el Compose limita la 
 solo en loopback.
 
 Antes de despausar se debe agregar una `whitelist_receivers` EVM con únicamente routers, factory
-y vault verificados. No puede escribirse antes de conocer esas direcciones. La versión actual no
-ofrece una política genérica que limite importe USDC por calldata o gasto acumulado: los límites
+y vault verificados. No puede escribirse hasta registrar y comprobar esas direcciones. La versión
+actual no ofrece una política genérica que limite importe USDC por calldata o gasto acumulado: los límites
 de desembolso residen en `TilcaiVault`; un límite agregado adicional requiere modificar/auditar el
 fork o introducir un proxy de autorización. Esto es un bloqueo, no un control supuesto.
 
@@ -251,12 +270,13 @@ observabilidad, pruebas de concurrencia/recuperación y ensayo de migración/rol
 `src/db`, todos los repositorios, composición, despliegue y operación; no se migró silenciosamente
 en esta fase.
 
-## 9. Validación sin fondos
+## 9. Validación de las capacidades nuevas sin fondos
 
-Con relayers todavía pausados y API sin rutas transaccionales habilitadas:
+La ruta de pagos crosschain ya opera en mainnet. Para validar cuentas, vaults y x402 sin mover
+fondos, mantener deshabilitadas esas capacidades y sus relayers específicos durante la revisión:
 
 1. Ejecutar preflight hasta resolver `FAIL`; documentar cada `PENDING` y su aprobador.
-2. Arrancar, en una futura ventana aprobada, el stack aislado sin despausar el relayer.
+2. Revisar el stack aislado de mainnet y sus variables sin despausar relayers adicionales.
 3. Validar `/health`, `/v1/routes`, autenticación, aislamiento de base, webhooks firmados y
    monitorización. No llamar a pagos, cuentas, vault, `/settle` ni endpoints de transacciones.
 4. Comparar direcciones/bytecode/WASM y roles con el acta de despliegue.
@@ -265,9 +285,9 @@ Con relayers todavía pausados y API sin rutas transaccionales habilitadas:
 ## 10. Aprobaciones, acciones con fondos e incidentes
 
 No consumen AVAX/XLM: compilación, tests locales, hashes, dry-run, lectura RPC/Horizon, lectura de
-bytecode/estado, validación Compose y consultas de salud. Sí consumen AVAX: los cuatro despliegues
-EVM, fondeo de gas del relayer y cualquier transacción posterior. Sí consumen XLM: upload WASM,
-despliegues Soroban, rent/reserva/TTL y fondeo del relayer Stellar.
+bytecode/estado, validación Compose y consultas de salud. Sí consumen AVAX: futuros redespliegues
+EVM, fondeo de gas del relayer y cualquier transacción posterior. Sí consumen XLM: futuros uploads
+WASM o redespliegues Soroban, rent/reserva/TTL y fondeo del relayer Stellar.
 
 Antes de habilitar transacciones se aprueban auditoría, artefactos, propietarios, operadores,
 EntryPoint, límites, presupuesto, KMS/HSM, allowlist, persistencia PostgreSQL, monitorización,
