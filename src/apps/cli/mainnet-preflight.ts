@@ -5,7 +5,8 @@ import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { rpc, xdr } from "@stellar/stellar-sdk";
-import { createPublicClient, http, toFunctionSelector, type Hex } from "viem";
+import { createPublicClient, http, type Hex } from "viem";
+import { loadEnv } from "../../config/env.ts";
 import { AVALANCHE_MAINNET, STELLAR_MAINNET } from "../../config/networks.ts";
 import { assertPreparationOnlyEnv, check, EVM_ARTIFACT_PATHS, readEvmArtifact, runtimeMatchesArtifact, sha256File, type PreflightCheck } from "../../mainnet/deployment.ts";
 
@@ -20,6 +21,10 @@ const pendingEnv = (name: string, area = "config") => {
   return value;
 };
 const errorText = (e: unknown) => (e instanceof Error ? e.message : String(e)).split("\n")[0]!.slice(0, 240);
+const unavailable = (e: unknown) => /HTTP request failed|fetch failed|timed? out|ENOTFOUND|ECONN|ETIMEDOUT|\b429\b|\b503\b/i.test(errorText(e));
+const readFailure = (e: unknown) => unavailable(e)
+  ? "endpoint unavailable or rate-limited; inspect its URL and credentials privately"
+  : `unexpected read error (${e instanceof Error ? e.name : "unknown"}); inspect locally`;
 
 add(process.env.MAINNET_TRANSACTIONS_ENABLED === "true" || process.env.MAINNET_TRANSACTIONS_ENABLED === "1" ? "FAIL" : "PASS", "safety", "transactions disabled", "MAINNET_TRANSACTIONS_ENABLED must be false");
 for (const name of [
@@ -28,6 +33,26 @@ for (const name of [
   "RELAYER_URL_MAINNET", "RELAYER_API_KEY_MAINNET", "RELAYER_AVALANCHE_MAINNET_ID", "RELAYER_STELLAR_MAINNET_ID",
   "RELAYER_X402_PLUGIN_ID_MAINNET", "RELAYER_WEBHOOK_SIGNING_KEY_MAINNET",
 ]) pendingEnv(name);
+const runtimeRequired = [
+  "TILCAI_API_KEYS_MAINNET", "DATABASE_PATH_MAINNET", "RELAYER_URL_MAINNET", "RELAYER_API_KEY_MAINNET",
+  "RELAYER_AVALANCHE_MAINNET_ID", "RELAYER_STELLAR_MAINNET_ID", "RELAYER_X402_PLUGIN_ID_MAINNET",
+  "RELAYER_WEBHOOK_SIGNING_KEY_MAINNET", "RPC_AVALANCHE_MAINNET", "RPC_STELLAR_MAINNET",
+  "HORIZON_STELLAR_MAINNET", "STELLAR_SIMULATION_SOURCE_MAINNET",
+  "CCTP_ROUTER_AVALANCHE_MAINNET", "CCTP_ROUTER_V2_AVALANCHE_MAINNET",
+  "ACCOUNT_FACTORY_AVALANCHE_MAINNET", "VAULT_AVALANCHE_MAINNET",
+  "ERC4337_ENTRYPOINT_AVALANCHE_MAINNET", "ACCOUNT_FACTORY_STELLAR_MAINNET", "VAULT_STELLAR_MAINNET",
+] as const;
+const missingRuntime = runtimeRequired.filter((name) => !process.env[name]);
+if (missingRuntime.length) {
+  add("PENDING", "config", "full Mainnet runtime validation", `missing ${missingRuntime.join(", ")}`);
+} else {
+  try {
+    loadEnv({ ...process.env, TILCAI_ENV: "mainnet" });
+    add("PASS", "config", "full Mainnet runtime validation", "schema accepted (values redacted)");
+  } catch (e) {
+    add("FAIL", "config", "full Mainnet runtime validation", errorText(e));
+  }
+}
 if (process.env.MAINNET_EVM_DEPLOYER && process.env.MAINNET_EVM_VAULT_OWNER) {
   add(process.env.MAINNET_EVM_DEPLOYER.toLowerCase() !== process.env.MAINNET_EVM_VAULT_OWNER.toLowerCase() ? "PASS" : "FAIL", "config", "deployer is not final owner", "separate operational roles required");
 }
@@ -108,13 +133,9 @@ if (values.offline) {
     const vector = `0x${["bb5a52f42f9c9261ed4361f59422a1e30036e7c32b270c8807a419feca605023", "2ba3a8be6b94d5ec80a6d9d1190a436effe50d85a1eee859b8cc6af9bd5c2e18", "4cd60b855d442f5b3c7b11eb6c4e0ae7525fe710fab9aa7c77a67f79e6fadd76", "2927b10512bae3eddcfe467828128bad2903269919f7086069c8c4df6c732838", "c7787964eaac00e5921fb1498a60f4606766b3d9685001558d1a974e7341513e"].join("")}` as Hex;
     const p256 = await client.call({ to: AVALANCHE_MAINNET.p256Precompile, data: vector });
     add(p256.data !== undefined && BigInt(p256.data) === 1n ? "PASS" : "FAIL", "avalanche", "P-256 precompile", AVALANCHE_MAINNET.p256Precompile);
-    const slot = await client.getStorageAt({ address: AVALANCHE_MAINNET.usdc, slot: "0x7050c9e0f4ca769c69bd3a8ef740bc37934f8e2c036e5a723fd8ee048ed3f8c3" });
-    const implementation = `0x${(slot ?? "0x").slice(-40)}` as Hex;
-    const usdcCode = (await client.getCode({ address: implementation })) ?? "0x";
-    const bytesSelector = toFunctionSelector("receiveWithAuthorization(address,address,uint256,uint256,uint256,bytes32,bytes)");
-    add(usdcCode.includes(bytesSelector.slice(2)) ? "PASS" : "FAIL", "avalanche", "USDC ERC-1271 authorization overload", `implementation ${implementation}`);
+    add("PENDING", "avalanche", "USDC ERC-1271 authorization overload", "bytecode selector search cannot prove proxy behavior; requires a read-only fork simulation with the approved contract and signature");
   } catch (e) {
-    add("FAIL", "avalanche", "RPC read suite", errorText(e));
+    add(unavailable(e) ? "PENDING" : "FAIL", "avalanche", "RPC read suite", readFailure(e));
   }
 
   const stellarRpc = process.env.RPC_STELLAR_MAINNET ?? "https://soroban-rpc.mainnet.stellar.gateway.fm";
@@ -138,7 +159,7 @@ if (values.offline) {
     }
     add("PENDING", "stellar", "Soroban resource fee/reserve/TTL budget", "requires deployment simulations with an approved public source account; no transaction built in this run");
   } catch (e) {
-    add("FAIL", "stellar", "RPC/Horizon read suite", errorText(e));
+    add(unavailable(e) ? "PENDING" : "FAIL", "stellar", "RPC/Horizon read suite", readFailure(e));
   }
 
   const relayerUrl = process.env.RELAYER_URL_MAINNET?.replace(/\/$/, "");
@@ -156,7 +177,7 @@ if (values.offline) {
       const advertised = new Set(body.kinds?.map((kind) => kind.network) ?? []);
       add(response.ok && advertised.has(AVALANCHE_MAINNET.id) && advertised.has(STELLAR_MAINNET.id) ? "PASS" : "FAIL", "relayer", "x402 runtime /supported", `${response.status}: ${[...advertised].join(", ")}`);
     } catch (e) {
-      add("FAIL", "relayer", "x402 runtime /supported", errorText(e));
+      add(unavailable(e) ? "PENDING" : "FAIL", "relayer", "x402 runtime /supported", readFailure(e));
     }
   }
 }

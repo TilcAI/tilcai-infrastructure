@@ -389,6 +389,72 @@ Se implementó localmente la Fase 1 de soporte Mainnet en la rama `feat/mainnet-
 - Se agregaron pruebas unitarias de selección, aislamiento, direcciones y rechazo de configuraciones inseguras. No pudieron ejecutarse ni pudo correrse el typecheck porque faltan `../tilcai-core`, `node_modules`, `tsc` y `tsx`; el YAML de Compose sí se validó correctamente con un parser local.
 - Testnet conserva el entorno predeterminado, sus variables y aliases anteriores. Los 175 cambios aparentes de terminadores de línea ya existían y no se normalizaron masivamente.
 - Quedan pendientes la auditoría, las direcciones resultantes de los despliegues propios, relayers/firmantes Mainnet, verificación on-chain de EntryPoint y contratos, proveedores RPC productivos, pruebas completas y manifiestos productivos. Estos puntos corresponden a Fase 2 y posteriores.
+
+## 2026-10-10T06:15:34Z · Omar · Codex · GPT-6
+
+- **Sesión:** n/d
+- **Rama:** `feat/mainnet-support`
+- **Repositorios:** `tilcai-infrastructure`
+
+### Prompt
+
+> Mi amigo se quedó a medias con la implementación que le tocó y se quedó a medias, continuemos con su implementacion:
+>
+> [adjunto: implementación.md; el mensaje también incluyó la auditoría, las instrucciones de Fase 1 y la salida de `git fetch`/`git merge` como contexto]
+
+### Salida
+
+Se continuó localmente la Fase 2 sin iniciar servicios, desplegar contratos, firmar, enviar fondos, hacer commit ni push. Se conservó el merge recibido y se abrió la rama local `feat/mainnet-support`. Se agregó la plantilla Mainnet faltante, se endurecieron dry-run Soroban y EVM, el preflight valida la configuración completa y distingue comprobaciones pendientes de pruebas concluyentes, y se actualizó la documentación. Se corrigió el patrón de tests para Windows y el mínimo de Node. `npm ci`, typecheck, la suite unitaria completa con Node 24, Compose sin interpolación, Bash syntax y pruebas focalizadas pasaron. Siguen pendientes WASM/artefactos EVM, direcciones propias, auditorías, EntryPoint, pruebas on-chain de solo lectura, políticas del relayer y persistencia de producción.
+
+## 2026-10-10T06:15:35Z · Omar · Codex · GPT-6
+
+- **Sesión:** n/d
+- **Rama:** `feat/mainnet-support`
+- **Repositorios:** `tilcai-infrastructure`
+
+### Prompt
+
+> Continua...
+
+### Salida
+
+Se completó la revisión y validación local de la continuación de Fase 2 descrita en la entrada anterior. No hubo despliegues, transacciones, claves reales, contenedores, commits ni push. La respuesta final detalla archivos, pruebas y bloqueos pendientes.
+
+## 2026-10-10T06:35:10Z · Omar · Codex · GPT-6
+
+- **Sesión:** n/d
+- **Rama:** `feat/mainnet-support`
+- **Repositorios:** `tilcai-infrastructure`
+
+### Prompt
+
+> dame 6 add+commit para hacerlo manual
+
+### Salida
+
+Desde la raíz de `tilcai-infrastructure`, ejecuta estos seis pares en orden:
+
+```powershell
+git add -- .gitignore deploy/.env.mainnet.example
+git commit -m "chore(mainnet): add isolated environment template"
+
+git add -- src/mainnet/deployment.ts test/unit/mainnet-deployment.test.ts
+git commit -m "fix(mainnet): validate EVM deployment inputs"
+
+git add -- contracts/soroban/deploy-mainnet.sh
+git commit -m "fix(mainnet): harden Soroban dry-run validation"
+
+git add -- src/apps/cli/mainnet-preflight.ts
+git commit -m "fix(mainnet): strengthen readiness checks"
+
+git add -- package.json package-lock.json
+git commit -m "test: fix Windows test discovery and Node minimum"
+
+git add -- deploy/README.md deploy/MAINNET_DEPLOYMENT.md AGENT_HISTORY.md
+git commit -m "docs(mainnet): update deployment guidance and history"
+```
+
+Al terminar, comprueba con `git status --short`. No ejecuté los commits.
 > analiza los logs de tilcai y analiza cuando cuesta una transaccion crosschain en usdc, muestra el total y por chains separadas (stellar, avalanche)
 
 ### Salida

@@ -98,7 +98,8 @@ Acepta los eventos de mainnet solo con `MONITOR_INGEST_SECRET_MAINNET`, que es e
 ## 1. Prerrequisitos y separación
 
 - Revisión/auditoría independiente de Solidity y Soroban, con hallazgos críticos cerrados.
-- Node.js 22.16+, dependencias con `npm ci`, Foundry, Stellar CLI y Rust con
+- Node.js 22.20+ o 24 LTS; la imagen Docker usa Node 24. En este equipo 22.16 falla en
+  pruebas SQLite de cuentas. Dependencias con `npm ci`, Foundry, Stellar CLI y Rust con
   `wasm32v1-none` en las versiones aprobadas.
 - RPC privados o administrados para Avalanche C-Chain, Soroban RPC y Horizon, con SLA y
   límites conocidos. Los endpoints públicos son adecuados para preflight, no una decisión
@@ -132,7 +133,8 @@ No se despliegan ni se modifican:
 | Stellar Public Network | CctpForwarder | `CBZL2IH7F6BIDAA3WBNXYKIXSATJGMSW7K5P5MJ6STX5RXN47TZJDF5T` |
 
 Las constantes viven una sola vez en `src/config/networks.ts`. El preflight comprueba código o
-instancia de contrato mediante lecturas. La dirección de EntryPoint v0.9 permanece `PENDING`
+instancia de contrato mediante lecturas; la mera existencia no demuestra identidad, versión ni
+comportamiento. La dirección de EntryPoint v0.9 permanece `PENDING`
 hasta aprobar una dirección y comprobar su bytecode en C-Chain.
 
 ## 3. Comandos sin efectos blockchain
@@ -150,8 +152,16 @@ contracts/soroban/deploy-mainnet.sh dry-run \
   --max 100 --daily 1000
 ```
 
+En PowerShell, si `npm run` no reenvía `--offline` al proceso, usar directamente
+`.\node_modules\.bin\tsx.cmd src/apps/cli/mainnet-preflight.ts --offline` y comprobar que
+la salida indique `OFFLINE_READ_ONLY`. Sin `--offline` se intentan lecturas de red.
+
 `mainnet:preflight` distingue `PASS`, `FAIL` y `PENDING`. Un chequeo sin acceso o sin dato nunca
-se transforma en `PASS`. `dry-run` EVM codifica init code, argumentos, hashes y direcciones
+se transforma en `PASS`. Cuando se han proporcionado todas las variables obligatorias, valida
+también el esquema completo de Mainnet; el rechazo informa nombres de campos, no valores.
+La compatibilidad real de la sobrecarga ERC-1271 de USDC sigue `PENDING` hasta probarla mediante
+simulación de solo lectura en un fork con una firma aprobada; buscar un selector en bytecode
+de un proxy no es prueba suficiente. `dry-run` EVM codifica init code, argumentos, hashes y direcciones
 esperadas a partir de un nonce leído; no crea wallet. El plan Stellar valida artefactos, roles y
 límites y calcula hashes locales; no invoca `stellar contract upload/deploy/invoke`.
 
@@ -229,6 +239,10 @@ fork y permanece `PENDING` hasta que `/supported` del artefacto fijado anuncie `
 La definición Mainnet tiene nombres, volúmenes y puertos propios, y arranca en solo lectura salvo
 que `MAINNET_TRANSACTIONS_ENABLED=true` (sección 0). Su relayer propio es opcional
 (`--profile relayer`) y se configura con `config.mainnet.json`, que nace con los relayers pausados.
+
+La plantilla `.env.mainnet.example` deja vacías deliberadamente las credenciales, direcciones
+propias, endpoints por aprobar y el tag de imagen. Una interpolación normal de Compose debe
+fallar mientras falten estos valores; eso no equivale a un fallo de sintaxis.
 
 No usar la SQLite/Litestream actual con fondos reales. Un reemplazo por PostgreSQL requiere una
 decisión separada: driver y repositorios transaccionales, migraciones versionadas, bloqueo de

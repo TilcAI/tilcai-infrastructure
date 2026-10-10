@@ -40,7 +40,28 @@ done
 [[ "$DEPLOYER" != "$OWNER" ]] || { echo "deployer must not be the final vault owner" >&2; exit 64; }
 [[ "$OWNER" != "$OPERATOR" ]] || { echo "owner and operator must be independent" >&2; exit 64; }
 [[ "$MAX" =~ ^[0-9]+([.][0-9]{1,7})?$ && "$DAILY" =~ ^[0-9]+([.][0-9]{1,7})?$ ]] || { echo "limits must be positive decimals with at most 7 digits" >&2; exit 64; }
-read -r MAX_ATOMIC DAILY_ATOMIC < <(python3 -c 'from decimal import Decimal; import sys; a,b=map(Decimal,sys.argv[1:]); assert 0<a<=b; print(int(a*10**7),int(b*10**7))' "$MAX" "$DAILY")
+atomic_limits="$(node -e '
+  const toAtomic = (value) => {
+    const [whole, fraction = ""] = value.split(".");
+    return BigInt(whole) * 10000000n + BigInt((fraction + "0000000").slice(0, 7));
+  };
+  const [max, daily] = process.argv.slice(1).map(toAtomic);
+  if (max <= 0n || max > daily || daily > (1n << 127n) - 1n) process.exit(1);
+  process.stdout.write(`${max} ${daily}`);
+' "$MAX" "$DAILY")" || {
+  echo "limits must satisfy 0 < max <= daily <= i128 max" >&2
+  exit 64
+}
+read -r MAX_ATOMIC DAILY_ATOMIC <<< "$atomic_limits"
+node -e '
+  const { StrKey } = require("@stellar/stellar-sdk");
+  const [deployer, owner, operator] = process.argv.slice(1);
+  const validRole = (value) => StrKey.isValidEd25519PublicKey(value) || StrKey.isValidContract(value);
+  if (!StrKey.isValidEd25519PublicKey(deployer) || !validRole(owner) || !validRole(operator)) process.exit(1);
+' "$DEPLOYER" "$OWNER" "$OPERATOR" || {
+  echo "public Stellar address has an invalid StrKey checksum or type" >&2
+  exit 64
+}
 
 WASM="$here/target/wasm32v1-none/release"
 names=(tilcai_account tilcai_ed25519_verifier tilcai_webauthn_verifier tilcai_account_factory tilcai_vault)
