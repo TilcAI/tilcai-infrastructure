@@ -223,3 +223,31 @@ Commit y push de la rama `feat/sca-stellar-vault` (tilcai-infrastructure) y de `
 ### Salida
 
 **En este repositorio.** La foto de recursos lleva \`vaults\` (una entrada por red, el de Fuji primero; \`vault\` sigue siendo el de Fuji) y las alertas del vault de otra red llevan la red como destino (\`VAULT_LOW:stellar:testnet\`). 175 pruebas unitarias y \`tsc\` limpios. El contenedor \`tilcai\` se recreó con la imagen nueva (\`healthy\`, sin errores, \`/v1/monitor/resources\` ya informa los dos vaults); la imagen anterior queda como \`tilcai/tilcai:stellar-20261009\`.
+
+## 2026-10-09T21:55:57Z · SaulChoque · Claude Code (Sonnet 5.5)
+
+- **Sesión:** https://claude.ai/code/session_01XXALddBkW59xRAowuFKvD7
+- **Rama:** `main`
+- **Repositorios:** `tilcai-infrastructure`, `tilcai-web`, `documentation`
+
+### Prompt
+
+> si, mergea a main
+
+### Salida
+
+**En este repositorio.** Fusionado en `main` por PR: tilcai-infrastructure #25 (`d17fde3`), tilcai-web #29 (`981afc9`, después de traer 5 commits nuevos de `main` con 76 pruebas y `tsc` limpios) y documentation #3 (`3106636`). Los contenedores `tilcai` y `tilcai-web` siguen con las imágenes construidas desde las ramas; la de tilcai-web no incluye los 5 commits de la landing que llegaron a `main` mientras tanto.
+
+## 2026-10-09T22:51:54Z · SaulChoque · Claude Code (Sonnet 5.5)
+
+- **Sesión:** https://claude.ai/code/session_01XXALddBkW59xRAowuFKvD7
+- **Rama:** `main`
+- **Repositorios:** `tilcai-infrastructure`, `tilcai-web`
+
+### Prompt
+
+> Genial, ahora quita del dashboard de eventos cualquier mención de mock o demo
+
+### Salida
+
+**En este repositorio.** Los resúmenes de los eventos de QR Simple dejan de decir «(mock)» y el pagador y el banco por defecto pasan a «NO INFORMADO» (antes «PAGADOR DE PRUEBA» y «BANCO MOCK»; es lo que recibe quien cobra en el aviso de pago). 175 pruebas y `tsc` limpios. Sin commit ni despliegue.

@@ -140,7 +140,7 @@ test("deposit: the QR becomes Pagado and the caller is notified as Vendis would"
   assert.equal(call.url, QR_CONFIG.callbackUrl);
   // The callback carries the token the QR was created with.
   assert.equal(call.headers.authorization, `Bearer ${token}`);
-  const payment = { payment_date: "2026-10-02 08:01:30", payment_amount: "119.20", payment_name: "PAGADOR DE PRUEBA", payment_bank: "BANCO MOCK" };
+  const payment = { payment_date: "2026-10-02 08:01:30", payment_amount: "119.20", payment_name: "PAGADOR NO INFORMADO", payment_bank: "BANCO NO INFORMADO" };
   assert.deepEqual(JSON.parse(call.body), { ...payment, qr_id: qr.qr_id });
   // The status answer carries the id as a string, like the documentation's example.
   assert.deepEqual(h.mock.status(qr.qr_id), { status: "Pagado", payments: [{ ...payment, qr_id: String(qr.qr_id) }] });
@@ -148,6 +148,8 @@ test("deposit: the QR becomes Pagado and the caller is notified as Vendis would"
   await rejectsAsync(h.mock.simulateDeposit({ qrId: qr.qr_id }), 409, /ya fue pagado/);
   assert.equal(h.http.calls.length, 1);
   assert.deepEqual(h.types().filter((t) => t !== "qr.token_issued"), ["qr.created", "qr.paid", "qr.callback_delivered"]);
+  // What the dashboard shows of the flow never calls it a mock or a demo.
+  assert.doesNotMatch(JSON.stringify(h.monitor.list({})), /\b(mock|demo)\b/i);
   // Nothing left for the worker.
   assert.equal(await h.mock.deliverDueCallbacks(), 0);
   assert.equal(h.http.calls.length, 1);
