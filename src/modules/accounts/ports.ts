@@ -4,8 +4,9 @@
 // EVM: OpenZeppelin Contracts `Account` on ERC-4337 EntryPoint v0.9 (contracts/evm).
 import type { Hex } from "../../shared/hex.ts";
 import type { TenantId } from "../tenants/ports.ts";
+import type { NetworkId } from "../../config/networks.ts";
 
-export type AccountNetwork = "stellar:testnet" | "eip155:43113";
+export type AccountNetwork = NetworkId;
 export type SmartAccountId = string & { readonly __brand: "smartAccount" };
 export type DelegationId = string & { readonly __brand: "delegation" };
 

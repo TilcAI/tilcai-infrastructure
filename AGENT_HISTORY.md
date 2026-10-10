@@ -223,3 +223,65 @@ Commit y push de la rama `feat/sca-stellar-vault` (tilcai-infrastructure) y de `
 ### Salida
 
 **En este repositorio.** La foto de recursos lleva \`vaults\` (una entrada por red, el de Fuji primero; \`vault\` sigue siendo el de Fuji) y las alertas del vault de otra red llevan la red como destino (\`VAULT_LOW:stellar:testnet\`). 175 pruebas unitarias y \`tsc\` limpios. El contenedor \`tilcai\` se recreó con la imagen nueva (\`healthy\`, sin errores, \`/v1/monitor/resources\` ya informa los dos vaults); la imagen anterior queda como \`tilcai/tilcai:stellar-20261009\`.
+
+## 2026-10-10T04:07:08Z · n/d · Codex · GPT-5
+
+- **Sesión:** n/d
+- **Rama:** `main`
+- **Repositorios:** `tilcai-infrastructure`
+
+### Prompt
+
+> # Context from my IDE setup:
+>
+> ## Active file: implementación.md
+>
+> ## Open tabs:
+> - implementación.md: implementación.md
+> - docker-compose.yml: deploy/docker-compose.yml
+> - Dockerfile: deploy/Dockerfile
+> - deploy-testnet.sh: contracts/soroban/deploy-testnet.sh
+> - Dockerfile.dockerignore: deploy/Dockerfile.dockerignore
+>
+> ## My request:
+> implementación.md lee y ejecuta
+
+### Salida
+
+Se ejecutó la fase de análisis exigida por `implementación.md`, sin desplegar, instalar dependencias, iniciar servicios, crear wallets, firmar transacciones ni modificar contratos o configuración. La auditoría concluye que el repositorio está limitado explícitamente a Avalanche Fuji y Stellar Testnet; la infraestructura local no permitió ejecutar pruebas y faltan `node_modules`, `forge`, Stellar CLI y el repositorio hermano `tilcai-core`. Se identificaron controles positivos de idempotencia, conciliación, límites y pausa, pero también bloqueos críticos para mainnet: contratos propios no auditados, configuración y APIs fijadas a testnet, custodia/propiedad sin diseño productivo, relayer con políticas débiles y referencia de build no fijada, autorización insuficiente para pagos del vault, persistencia SQLite/Cloud Run no apta para dinero y ausencia de implementación integral de x402/comercio/delegaciones.
+
+La respuesta entrega las diez secciones solicitadas: inventario y arquitectura; estado de testnet y guía no ejecutada; matriz de variables; bloqueos clasificados; cambios exactos para mainnet; seguridad; infraestructura recomendada; roadmap por fases; checklist de salida; y siguiente paso. Distingue hechos confirmados por código, documentación no verificada externamente y comprobaciones pendientes, con referencias a archivos locales y documentación oficial de Circle, Stellar, Avalanche y OpenZeppelin. El único archivo modificado es `AGENT_HISTORY.md`, por la regla obligatoria de trazabilidad del repositorio; no se hizo commit ni push.
+
+## 2026-10-10T04:21:48Z · n/d · Codex · GPT-5
+
+- **Sesión:** n/d
+- **Rama:** `feat/mainnet-support`
+- **Repositorios:** `tilcai-infrastructure`
+
+### Prompt
+
+> # Context from my IDE setup:
+>
+> ## Active file: implementación.md
+>
+> ## Open tabs:
+> - implementación.md: implementación.md
+> - docker-compose.yml: deploy/docker-compose.yml
+> - Dockerfile: deploy/Dockerfile
+> - deploy-testnet.sh: contracts/soroban/deploy-testnet.sh
+> - Dockerfile.dockerignore: deploy/Dockerfile.dockerignore
+>
+> ## My request:
+> vuelve a lee ry ejecuta
+
+### Salida
+
+Se implementó localmente la Fase 1 de soporte Mainnet en la rama `feat/mainnet-support`, sin commit ni push y sin desplegar contratos, crear wallets, firmar transacciones, mover fondos o modificar infraestructura externa.
+
+- Se añadió selección centralizada `testnet`/`mainnet` para Avalanche C-Chain y Stellar Public Network, propagada al contexto, API, adaptadores, servicios, workers, monitorización y CLI de solo lectura.
+- Se incorporaron las direcciones oficiales de USDC y CCTP V2, dominios CCTP, passphrase pública, Iris de producción, chain ID 43114 y ejemplos de RPC/Horizon obtenidos de documentación oficial.
+- La configuración Mainnet falla cerrada si falta cualquier contrato TilcAI, base, credencial, relayer, webhook, fuente de simulación o endpoint; rechaza reutilización de datos Testnet, claves de desarrollo, firma local y QR mock.
+- `MAINNET_TRANSACTIONS_ENABLED=false` es el valor predeterminado; no se crean submitters transaccionales y las operaciones de pagos/cuentas rechazan solicitudes. Las CLI capaces de desplegar u operar contratos están bloqueadas explícitamente en Mainnet.
+- Se agregaron pruebas unitarias de selección, aislamiento, direcciones y rechazo de configuraciones inseguras. No pudieron ejecutarse ni pudo correrse el typecheck porque faltan `../tilcai-core`, `node_modules`, `tsc` y `tsx`; el YAML de Compose sí se validó correctamente con un parser local.
+- Testnet conserva el entorno predeterminado, sus variables y aliases anteriores. Los 175 cambios aparentes de terminadores de línea ya existían y no se normalizaron masivamente.
+- Quedan pendientes la auditoría, las direcciones resultantes de los despliegues propios, relayers/firmantes Mainnet, verificación on-chain de EntryPoint y contratos, proveedores RPC productivos, pruebas completas y manifiestos productivos. Estos puntos corresponden a Fase 2 y posteriores.

@@ -7,7 +7,7 @@ import type { TenantId } from "../../modules/tenants/ports.ts";
 import { DomainError } from "../../shared/errors.ts";
 import type { Hex } from "../../shared/hex.ts";
 
-const NETWORKS = ["eip155:43113", "stellar:testnet"] as const;
+const NETWORKS = ["eip155:43113", "stellar:testnet", "eip155:43114", "stellar:pubnet"] as const;
 const AccountBody = z.strictObject({
   network: z.enum(NETWORKS),
   externalRef: z.string().min(1).max(128),
@@ -49,7 +49,7 @@ export function registerAccountRoutes(
   h: { tenantOf(req: FastifyRequest): TenantId; idemKey(req: FastifyRequest): string; send(reply: FastifyReply, status: number, body: unknown): FastifyReply },
 ): void {
   const service = (): AccountService => {
-    if (!ctx.accountService) throw new DomainError("SERVICE_UNAVAILABLE", "accounts not configured (ACCOUNT_FACTORY_FUJI or ACCOUNT_FACTORY_STELLAR)");
+    if (!ctx.accountService) throw new DomainError("SERVICE_UNAVAILABLE", "accounts not configured for the active environment");
     return ctx.accountService;
   };
   const explorer = (a: StoredSmartAccount) => ctx.nets.byId(a.network)?.explorer;
@@ -67,7 +67,7 @@ export function registerAccountRoutes(
     updatedAt: a.updatedAt,
   });
   const links = (a: StoredSmartAccount) => ({
-    address: `${explorer(a)}/${a.network === "stellar:testnet" ? "contract" : "address"}/${a.address}`,
+    address: `${explorer(a)}/${a.network.startsWith("stellar:") ? "contract" : "address"}/${a.address}`,
     deployTx: a.deployTxHash ? `${explorer(a)}/tx/${a.deployTxHash}` : null,
   });
 

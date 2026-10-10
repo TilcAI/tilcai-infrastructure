@@ -85,7 +85,7 @@ export function registerMonitorRoutes(app: FastifyInstance, ctx: AppContext): vo
     scope.addContentTypeParser("application/json", { parseAs: "buffer" }, (_req, body, done) => done(null, body));
     scope.post(RELAYER_WEBHOOK_PATH, { bodyLimit: 512 * 1024 }, async (req, reply) => {
       const raw = req.body as Buffer;
-      const key = ctx.env.RELAYER_WEBHOOK_SIGNING_KEY;
+      const key = ctx.runtime.relayerWebhookSigningKey;
       const signature = req.headers["x-signature"];
       const trusted = key ? verifyRelayerSignature(key, raw, typeof signature === "string" ? signature : undefined) : isLoopback(req.ip);
       if (!trusted) return send(reply, 401, { error: new DomainError("UNAUTHENTICATED").contract });

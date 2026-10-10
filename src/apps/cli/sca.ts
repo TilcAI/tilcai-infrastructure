@@ -23,6 +23,7 @@ import { ACCOUNT_ABI, ACCOUNT_FACTORY_ABI } from "../../modules/accounts/evm/pro
 import { viemChain } from "../../modules/crosschain/adapters/evm.ts";
 
 const env = loadEnv();
+if (env.TILCAI_ENV === "mainnet") throw new Error("SCA deployment CLI is disabled on mainnet in phase 1");
 const net = networks(env).avalancheFuji;
 const chain = viemChain(net);
 const pub = createPublicClient({ chain, transport: http(net.rpc, { retryCount: 3 }) });

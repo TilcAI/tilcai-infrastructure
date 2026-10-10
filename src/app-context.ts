@@ -1,7 +1,7 @@
 import { hostname } from "node:os";
 import type { DatabaseSync } from "node:sqlite";
-import { loadEnv, type Env } from "./config/env.ts";
-import { networks, type NetworkRegistry } from "./config/networks.ts";
+import { activeConfig, loadEnv, type Env } from "./config/env.ts";
+import { networks, type NetworkId, type NetworkRegistry } from "./config/networks.ts";
 import { openDatabase } from "./db/sqlite.ts";
 import { systemClock } from "./shared/clock.ts";
 import { createLogger, type Logger } from "./shared/log.ts";
@@ -38,15 +38,16 @@ import { SqliteTenantRegistry } from "./modules/tenants/registry.ts";
 /** Composition root: the only place that knows concrete adapters. */
 export interface AppContext {
   env: Env;
+  runtime: ReturnType<typeof activeConfig>;
   nets: NetworkRegistry;
   db: DatabaseSync;
   log: Logger;
   relayer: RelayerClient;
   crosschain: CrosschainPaymentService;
-  /** Payouts from the TilcaiVault on Fuji. Null until VAULT_FUJI and the relayer key are configured. */
+  /** Payouts from the active Avalanche vault. */
   vault: VaultDisbursementService | null;
-  /** Every network's vault service (Fuji's included): the HTTP API and the worker go through this. */
-  vaults: Partial<Record<"eip155:43113" | "stellar:testnet", VaultDisbursementService>>;
+  /** Every active network's vault service: the HTTP API and worker go through this. */
+  vaults: Partial<Record<NetworkId, VaultDisbursementService>>;
   /** all | api | worker: which process this is. */
   role: string;
   /** The event log behind the dashboard in tilcai-web. */
@@ -62,59 +63,60 @@ export interface AppContext {
   tenants: TenantRegistry & TenantAdmin;
   accounts: SmartAccountRepository;
   delegations: DelegationRepository;
-  /** Issues smart accounts for tenants. Null until ACCOUNT_FACTORY_FUJI or ACCOUNT_FACTORY_STELLAR is configured. */
+  /** Issues smart accounts for tenants. Null until an active-network account factory is configured. */
   accountService: AccountService | null;
 }
 
 export function createAppContext(name: string, env: Env = loadEnv()): AppContext {
   const log = createLogger(name, env.LOG_LEVEL);
   const nets = networks(env);
-  const db = openDatabase(env.DATABASE_PATH);
-  const relayer = new RelayerClient(env.RELAYER_URL, env.RELAYER_API_KEY);
+  const runtime = activeConfig(env);
+  const db = openDatabase(runtime.databasePath);
+  const relayer = new RelayerClient(runtime.relayerUrl, runtime.relayerApiKey);
   const role = name === "tilcai" ? "all" : name;
   const monitorRepo = new SqliteMonitorRepository(db);
   const monitor = new MonitorService(monitorRepo, systemClock, log);
 
   const submitters: Record<string, MintSubmitter> = {};
-  if (env.RELAYER_API_KEY) submitters.relayer = new RelayerMintSubmitter(relayer, env.RELAYER_STELLAR_ID, nets.stellarTestnet);
-  if (env.STELLAR_OPERATOR_SECRET) submitters.local = new LocalKeyMintSubmitter(nets.stellarTestnet, env.STELLAR_OPERATOR_SECRET);
+  if (runtime.relayerApiKey && runtime.transactionsEnabled) submitters.relayer = new RelayerMintSubmitter(relayer, runtime.stellarRelayerId, nets.stellar);
+  if (env.STELLAR_OPERATOR_SECRET) submitters.local = new LocalKeyMintSubmitter(nets.stellar, env.STELLAR_OPERATOR_SECRET);
   if (!submitters[env.STELLAR_MINT_SUBMITTER]) {
     log.warn("mint submitter not configured; payments will wait at ATTESTED", { submitter: env.STELLAR_MINT_SUBMITTER });
   }
 
-  const evmSubmitter = env.RELAYER_API_KEY ? new RelayerEvmSubmitter(relayer, env.RELAYER_FUJI_ID) : null;
+  const evmSubmitter = runtime.relayerApiKey && runtime.transactionsEnabled ? new RelayerEvmSubmitter(relayer, runtime.evmRelayerId) : null;
   // The keys of TILCAI_API_KEYS belong to the legacy tenant (scope `payments`): Optipagos and optus-agentBE keep working.
   // SQLite runs this to completion before the call returns, so the keys are in place when the context is.
   const tenants = new SqliteTenantRegistry(db, systemClock);
   tenants
-    .syncLegacyKeys(env.TILCAI_API_KEYS)
+    .syncLegacyKeys(runtime.apiKeys)
     .then((r) => log.info("legacy tenant keys synced", r))
     .catch((e) => log.error("could not sync TILCAI_API_KEYS with the legacy tenant", { error: e instanceof Error ? e.message : String(e) }));
 
   const accounts = new SqliteSmartAccountRepository(db, systemClock);
-  const accountProvider = nets.avalancheFuji.accountFactory ? new EvmSmartAccountProvider(nets.avalancheFuji, nets.avalancheFuji.accountFactory, evmSubmitter) : null;
-  const stellarSubmitter = env.RELAYER_API_KEY ? new RelayerStellarSubmitter(relayer, env.RELAYER_STELLAR_ID, nets.stellarTestnet) : null;
-  const stellarAccountProvider = nets.stellarTestnet.accountFactory
-    ? new StellarSmartAccountProvider(nets.stellarTestnet, nets.stellarTestnet.accountFactory, stellarSubmitter, env.STELLAR_SIMULATION_SOURCE || undefined)
+  const accountProvider = nets.avalanche.accountFactory ? new EvmSmartAccountProvider(nets.avalanche, nets.avalanche.accountFactory, evmSubmitter) : null;
+  const stellarSubmitter = runtime.relayerApiKey && runtime.transactionsEnabled ? new RelayerStellarSubmitter(relayer, runtime.stellarRelayerId, nets.stellar) : null;
+  const stellarAccountProvider = nets.stellar.accountFactory
+    ? new StellarSmartAccountProvider(nets.stellar, nets.stellar.accountFactory, stellarSubmitter, runtime.stellarSimulationSource || undefined)
     : null;
   const providers: Partial<Record<AccountDeployer["network"], AccountDeployer>> = {};
   if (accountProvider) providers[accountProvider.network] = accountProvider;
   if (stellarAccountProvider) providers[stellarAccountProvider.network] = stellarAccountProvider;
   const accountService =
     accountProvider || stellarAccountProvider
-      ? new AccountService({ repo: accounts, providers, clock: systemClock, log, events: monitor, options: { pollMs: env.WORKER_POLL_MS } })
+      ? new AccountService({ repo: accounts, providers, clock: systemClock, log, events: monitor, options: { pollMs: env.WORKER_POLL_MS, transactionsEnabled: runtime.transactionsEnabled } })
       : null;
-  if (accountProvider && !evmSubmitter) log.warn("ACCOUNT_FACTORY_FUJI is set but RELAYER_API_KEY is not; accounts are issued but never deployed");
-  if (stellarAccountProvider && !stellarSubmitter) log.warn("ACCOUNT_FACTORY_STELLAR is set but RELAYER_API_KEY is not; accounts are issued but never deployed");
+  if (accountProvider && !evmSubmitter) log.warn("active EVM account factory is set but its relayer is not; accounts are issued but never deployed");
+  if (stellarAccountProvider && !stellarSubmitter) log.warn("active Stellar account factory is set but its relayer is not; accounts are issued but never deployed");
 
   const crosschain = new CrosschainPaymentService({
     repo: new SqliteCrosschainRepository(db),
-    evm: new ViemEvmCctp(nets.avalancheFuji, env.DEV_EVM_PAYER_PRIVATE_KEY || undefined),
-    stellar: new SorobanStellarCctp(nets.stellarTestnet, env.STELLAR_SIMULATION_SOURCE || undefined),
-    iris: new IrisClient(env.IRIS_API_URL),
+    evm: new ViemEvmCctp(nets.avalanche, env.DEV_EVM_PAYER_PRIVATE_KEY || undefined),
+    stellar: new SorobanStellarCctp(nets.stellar, runtime.stellarSimulationSource || undefined),
+    iris: new IrisClient(runtime.irisApiUrl),
     submitters,
     activeSubmitter: env.STELLAR_MINT_SUBMITTER,
-    ...(evmSubmitter && (nets.avalancheFuji.cctpRouter || nets.avalancheFuji.cctpRouterV2) ? { evmSubmitter } : {}),
+    ...(evmSubmitter && (nets.avalanche.cctpRouter || nets.avalanche.cctpRouterV2) ? { evmSubmitter } : {}),
     ...(accountService && accountProvider
       ? {
           accounts: {
@@ -123,41 +125,42 @@ export function createAppContext(name: string, env: Env = loadEnv()): AppContext
           },
         }
       : {}),
-    source: nets.avalancheFuji,
-    destination: nets.stellarTestnet,
+    source: nets.avalanche,
+    destination: nets.stellar,
     clock: systemClock,
     log,
     events: monitor,
+    transactionsEnabled: runtime.transactionsEnabled,
     options: {
       quoteTtlSeconds: env.QUOTE_TTL_SECONDS,
       pollMs: env.WORKER_POLL_MS,
-      minConfirmations: env.EVM_MIN_CONFIRMATIONS,
+      minConfirmations: runtime.evmMinConfirmations,
     },
   });
 
   const vault =
-    evmSubmitter && nets.avalancheFuji.vault
+    evmSubmitter && nets.avalanche.vault
       ? new VaultDisbursementService({
           repo: new SqliteVaultRepository(db),
-          vault: new ViemVault(nets.avalancheFuji, nets.avalancheFuji.vault),
+          vault: new ViemVault(nets.avalanche, nets.avalanche.vault),
           submitter: evmSubmitter,
-          network: nets.avalancheFuji,
+          network: nets.avalanche,
           clock: systemClock,
           log,
           events: monitor,
-          options: { pollMs: env.WORKER_POLL_MS, minConfirmations: env.EVM_MIN_CONFIRMATIONS },
+          options: { pollMs: env.WORKER_POLL_MS, minConfirmations: runtime.evmMinConfirmations },
         })
       : null;
-  if (nets.avalancheFuji.vault && !vault) log.warn("VAULT_FUJI is set but RELAYER_API_KEY is not; vault payouts are disabled");
+  if (nets.avalanche.vault && !vault) log.warn("active Avalanche vault is set but its relayer is not; payouts are disabled");
 
   // Same repository, one service per network: each reconciles only the payouts of its own vault.
   const stellarVault =
-    stellarSubmitter && nets.stellarTestnet.vault
+    stellarSubmitter && nets.stellar.vault
       ? new VaultDisbursementService({
           repo: new SqliteVaultRepository(db),
-          vault: new SorobanVault(nets.stellarTestnet, nets.stellarTestnet.vault, env.STELLAR_SIMULATION_SOURCE || undefined),
+          vault: new SorobanVault(nets.stellar, nets.stellar.vault, runtime.stellarSimulationSource || undefined),
           submitter: new StellarVaultSubmitter(stellarSubmitter),
-          network: nets.stellarTestnet,
+          network: nets.stellar,
           clock: systemClock,
           log,
           events: monitor,
@@ -165,29 +168,30 @@ export function createAppContext(name: string, env: Env = loadEnv()): AppContext
           options: { pollMs: env.WORKER_POLL_MS, minConfirmations: 1 },
         })
       : null;
-  if (nets.stellarTestnet.vault && !stellarVault) log.warn("VAULT_STELLAR is set but RELAYER_API_KEY is not; Stellar vault payouts are disabled");
+  if (nets.stellar.vault && !stellarVault) log.warn("active Stellar vault is set but its relayer is not; payouts are disabled");
   const vaults: AppContext["vaults"] = {};
-  if (vault) vaults[nets.avalancheFuji.id] = vault;
-  if (stellarVault) vaults[nets.stellarTestnet.id] = stellarVault;
+  if (vault) vaults[nets.avalanche.id] = vault;
+  if (stellarVault) vaults[nets.stellar.id] = stellarVault;
 
   const resources = new ResourceMonitor({
     role,
     db,
-    databasePath: env.DATABASE_PATH,
+    databasePath: runtime.databasePath,
     relayer,
-    relayerAuthenticated: Boolean(env.RELAYER_API_KEY),
-    relayerIds: [env.RELAYER_FUJI_ID, env.RELAYER_STELLAR_ID],
+    relayerAuthenticated: Boolean(runtime.relayerApiKey),
+    relayerIds: [runtime.evmRelayerId, runtime.stellarRelayerId],
     vault,
-    usdcDecimals: nets.avalancheFuji.usdc.decimals,
-    otherVaults: stellarVault ? [{ network: nets.stellarTestnet.id, service: stellarVault, usdcDecimals: nets.stellarTestnet.usdc.decimals }] : [],
+    usdcDecimals: nets.avalanche.usdc.decimals,
+    primaryVaultNetwork: nets.avalanche.id,
+    otherVaults: stellarVault ? [{ network: nets.stellar.id, service: stellarVault, usdcDecimals: nets.stellar.usdc.decimals }] : [],
     monitor: { head: () => monitorRepo.head(), sinks: () => monitorRepo.sinks() },
     now: systemClock.now,
   });
-  const forwarder = env.MONITOR_WEB_URL
+  const forwarder = runtime.monitorWebUrl
     ? new WebForwarder({
         repo: monitorRepo,
-        url: env.MONITOR_WEB_URL,
-        secret: env.MONITOR_WEB_SECRET,
+        url: runtime.monitorWebUrl,
+        secret: runtime.monitorWebSecret,
         origin: { env: env.TILCAI_ENV, instance: hostname() },
         clock: systemClock,
         log,
@@ -209,7 +213,7 @@ export function createAppContext(name: string, env: Env = loadEnv()): AppContext
     : null;
   if (qrMock && !env.QR_MOCK_CALLBACK_URL) log.warn("QR mock without QR_MOCK_CALLBACK_URL: payments are only visible by polling the QR status");
   return {
-    env, nets, db, log, relayer, crosschain, vault, vaults, role, monitor, resources, forwarder, correlate: sqliteCorrelate(db), qrMock, tenants,
+    env, runtime, nets, db, log, relayer, crosschain, vault, vaults, role, monitor, resources, forwarder, correlate: sqliteCorrelate(db), qrMock, tenants,
     accounts,
     accountService,
     delegations: new SqliteDelegationRepository(db),

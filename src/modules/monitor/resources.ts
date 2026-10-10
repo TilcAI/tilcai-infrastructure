@@ -44,6 +44,8 @@ export const PRIMARY_VAULT_NETWORK = "eip155:43113";
 
 export interface ResourceSnapshot {
   takenAt: string;
+  /** Active Avalanche network; omitted by older snapshots. */
+  primaryVaultNetwork?: string;
   process: {
     role: string;
     pid: number;
@@ -87,6 +89,7 @@ export interface ResourceDeps {
   relayerIds: string[];
   vault: VaultDisbursementService | null;
   usdcDecimals: number;
+  primaryVaultNetwork?: string;
   /** Vaults of other networks (Stellar's). Their alerts carry the network as target: `VAULT_EMPTY:stellar:testnet`. */
   otherVaults?: Array<{ network: string; service: VaultDisbursementService; usdcDecimals: number }>;
   monitor: { head(): number; sinks(): SinkState[] };
@@ -120,6 +123,7 @@ export class ResourceMonitor {
     const sinks = this.d.monitor.sinks().map((s) => ({ ...s, lag: Math.max(head - s.lastSeq, 0) }));
     const snapshot: ResourceSnapshot = {
       takenAt: this.d.now().toISOString(),
+      primaryVaultNetwork: this.d.primaryVaultNetwork ?? PRIMARY_VAULT_NETWORK,
       process: this.process(),
       host: { name: hostname(), cpus: cpus().length, loadAverage: loadavg().map((n) => round(n, 2)), totalMemoryBytes: totalmem(), freeMemoryBytes: freemem() },
       database,
@@ -127,7 +131,7 @@ export class ResourceMonitor {
       vault: vault.status,
       ...(vault.error ? { vaultError: vault.error } : {}),
       ...(this.d.vault || others.length > 0
-        ? { vaults: [...(this.d.vault ? [{ network: PRIMARY_VAULT_NETWORK, vault: vault.status, ...(vault.error ? { error: vault.error } : {}) }] : []), ...others] }
+        ? { vaults: [...(this.d.vault ? [{ network: this.d.primaryVaultNetwork ?? PRIMARY_VAULT_NETWORK, vault: vault.status, ...(vault.error ? { error: vault.error } : {}) }] : []), ...others] }
         : {}),
       monitor: { head, sinks },
       alerts: [],
@@ -272,7 +276,7 @@ export function alertsOf(s: ResourceSnapshot, vaultConfigured: boolean): Array<O
   if (s.vault) vaultAlerts(s.vault, "", "El vault", add);
   // Vaults of other networks: the same alerts, told apart by the network in the code.
   for (const e of s.vaults ?? []) {
-    if (e.network === PRIMARY_VAULT_NETWORK) continue;
+    if (e.network === (s.primaryVaultNetwork ?? PRIMARY_VAULT_NETWORK)) continue;
     const suffix = `:${e.network}`;
     const name = `El vault de ${e.network}`;
     if (!e.vault) add(`VAULT_UNREADABLE${suffix}`, "warning", `No se pudo leer el ${name.replace(/^El /, "")}: ${e.error ?? "sin respuesta"}`);

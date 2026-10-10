@@ -19,7 +19,7 @@ export interface AccountServiceDeps {
   clock: Clock;
   log: Logger;
   events?: EventSink;
-  options: { pollMs: number };
+  options: { pollMs: number; transactionsEnabled?: boolean };
 }
 
 export interface CreateAccountInput {
@@ -57,6 +57,7 @@ export class AccountService {
   }
 
   async create(input: CreateAccountInput): Promise<{ account: StoredSmartAccount; replayed: boolean }> {
+    if (this.d.options.transactionsEnabled === false) throw new DomainError("SERVICE_UNAVAILABLE", "transactions are disabled for this environment");
     if (!/^[A-Za-z0-9_-]{8,128}$/.test(input.idempotencyKey)) throw new DomainError("INVALID_INPUT", "bad idempotency key");
     if (!/^[A-Za-z0-9_.:@-]{1,128}$/.test(input.externalRef)) throw new DomainError("INVALID_INPUT", "externalRef: 1-128 of A-Z a-z 0-9 _ . : @ -");
     const provider = this.provider(input.network);

@@ -3,6 +3,7 @@ import type { Hex } from "../../shared/hex.ts";
 import type { RouteQuoteId } from "../../shared/ids.ts";
 import type { TenantId } from "../tenants/ports.ts";
 import type { MintTarget } from "./cctp/encoding.ts";
+import type { EvmNetworkId, StellarNetworkId } from "../../config/networks.ts";
 
 /**
  * Crosschain USDC payment (CCTP V2): burn on the source chain, Circle attests,
@@ -77,8 +78,8 @@ export interface RouteQuote {
   id: RouteQuoteId;
   /** Who asked for it. Calls made on behalf of another tenant see it as not found. */
   tenantId: TenantId;
-  sourceNetwork: "eip155:43113";
-  destinationNetwork: "stellar:testnet";
+  sourceNetwork: EvmNetworkId;
+  destinationNetwork: StellarNetworkId;
   sourceDomain: number;
   destinationDomain: number;
   payTo: string;

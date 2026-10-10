@@ -1,5 +1,5 @@
 /**
- * Avalanche Fuji → Stellar Testnet USDC payment, end to end, in-process.
+ * Active Avalanche → Stellar USDC payment, end to end, in-process.
  *
  *   npm run xpay -- --amount 0.5 --to G…                  # dev signer (DEV_EVM_PAYER_PRIVATE_KEY) burns, pays AVAX
  *   npm run xpay -- --amount 0.5 --to G… --gasless        # dev key signs EIP-3009; the OZ Relayer pays all gas
@@ -31,8 +31,8 @@ const out = (o: unknown) => console.log(JSON.stringify(o, (_, v) => (typeof v ==
 let paymentId = a.payment;
 if (!paymentId) {
   if (!a.amount || !a.to) throw new Error("--amount and --to are required (or --payment to follow one)");
-  const q = await svc.quote({ sourceNetwork: "eip155:43113", destinationNetwork: "stellar:testnet", amount: a.amount, payTo: a.to });
-  console.log(`quote ${q.id}: burn ${q.burnAmountAtomic} (6 dec) on Fuji → ${q.destinationAmountAtomic} (7 dec) to ${q.payTo}`);
+  const q = await svc.quote({ sourceNetwork: ctx.nets.avalanche.id, destinationNetwork: ctx.nets.stellar.id, amount: a.amount, payTo: a.to });
+  console.log(`quote ${q.id}: burn ${q.burnAmountAtomic} (6 dec) on ${ctx.nets.avalanche.name} → ${q.destinationAmountAtomic} (7 dec) on ${ctx.nets.stellar.name} to ${q.payTo}`);
   console.log(`preflight ${JSON.stringify(q.preflight)}`);
   const mode = a.gasless ? (a.payer ? "gasless" : "dev_gasless") : a.payer ? "external" : "dev_signer";
   const r = await svc.createPayment({ quoteId: q.id, mode, ...(a.payer ? { payer: a.payer } : {}), ...(a.order ? { orderId: a.order } : {}), idempotencyKey: randomUUID() });

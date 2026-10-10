@@ -1,4 +1,5 @@
 import type { Hex } from "../../shared/hex.ts";
+import type { NetworkId } from "../../config/networks.ts";
 
 /**
  * One vault per network, the same rules everywhere: an EVM `TilcaiVault` (Avalanche) and a Soroban
@@ -63,7 +64,7 @@ export interface VaultSubmitter {
 
 /** The part of a network the vault service reads. */
 export interface VaultNetwork {
-  id: "eip155:43113" | "stellar:testnet";
+  id: NetworkId;
   explorer: string;
   usdc: { decimals: number };
 }

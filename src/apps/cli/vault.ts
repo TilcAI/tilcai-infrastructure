@@ -35,6 +35,7 @@ const { values: a, positionals } = parseArgs({
 });
 
 const env = loadEnv();
+if (env.TILCAI_ENV === "mainnet") throw new Error("vault deployment/operation CLI is disabled on mainnet in phase 1");
 const net = networks(env).avalancheFuji;
 const chain = viemChain(net);
 const pub = createPublicClient({ chain, transport: http(net.rpc, { retryCount: 3 }) });
