@@ -22,7 +22,7 @@ const send = (reply: FastifyReply, status: number, body: unknown) =>
   reply.code(status).type("application/json; charset=utf-8").send(json(body));
 
 const QuoteBody = z.strictObject({
-  sourceNetwork: z.enum(["eip155:43113", "eip155:43114"]),
+  sourceNetwork: z.enum(["eip155:43113", "eip155:43114", "eip155:10143"]),
   destinationNetwork: z.enum(["stellar:testnet", "stellar:pubnet"]),
   amount: z.string().max(40),
   payTo: z.string().max(69),
@@ -62,7 +62,7 @@ function requirementOf(method: string, path: string): { scope: TenantScope; oper
   const operator = ["/v1/vault", "/v1/monitor", "/v1/relayer"].some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
   return { scope: "payments", operator };
 }
-const VAULT_NETWORKS = ["eip155:43113", "stellar:testnet", "eip155:43114", "stellar:pubnet"] as const;
+const VAULT_NETWORKS = ["eip155:43113", "stellar:testnet", "eip155:43114", "stellar:pubnet", "eip155:10143"] as const;
 const DisbursementBody = z.strictObject({
   /** Which network's vault pays. Without it: the active Avalanche vault, or the only configured vault. */
   network: z.enum(VAULT_NETWORKS).optional(),
@@ -147,7 +147,7 @@ export function buildServer(ctx: AppContext): FastifyInstance {
       transactionsEnabled: ctx.runtime.transactionsEnabled,
       relayer: relayer ? "up" : "down",
       vault: ctx.vault ? "on" : "off",
-      networks: [ctx.nets.avalanche.id, ctx.nets.stellar.id],
+      networks: [...ctx.nets.evm.map((n) => n.id), ctx.nets.stellar.id],
       vaultStellar: ctx.vaults[ctx.nets.stellar.id] ? "on" : "off",
       accounts: ctx.accountService ? "on" : "off",
       qrMock: ctx.qrMock ? "on" : "off",
@@ -164,16 +164,18 @@ export function buildServer(ctx: AppContext): FastifyInstance {
 
   app.get("/v1/routes", async (_req, reply) =>
     send(reply, 200, {
-      routes: [
-        {
-          protocol: "cctp-v2",
-          source: { network: ctx.nets.avalanche.id, asset: ctx.nets.avalanche.usdc.address, domain: ctx.nets.avalanche.cctpDomain },
-          destination: { network: ctx.nets.stellar.id, asset: ctx.nets.stellar.usdc.sac, domain: ctx.nets.stellar.cctpDomain },
-          finality: "standard",
-          mintSubmitter: ctx.env.STELLAR_MINT_SUBMITTER,
-          transactionsEnabled: ctx.runtime.transactionsEnabled,
-        },
-      ],
+      routes: ctx.nets.evm.map((source) => ({
+        protocol: "cctp-v2",
+        source: { network: source.id, asset: source.usdc.address, domain: source.cctpDomain },
+        destination: { network: ctx.nets.stellar.id, asset: ctx.nets.stellar.usdc.sac, domain: ctx.nets.stellar.cctpDomain },
+        finality: "standard",
+        mintSubmitter: ctx.env.STELLAR_MINT_SUBMITTER,
+        transactionsEnabled: ctx.runtime.transactionsEnabled,
+        // Which of the payment modes this source network can serve with what is deployed on it.
+        gasless: Boolean(source.cctpRouter),
+        account: Boolean(source.cctpRouterV2 && source.accountFactory),
+        vault: Boolean(source.vault),
+      })),
     }),
   );
 
@@ -273,7 +275,7 @@ export function buildServer(ctx: AppContext): FastifyInstance {
 
   // ── Vault: payouts of purchases settled off-chain ─────────────────────────
 
-  /** The vault service of a network; without `network`, active Avalanche or the only configured vault. */
+  /** The vault service of a network; without `network`, the active Avalanche vault or the first configured one. */
   const vaultOf = (network?: string): VaultDisbursementService => {
     const found = network ? ctx.vaults[network as (typeof VAULT_NETWORKS)[number]] : (ctx.vault ?? Object.values(ctx.vaults)[0]);
     if (found) return found;

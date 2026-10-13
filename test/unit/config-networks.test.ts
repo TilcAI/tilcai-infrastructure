@@ -55,6 +55,8 @@ test("mainnet selects only Avalanche C-Chain and Stellar Pubnet", () => {
   const active = activeConfig(env);
   assert.equal(nets.avalanche.id, "eip155:43114");
   assert.equal(nets.avalanche.chainId, 43114);
+  assert.deepEqual(nets.evm.map((n) => n.id), ["eip155:43114"], "Monad Testnet never joins a mainnet process");
+  assert.deepEqual(Object.keys(active.evmRelayers), ["eip155:43114"]);
   assert.equal(nets.stellar.id, "stellar:pubnet");
   assert.equal(nets.stellar.passphrase, "Public Global Stellar Network ; September 2015");
   assert.equal(nets.avalanche.usdc.address, "0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E");

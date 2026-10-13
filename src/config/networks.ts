@@ -25,7 +25,18 @@ export const STELLAR_MAINNET = {
   cctpForwarder: "CBZL2IH7F6BIDAA3WBNXYKIXSATJGMSW7K5P5MJ6STX5RXN47TZJDF5T",
 };
 
-export type EvmNetworkId = "eip155:43113" | "eip155:43114";
+/** Monad Testnet. USDC and CCTP V2 values: https://developers.circle.com/stablecoins/usdc-contract-addresses */
+export const MONAD_TESTNET = {
+  chainId: 10143,
+  id: "eip155:10143" as const,
+  usdc: "0x534b2f3A21130d7a60830c2Df862319e593943A3" as const,
+  /** CCTP domain of Monad (testnet and mainnet). */
+  cctpDomain: 15,
+  /** Verified on-chain on 2026-10-13 (`npm run sca:preflight`): the same ERC-4337 v0.9 deployment as on Fuji. */
+  entryPoint: "0x433709009B8330FDa32311DF1C2AFA402eD8D009" as const,
+};
+
+export type EvmNetworkId = "eip155:43113" | "eip155:43114" | "eip155:10143";
 export type StellarNetworkId = "stellar:testnet" | "stellar:pubnet";
 export type NetworkId = EvmNetworkId | StellarNetworkId;
 
@@ -52,6 +63,8 @@ export interface EvmNetwork {
   erc4337: { entryPoint: `0x${string}`; version: "0.9" };
   /** secp256r1 verification precompile (RIP-7212 / ACP-204): passkey signatures checked on-chain. */
   p256Precompile: `0x${string}`;
+  /** Widest `eth_getLogs` range the RPC accepts, in blocks. Absent = 2000 (Avalanche's public RPC). */
+  maxLogRange?: number;
 }
 
 export interface StellarNetwork {
@@ -84,6 +97,12 @@ export interface NetworkRegistry {
   stellarTestnet: StellarNetwork;
   avalancheMainnet: EvmNetwork;
   stellarMainnet: StellarNetwork;
+  monadTestnet: EvmNetwork;
+  /**
+   * Every EVM network this process can use as the source of a payment, `avalanche` first.
+   * Monad Testnet joins in the testnet environment only.
+   */
+  evm: EvmNetwork[];
   byId(id: string): Network | undefined;
 }
 
@@ -185,7 +204,33 @@ export function networks(env: Env): NetworkRegistry {
     ...(env.ACCOUNT_FACTORY_STELLAR_MAINNET ? { accountFactory: env.ACCOUNT_FACTORY_STELLAR_MAINNET } : {}),
     ...(env.VAULT_STELLAR_MAINNET ? { vault: env.VAULT_STELLAR_MAINNET } : {}),
   };
-  const all: Network[] = [avalancheFuji, stellarTestnet, avalancheMainnet, stellarMainnet];
+  const monadTestnet: EvmNetwork = {
+    id: MONAD_TESTNET.id,
+    family: "evm",
+    name: "Monad Testnet",
+    chainId: MONAD_TESTNET.chainId,
+    rpc: env.RPC_MONAD_TESTNET,
+    explorer: "https://testnet.monadscan.com",
+    nativeSymbol: "MON",
+    cctpDomain: MONAD_TESTNET.cctpDomain,
+    // The token's EIP-712 domain is name "USDC", version "2" (checked against its DOMAIN_SEPARATOR).
+    usdc: { address: MONAD_TESTNET.usdc, decimals: 6, eip712Name: "USDC", eip712Version: "2" },
+    ...(env.CCTP_ROUTER_MONAD_TESTNET ? { cctpRouter: env.CCTP_ROUTER_MONAD_TESTNET as `0x${string}` } : {}),
+    ...(env.CCTP_ROUTER_V2_MONAD_TESTNET ? { cctpRouterV2: env.CCTP_ROUTER_V2_MONAD_TESTNET as `0x${string}` } : {}),
+    ...(env.ACCOUNT_FACTORY_MONAD_TESTNET ? { accountFactory: env.ACCOUNT_FACTORY_MONAD_TESTNET as `0x${string}` } : {}),
+    ...(env.VAULT_MONAD_TESTNET ? { vault: env.VAULT_MONAD_TESTNET as `0x${string}` } : {}),
+    // Same CREATE2 addresses as every other CCTP V2 testnet (Circle's contract-addresses page).
+    cctpV2: {
+      tokenMessenger: "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
+      messageTransmitter: "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275",
+    },
+    erc4337: { entryPoint: MONAD_TESTNET.entryPoint, version: "0.9" },
+    // Monad ships the RIP-7212 precompile at the same address (a valid P-256 vector verifies on testnet).
+    p256Precompile: "0x0000000000000000000000000000000000000100",
+    // The public RPC answers eth_getLogs with -32614 above 100 blocks.
+    maxLogRange: 100,
+  };
+  const all: Network[] = [avalancheFuji, stellarTestnet, avalancheMainnet, stellarMainnet, monadTestnet];
   const mainnet = env.TILCAI_ENV === "mainnet";
   return {
     environment: env.TILCAI_ENV,
@@ -195,6 +240,8 @@ export function networks(env: Env): NetworkRegistry {
     stellarTestnet,
     avalancheMainnet,
     stellarMainnet,
+    monadTestnet,
+    evm: mainnet ? [avalancheMainnet] : [avalancheFuji, monadTestnet],
     byId: (id) => all.find((n) => n.id === id),
   };
 }

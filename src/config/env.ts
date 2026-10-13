@@ -64,6 +64,15 @@ const schema = z.object({
   VAULT_STELLAR: stellarContract,
   RELAYER_X402_PLUGIN_ID: z.string().default("x402"),
 
+  // Monad Testnet (chain 10143): the same pieces as Fuji. Testnet environment only.
+  /** OZ Relayer id that sends the gasless burn, account deployments and vault payouts on Monad Testnet. */
+  RELAYER_MONAD_TESTNET_ID: z.string().default("monad-testnet-relayer"),
+  RPC_MONAD_TESTNET: z.string().url().default("https://testnet-rpc.monad.xyz"),
+  CCTP_ROUTER_MONAD_TESTNET: evmAddress,
+  CCTP_ROUTER_V2_MONAD_TESTNET: evmAddress,
+  ACCOUNT_FACTORY_MONAD_TESTNET: evmAddress,
+  VAULT_MONAD_TESTNET: evmAddress,
+
   // Mainnet contracts have no defaults on purpose: each address is supplied explicitly once its
   // deployment is verified. Only the gasless router is required; each of the others turns a feature on.
   CCTP_ROUTER_AVALANCHE_MAINNET: evmAddress,
@@ -209,6 +218,8 @@ export function activeConfig(env: Env) {
       relayerUrl: env.RELAYER_URL_MAINNET,
       relayerApiKey: env.RELAYER_API_KEY_MAINNET,
       evmRelayerId: env.RELAYER_AVALANCHE_MAINNET_ID,
+      /** Relayer of each EVM source network (CAIP-2 id → relayer id). */
+      evmRelayers: { "eip155:43114": env.RELAYER_AVALANCHE_MAINNET_ID } as Record<string, string>,
       stellarRelayerId: env.RELAYER_STELLAR_MAINNET_ID,
       x402PluginId: env.RELAYER_X402_PLUGIN_ID_MAINNET,
       stellarSimulationSource: env.STELLAR_SIMULATION_SOURCE_MAINNET,
@@ -226,6 +237,7 @@ export function activeConfig(env: Env) {
     relayerUrl: env.RELAYER_URL,
     relayerApiKey: env.RELAYER_API_KEY,
     evmRelayerId: env.RELAYER_FUJI_ID,
+    evmRelayers: { "eip155:43113": env.RELAYER_FUJI_ID, "eip155:10143": env.RELAYER_MONAD_TESTNET_ID } as Record<string, string>,
     stellarRelayerId: env.RELAYER_STELLAR_ID,
     x402PluginId: env.RELAYER_X402_PLUGIN_ID,
     stellarSimulationSource: env.STELLAR_SIMULATION_SOURCE,

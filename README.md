@@ -204,6 +204,39 @@ Los contratos no están auditados. Los comandos y variables Fuji de este ejemplo
 testnet; la configuración y la verificación de sus despliegues en mainnet se describen en
 [`deploy/MAINNET_DEPLOYMENT.md`](deploy/MAINNET_DEPLOYMENT.md).
 
+## Monad Testnet
+
+Monad Testnet (`eip155:10143`, dominio CCTP 15) es otra red de origen EVM junto a Avalanche Fuji,
+solo en el entorno testnet. Un pago crosschain empieza en la red de su cotización
+(`sourceNetwork`) y todo lo que necesita —router, relayer, cuentas, vault— es el de esa red;
+el destino sigue siendo Stellar. `GET /v1/routes` lista una ruta por red de origen e indica qué
+modos admite con lo desplegado.
+
+| Pieza | Monad Testnet |
+| --- | --- |
+| USDC | `0x534b2f3A21130d7a60830c2Df862319e593943A3` (6 decimales; dominio EIP-712 `USDC` / `2`, no `USD Coin` como en Fuji) |
+| CCTP V2 | `TokenMessengerV2` y `MessageTransmitterV2` con las mismas direcciones CREATE2 de todo testnet; Iris sandbox cotiza 15 → 27 |
+| EntryPoint ERC-4337 v0.9 | `0x433709009B8330FDa32311DF1C2AFA402eD8D009` (verificado con `npm run sca:preflight -- --network monad-testnet`) |
+| Passkeys | el precompile P-256 en `0x…0100` verifica una firma válida |
+| Relayer | `monad-testnet-relayer` (`RELAYER_MONAD_TESTNET_ID`), paga el gas en MON |
+| RPC | `https://testnet-rpc.monad.xyz`; limita `eth_getLogs` a 100 bloques, que el vault respeta (`maxLogRange`) |
+
+Sin contratos propios, Monad admite `external` y `dev_signer`. Para el resto se despliegan con la
+clave de desarrollo (necesita MON y, para `verify`, USDC de Monad) y se anotan las direcciones:
+
+```sh
+npm run sca:preflight -- --network monad-testnet     # solo lectura
+npm run sca -- deploy-router --network monad-testnet  # TilcaiCctpRouter → CCTP_ROUTER_MONAD_TESTNET (modo gasless)
+npm run sca -- deploy --network monad-testnet         # factory + router v2 → ACCOUNT_FACTORY_… y CCTP_ROUTER_V2_… (modo account)
+npm run sca -- verify --network monad-testnet         # una cuenta paga con firma de passkey
+npm run vault -- deploy --network monad-testnet       # TilcaiVault → VAULT_MONAD_TESTNET (operador = monad-testnet-relayer)
+npm run xpay -- --amount 0.01 --to G… --source eip155:10143 --gasless
+E2E_API_URL=… npm run e2e:gasless -- --amount 0.01 --to G… --source eip155:10143
+```
+
+x402 en Monad necesita además la red `eip155:10143` en la configuración del plugin del relayer
+(`deploy/relayer/config/config.json` ya la trae).
+
 ## Stellar: cuentas y vault (fase SCA)
 
 Lo mismo que en Avalanche, en Soroban, con los mismos contratos de OpenZeppelin `stellar-accounts`

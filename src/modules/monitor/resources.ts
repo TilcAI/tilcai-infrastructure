@@ -87,6 +87,8 @@ export interface ResourceDeps {
   relayer: RelayerClient;
   relayerAuthenticated: boolean;
   relayerIds: string[];
+  /** Native currency by relayer id (AVAX, MON…). Without it an EVM relayer is shown as `AVAX`. */
+  nativeUnits?: Record<string, string>;
   vault: VaultDisbursementService | null;
   usdcDecimals: number;
   primaryVaultNetwork?: string;
@@ -209,7 +211,7 @@ export class ResourceMonitor {
             paused: typeof info.paused === "boolean" ? info.paused : null,
             systemDisabled: typeof info.system_disabled === "boolean" ? info.system_disabled : null,
             balance: nativeBalance(balance.balance, type),
-            unit: nativeUnit(type),
+            unit: this.d.nativeUnits?.[id] ?? nativeUnit(type),
           };
         } catch (e) {
           return { id, network: null, networkType: null, address: null, paused: null, systemDisabled: null, balance: null, unit: null, error: errText(e) };

@@ -13,6 +13,18 @@
       }
     },
     {
+      "id": "monad-testnet-relayer",
+      "name": "Monad Testnet Relayer",
+      "network": "monad-testnet",
+      "paused": false,
+      "signer_id": "local-signer",
+      "notification_id": "tilcai-monitor",
+      "network_type": "evm",
+      "policies": {
+        "min_balance": 0
+      }
+    },
+    {
       "id": "stellar-example",
       "name": "Stellar Testnet Relayer",
       "network": "testnet",
@@ -31,7 +43,10 @@
       "id": "tilcai-monitor",
       "type": "webhook",
       "url": "http://tilcai:8787/v1/webhooks/relayer",
-      "signing_key": { "type": "env", "value": "WEBHOOK_SIGNING_KEY" }
+      "signing_key": {
+        "type": "env",
+        "value": "WEBHOOK_SIGNING_KEY"
+      }
     }
   ],
   "signers": [
@@ -64,13 +79,26 @@
             "network": "eip155:43113",
             "type": "evm",
             "relayer_id": "avalanche-fuji-relayer",
-            "assets": ["0x5425890298aed601595a70AB815c96711a31Bc65"]
+            "assets": [
+              "0x5425890298aed601595a70AB815c96711a31Bc65"
+            ]
+          },
+          {
+            "network": "eip155:10143",
+            "type": "evm",
+            "relayer_id": "monad-testnet-relayer",
+            "assets": [
+              "0x534b2f3A21130d7a60830c2Df862319e593943A3"
+            ]
           },
           {
             "network": "stellar:testnet",
             "type": "stellar",
             "relayer_id": "stellar-example",
-            "assets": ["native", "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"]
+            "assets": [
+              "native",
+              "CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC"
+            ]
           }
         ]
       }

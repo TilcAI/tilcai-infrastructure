@@ -528,6 +528,33 @@ Commit y push a `main` en los tres repositorios, sin archivos `.env` con secreto
 
 - **Sesión:** n/d
 - **Rama:** `main`
+## 2026-10-13T14:55:22Z · SaulChoque · Claude Code (Sonnet 5.5)
+
+- **Sesión:** n/d
+- **Rama:** `main` (sin commit)
+- **Repositorios:** `tilcai-infrastructure`, `tilcai-web`
+
+### Prompt
+
+> actualiza tilcai para ser compatible con monad testnet para todas las funciones que ofrece tilcai (el relayer ya esta configurado para monad testnet y ya cuenta con tokens nativos)
+
+### Salida
+
+Monad Testnet (`eip155:10143`, dominio CCTP 15) quedó como red de origen EVM junto a Avalanche Fuji, solo en el entorno testnet; sin commit ni push.
+
+- `src/config`: red `monadTestnet` con los valores de Circle (USDC `0x534b…43A3`, dominio EIP-712 `USDC`/`2`, EntryPoint v0.9, precompile P-256, `maxLogRange: 100`), registro `nets.evm` y variables `RELAYER_MONAD_TESTNET_ID`, `RPC_MONAD_TESTNET`, `CCTP_ROUTER[_V2]_MONAD_TESTNET`, `ACCOUNT_FACTORY_MONAD_TESTNET`, `VAULT_MONAD_TESTNET`.
+- `CrosschainPaymentService` sirve varias redes de origen (`extraSources`): la red de una cotización decide adaptador, router, relayer y cuentas; `app-context.ts` arma una por red EVM, con un vault y un proveedor de cuentas por red. API (`/v1/routes`, `/health`, enums de red), monitor (unidad MON) y vault (ventana de logs por red) la reconocen.
+- CLIs: `--network fuji|monad-testnet` en `sca` (nuevo `deploy-router`), `vault` y `sca:preflight`; `--source` en `xpay` y `e2e:gasless`.
+- Relayer del repositorio (`config.json`, `networks/monad.json`), `docker-compose.yml`, `.env.example` y READMEs.
+
+Comprobado en Monad Testnet: `sca:preflight` pasa (RPC, EntryPoint, precompile P-256, USDC con EIP-3009 ERC-1271, relayer con saldo), y una cotización real 15 → 27 con Iris sandbox y las llamadas de burn salen con chain 10143. 192 pruebas unitarias pasan y el typecheck no reporta errores (5 pruebas nuevas en `crosschain-monad.test.ts`).
+
+Sin hacer: no se desplegaron contratos en Monad: la clave de desarrollo no tiene MON ni USDC allí. Hasta desplegarlos, Monad admite solo los modos `external` y `dev_signer`. La configuración en marcha del relayer (`~/github/openzeppelin-relayer`) no trae `eip155:10143` en el plugin x402, y no se tocó.
+
+## 2026-10-13T15:10:00Z · SaulChoque · Claude Code (Sonnet 5.5)
+
+- **Sesión:** n/d
+- **Rama:** `main` (sin commit)
 - **Repositorios:** `tilcai-infrastructure`
 
 ### Prompt
@@ -541,3 +568,28 @@ Commit y push a `main` en los tres repositorios, sin archivos `.env` con secreto
 ### Salida
 
 Actualicé y publiqué en `main` [MAINNET_DEPLOYMENT.md](https://github.com/TilcAI/tilcai-infrastructure/blob/main/deploy/MAINNET_DEPLOYMENT.md) y el README. RouterV2, factories, vaults y verificadores figuran como **desplegados según confirmación del equipo**. Quedan pendientes sus direcciones, hashes de transacción y verificación on-chain; su despliegue no confirma que las funciones estén activas en la API. `git diff --check` pasó. No se ejecutaron transacciones.
+> genial, ya recargue 0x4b7e897E51305c3D6935671eAeC6CB7874488F4f, realiza las modificaciones necesarias al relayer y realiza pruebas
+
+### Salida
+
+Contratos desplegados en Monad Testnet con la clave de desarrollo y probados; el cambio al relayer en uso quedó sin aplicar.
+
+- Desplegados: `TilcaiCctpRouter` `0x7fbef1b0a60021b53f1d780d6794ac2dbcc9647f`, `TilcaiCctpRouterV2` `0x4ffbd69675d2a55c8ef52b8cd93cc1ac952ccbfe`, `TilcaiAccountFactory` `0x38c2e921e2336ea59fbc58db1eeb8c106f11d958`, `TilcaiVault` `0xaa9e6460b6ba396c0b84029f347ff71255130c89` (operador: `monad-testnet-relayer`, fondeado con 2 USDC). Direcciones en `.env` local, `deploy/.env.example` y `contracts/evm/README.md`.
+- Pruebas contra una instancia temporal (base temporal, puerto 18899, ya detenida) y Stellar Testnet con un comercio de prueba con trustline: `sca -- verify` (passkey, ERC-1271) OK; pagos 0.01 USDC `dev_signer`, `dev_gasless` y `account` (cuenta emitida por `POST /v1/accounts`, firmada con passkey) liquidados Monad → Stellar; desembolso del vault de 0.5 USDC confirmado; `/v1/routes` y `/health` muestran las dos redes.
+- Sin hacer: el clasificador denegó modificar `~/github/openzeppelin-relayer/config/config.json` y reiniciar su contenedor. Quedó `~/relayer-monad-config.sh` (añade `eip155:10143` al plugin x402, `notification_id: tilcai-monitor` a `monad-testnet-relayer`, respaldo en `~/backups`, reinicia solo ese contenedor) para que la persona lo ejecute. Tampoco se reconstruyeron `tilcai` ni `tilcai-web`, y x402 en Monad no se probó.
+
+## 2026-10-13T16:05:00Z · SaulChoque · Claude Code (Sonnet 5.5)
+
+- **Sesión:** n/d
+- **Rama:** `main` (sin commit)
+- **Repositorios:** `tilcai-infrastructure`, `tilcai-web`
+
+### Prompt
+
+> desactive el modo automatico
+
+### Salida
+
+Con el modo automático desactivado se aplicaron los pasos pendientes. Añadidas `ACCOUNT_FACTORY_STELLAR` y `VAULT_STELLAR` al `.env` local; respaldo en `~/backups/docker-pre-monad-20261013` e imágenes `:pre-monad`; imágenes `tilcai/tilcai:local` y `tilcai/tilcai-web:local` reconstruidas y los contenedores `tilcai` (testnet) y `tilcai-web` recreados. El relayer vivo ya lo había actualizado la persona con `~/relayer-monad-config.sh` (x402 `eip155:10143`).
+
+Comprobado en el contenedor: `/health` con `eip155:10143`, `vault` y `vaultStellar` en `on`; `/v1/routes` con Fuji y Monad; un pago `dev_gasless` de 0.01 USDC Monad → Stellar liquidado; los eventos `relayer.transaction_update` de `monad-testnet-relayer` llegan al tablero; el vault de Monad y el saldo MON del relayer se ven en el snapshot de recursos. `tilcai-mainnet` y `optipagos-backend-1` no se tocaron.

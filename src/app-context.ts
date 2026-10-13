@@ -1,7 +1,8 @@
 import { hostname } from "node:os";
 import type { DatabaseSync } from "node:sqlite";
 import { activeConfig, loadEnv, type Env } from "./config/env.ts";
-import { networks, type NetworkId, type NetworkRegistry } from "./config/networks.ts";
+import { networks, type EvmNetwork, type NetworkId, type NetworkRegistry } from "./config/networks.ts";
+import type { Hex } from "./shared/hex.ts";
 import { openDatabase } from "./db/sqlite.ts";
 import { systemClock } from "./shared/clock.ts";
 import { createLogger, type Logger } from "./shared/log.ts";
@@ -11,7 +12,7 @@ import { LocalKeyMintSubmitter, RelayerMintSubmitter, SorobanStellarCctp } from 
 import { IrisClient } from "./modules/crosschain/cctp/iris.ts";
 import type { MintSubmitter } from "./modules/crosschain/ports.ts";
 import { SqliteCrosschainRepository } from "./modules/crosschain/repository.ts";
-import { CrosschainPaymentService } from "./modules/crosschain/service.ts";
+import { CrosschainPaymentService, type SourceLeg } from "./modules/crosschain/service.ts";
 import { sqliteCorrelate } from "./modules/monitor/correlate.ts";
 import { WebForwarder } from "./modules/monitor/forwarder.ts";
 import type { Correlate } from "./modules/monitor/relayer-webhook.ts";
@@ -44,7 +45,7 @@ export interface AppContext {
   log: Logger;
   relayer: RelayerClient;
   crosschain: CrosschainPaymentService;
-  /** Payouts from the active Avalanche vault. */
+  /** Payouts from the active Avalanche vault (the other networks' are in `vaults`). */
   vault: VaultDisbursementService | null;
   /** Every active network's vault service: the HTTP API and worker go through this. */
   vaults: Partial<Record<NetworkId, VaultDisbursementService>>;
@@ -84,7 +85,13 @@ export function createAppContext(name: string, env: Env = loadEnv()): AppContext
     log.warn("mint submitter not configured; payments will wait at ATTESTED", { submitter: env.STELLAR_MINT_SUBMITTER });
   }
 
-  const evmSubmitter = runtime.relayerApiKey && runtime.transactionsEnabled ? new RelayerEvmSubmitter(relayer, runtime.evmRelayerId) : null;
+  const canSubmit = Boolean(runtime.relayerApiKey && runtime.transactionsEnabled);
+  const evmSubmitters: Record<string, RelayerEvmSubmitter | null> = {};
+  for (const n of nets.evm) {
+    const relayerId = runtime.evmRelayers[n.id];
+    evmSubmitters[n.id] = canSubmit && relayerId ? new RelayerEvmSubmitter(relayer, relayerId) : null;
+  }
+  const evmSubmitter = evmSubmitters[nets.avalanche.id] ?? null;
   // The keys of TILCAI_API_KEYS belong to the legacy tenant (scope `payments`): Optipagos and optus-agentBE keep working.
   // SQLite runs this to completion before the call returns, so the keys are in place when the context is.
   const tenants = new SqliteTenantRegistry(db, systemClock);
@@ -94,38 +101,57 @@ export function createAppContext(name: string, env: Env = loadEnv()): AppContext
     .catch((e) => log.error("could not sync TILCAI_API_KEYS with the legacy tenant", { error: e instanceof Error ? e.message : String(e) }));
 
   const accounts = new SqliteSmartAccountRepository(db, systemClock);
-  const accountProvider = nets.avalanche.accountFactory ? new EvmSmartAccountProvider(nets.avalanche, nets.avalanche.accountFactory, evmSubmitter) : null;
   const stellarSubmitter = runtime.relayerApiKey && runtime.transactionsEnabled ? new RelayerStellarSubmitter(relayer, runtime.stellarRelayerId, nets.stellar) : null;
   const stellarAccountProvider = nets.stellar.accountFactory
     ? new StellarSmartAccountProvider(nets.stellar, nets.stellar.accountFactory, stellarSubmitter, runtime.stellarSimulationSource || undefined)
     : null;
   const providers: Partial<Record<AccountDeployer["network"], AccountDeployer>> = {};
-  if (accountProvider) providers[accountProvider.network] = accountProvider;
+  const evmAccountProviders: Record<string, EvmSmartAccountProvider> = {};
+  for (const n of nets.evm) {
+    if (!n.accountFactory) continue;
+    const provider = new EvmSmartAccountProvider(n, n.accountFactory, evmSubmitters[n.id] ?? null);
+    evmAccountProviders[n.id] = provider;
+    providers[provider.network] = provider;
+    if (!evmSubmitters[n.id]) log.warn("EVM account factory is set but its relayer is not; accounts are issued but never deployed", { network: n.id });
+  }
   if (stellarAccountProvider) providers[stellarAccountProvider.network] = stellarAccountProvider;
   const accountService =
-    accountProvider || stellarAccountProvider
+    Object.keys(providers).length > 0
       ? new AccountService({ repo: accounts, providers, clock: systemClock, log, events: monitor, options: { pollMs: env.WORKER_POLL_MS, transactionsEnabled: runtime.transactionsEnabled } })
       : null;
-  if (accountProvider && !evmSubmitter) log.warn("active EVM account factory is set but its relayer is not; accounts are issued but never deployed");
   if (stellarAccountProvider && !stellarSubmitter) log.warn("active Stellar account factory is set but its relayer is not; accounts are issued but never deployed");
+
+  /** What a payment that starts on `n` needs: the burn adapter, that network's relayer and its smart accounts. */
+  const sourceLeg = (n: EvmNetwork): SourceLeg => {
+    const submitter = evmSubmitters[n.id];
+    const provider = evmAccountProviders[n.id];
+    return {
+      network: n,
+      evm: new ViemEvmCctp(n, env.DEV_EVM_PAYER_PRIVATE_KEY || undefined),
+      ...(submitter && (n.cctpRouter || n.cctpRouterV2) ? { evmSubmitter: submitter } : {}),
+      ...(accountService && provider
+        ? {
+            accounts: {
+              isActiveAccount: async (tenantId: string, address: string) => Boolean(await accountService.activeByAddress(tenantId as TenantId, provider.network, address)),
+              isValidSignature: (account: Hex, hash: Hex, signature: Hex) => provider.isValidSignature(account, hash, signature),
+            },
+          }
+        : {}),
+    };
+  };
+  const [primaryLeg, ...otherLegs] = [nets.avalanche, ...nets.evm.filter((n) => n.id !== nets.avalanche.id)].map(sourceLeg);
 
   const crosschain = new CrosschainPaymentService({
     repo: new SqliteCrosschainRepository(db),
-    evm: new ViemEvmCctp(nets.avalanche, env.DEV_EVM_PAYER_PRIVATE_KEY || undefined),
+    evm: primaryLeg!.evm,
     stellar: new SorobanStellarCctp(nets.stellar, runtime.stellarSimulationSource || undefined),
     iris: new IrisClient(runtime.irisApiUrl),
     submitters,
     activeSubmitter: env.STELLAR_MINT_SUBMITTER,
-    ...(evmSubmitter && (nets.avalanche.cctpRouter || nets.avalanche.cctpRouterV2) ? { evmSubmitter } : {}),
-    ...(accountService && accountProvider
-      ? {
-          accounts: {
-            isActiveAccount: async (tenantId, address) => Boolean(await accountService.activeByAddress(tenantId as TenantId, accountProvider.network, address)),
-            isValidSignature: (account, hash, signature) => accountProvider.isValidSignature(account, hash, signature),
-          },
-        }
-      : {}),
+    ...(primaryLeg!.evmSubmitter ? { evmSubmitter: primaryLeg!.evmSubmitter } : {}),
+    ...(primaryLeg!.accounts ? { accounts: primaryLeg!.accounts } : {}),
     source: nets.avalanche,
+    ...(otherLegs.length > 0 ? { extraSources: otherLegs } : {}),
     destination: nets.stellar,
     clock: systemClock,
     log,
@@ -138,22 +164,24 @@ export function createAppContext(name: string, env: Env = loadEnv()): AppContext
     },
   });
 
-  const vault =
-    evmSubmitter && nets.avalanche.vault
-      ? new VaultDisbursementService({
-          repo: new SqliteVaultRepository(db),
-          vault: new ViemVault(nets.avalanche, nets.avalanche.vault),
-          submitter: evmSubmitter,
-          network: nets.avalanche,
-          clock: systemClock,
-          log,
-          events: monitor,
-          options: { pollMs: env.WORKER_POLL_MS, minConfirmations: runtime.evmMinConfirmations },
-        })
-      : null;
-  if (nets.avalanche.vault && !vault) log.warn("active Avalanche vault is set but its relayer is not; payouts are disabled");
-
-  // Same repository, one service per network: each reconciles only the payouts of its own vault.
+  // One vault service per network over the same repository: each reconciles only the payouts of its own vault.
+  const vaults: AppContext["vaults"] = {};
+  for (const n of nets.evm) {
+    const submitter = evmSubmitters[n.id];
+    if (n.vault && !submitter) log.warn("EVM vault is set but its relayer is not; payouts are disabled", { network: n.id });
+    if (!n.vault || !submitter) continue;
+    vaults[n.id] = new VaultDisbursementService({
+      repo: new SqliteVaultRepository(db),
+      vault: new ViemVault(n, n.vault),
+      submitter,
+      network: n,
+      clock: systemClock,
+      log,
+      events: monitor,
+      options: { pollMs: env.WORKER_POLL_MS, minConfirmations: runtime.evmMinConfirmations },
+    });
+  }
+  const vault = vaults[nets.avalanche.id] ?? null;
   const stellarVault =
     stellarSubmitter && nets.stellar.vault
       ? new VaultDisbursementService({
@@ -169,8 +197,6 @@ export function createAppContext(name: string, env: Env = loadEnv()): AppContext
         })
       : null;
   if (nets.stellar.vault && !stellarVault) log.warn("active Stellar vault is set but its relayer is not; payouts are disabled");
-  const vaults: AppContext["vaults"] = {};
-  if (vault) vaults[nets.avalanche.id] = vault;
   if (stellarVault) vaults[nets.stellar.id] = stellarVault;
 
   const resources = new ResourceMonitor({
@@ -179,11 +205,15 @@ export function createAppContext(name: string, env: Env = loadEnv()): AppContext
     databasePath: runtime.databasePath,
     relayer,
     relayerAuthenticated: Boolean(runtime.relayerApiKey),
-    relayerIds: [runtime.evmRelayerId, runtime.stellarRelayerId],
+    relayerIds: [...nets.evm.map((n) => runtime.evmRelayers[n.id]).filter((id): id is string => Boolean(id)), runtime.stellarRelayerId],
+    nativeUnits: Object.fromEntries(nets.evm.flatMap((n) => (runtime.evmRelayers[n.id] ? [[runtime.evmRelayers[n.id]!, n.nativeSymbol]] : []))),
     vault,
     usdcDecimals: nets.avalanche.usdc.decimals,
     primaryVaultNetwork: nets.avalanche.id,
-    otherVaults: stellarVault ? [{ network: nets.stellar.id, service: stellarVault, usdcDecimals: nets.stellar.usdc.decimals }] : [],
+    otherVaults: [
+      ...nets.evm.filter((n) => n.id !== nets.avalanche.id && vaults[n.id]).map((n) => ({ network: n.id, service: vaults[n.id]!, usdcDecimals: n.usdc.decimals })),
+      ...(stellarVault ? [{ network: nets.stellar.id, service: stellarVault, usdcDecimals: nets.stellar.usdc.decimals }] : []),
+    ],
     monitor: { head: () => monitorRepo.head(), sinks: () => monitorRepo.sinks() },
     now: systemClock.now,
   });

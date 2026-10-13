@@ -8,7 +8,8 @@
  *
  *   E2E_API_URL             base URL of the TilcAI API (default http://127.0.0.1:8787)
  *   E2E_API_KEY             bearer key of that instance
- *   E2E_PAYER_PRIVATE_KEY   EVM key that holds the USDC (needs no AVAX: the relayer pays the gas)
+ *   E2E_PAYER_PRIVATE_KEY   EVM key that holds the USDC (needs no native token: the relayer pays the gas)
+ *   --source eip155:10143   which of the instance's source networks pays (default: the first route)
  *
  * It MOVES FUNDS of the network the instance runs on. On mainnet that is real USDC.
  */
@@ -22,6 +23,7 @@ const { values: a } = parseArgs({
     amount: { type: "string" },
     to: { type: "string" },
     timeout: { type: "string", default: "900" },
+    source: { type: "string" },
   },
 });
 if (!a.amount || !a.to) throw new Error("--amount and --to are required");
@@ -49,8 +51,8 @@ const stamp = () => new Date().toISOString().slice(11, 19);
 interface Route { source: { network: string; asset: string }; destination: { network: string }; transactionsEnabled: boolean }
 const health = await call<{ env: string; transactionsEnabled: boolean; relayer: string }>("GET", "/health");
 const { routes } = await call<{ routes: Route[] }>("GET", "/v1/routes");
-const route = routes[0];
-if (!route) throw new Error("the instance offers no route");
+const route = a.source ? routes.find((r) => r.source.network === a.source) : routes[0];
+if (!route) throw new Error(a.source ? `the instance has no route from ${a.source} (it serves ${routes.map((r) => r.source.network).join(", ")})` : "the instance offers no route");
 console.log(`instance ${base}: ${health.env}, relayer ${health.relayer}, ${route.source.network} → ${route.destination.network}`);
 if (!health.transactionsEnabled) throw new Error("transactions are disabled on this instance (MAINNET_TRANSACTIONS_ENABLED)");
 

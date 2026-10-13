@@ -1,11 +1,14 @@
 /**
- * Smart accounts of the SCA phase from the command line (Avalanche Fuji).
+ * Smart accounts of the SCA phase from the command line (Avalanche Fuji or Monad Testnet).
  *
  *   npm run sca -- status      # factory, implementation and router v2 on-chain
  *   npm run sca -- deploy      # deploys TilcaiAccountFactory and TilcaiCctpRouterV2
+ *   npm run sca -- deploy-router   # deploys TilcaiCctpRouter (v1: gasless burn for wallet payers)
  *   npm run sca -- verify      # issues a throwaway account and makes it pay with a passkey signature
  *
- * `deploy` and `verify` sign with DEV_EVM_PAYER_PRIVATE_KEY and pay their gas in AVAX.
+ * Add `--network monad-testnet` (default `fuji`) to act on Monad Testnet.
+ * `deploy` and `verify` sign with DEV_EVM_PAYER_PRIVATE_KEY and pay their gas in the network's
+ * native token (AVAX, MON).
  * `deploy` reads the compiled contracts: run `forge build` in contracts/evm first.
  * `verify` creates a software P-256 key, deploys its account through the factory, funds it with
  * 0.01 USDC from the developer key and moves them back with `transferWithAuthorization` signed
@@ -16,7 +19,7 @@ import { readFileSync } from "node:fs";
 import { createPublicClient, createWalletClient, domainSeparator, erc20Abi, hashStruct, hashTypedData, http, parseAbi, toHex, type Abi } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { loadEnv } from "../../config/env.ts";
-import { networks } from "../../config/networks.ts";
+import { selectCliNetwork } from "./evm-network.ts";
 import type { Hex } from "../../shared/hex.ts";
 import { challengeBase64Url, encodeWebAuthnSignature, typedDataChallenge, wrapTypedDataSignature } from "../../modules/accounts/evm/passkey.ts";
 import { ACCOUNT_ABI, ACCOUNT_FACTORY_ABI } from "../../modules/accounts/evm/provider.ts";
@@ -24,7 +27,8 @@ import { viemChain } from "../../modules/crosschain/adapters/evm.ts";
 
 const env = loadEnv();
 if (env.TILCAI_ENV === "mainnet") throw new Error("SCA deployment CLI is disabled on mainnet in phase 1");
-const net = networks(env).avalancheFuji;
+const target = selectCliNetwork(env);
+const net = target.net;
 const chain = viemChain(net);
 const pub = createPublicClient({ chain, transport: http(net.rpc, { retryCount: 3 }) });
 const hasCode = async (address: Hex) => ((await pub.getCode({ address })) ?? "0x") !== "0x";
@@ -59,8 +63,8 @@ async function mined(hash: Hex, what: string) {
 async function status() {
   console.log(`${net.name} (${net.id})`);
   const factory = net.accountFactory;
-  if (!factory) console.log("  ACCOUNT_FACTORY_FUJI   not set");
-  else if (!(await hasCode(factory))) console.log(`  ACCOUNT_FACTORY_FUJI   ${factory}  NO CODE`);
+  if (!factory) console.log(`  ${target.variable("ACCOUNT_FACTORY")}   not set`);
+  else if (!(await hasCode(factory))) console.log(`  ${target.variable("ACCOUNT_FACTORY")}   ${factory}  NO CODE`);
   else {
     const implementation = await pub.readContract({ address: factory, abi: ACCOUNT_FACTORY_ABI, functionName: "implementation" });
     const entryPoint = await pub.readContract({ address: implementation, abi: ACCOUNT_ABI, functionName: "entryPoint" });
@@ -68,8 +72,10 @@ async function status() {
     console.log(`  implementation         ${implementation}`);
     console.log(`  EntryPoint             ${entryPoint}${entryPoint.toLowerCase() === net.erc4337.entryPoint.toLowerCase() ? `  (v${net.erc4337.version})` : "  UNEXPECTED"}`);
   }
+  const routerV1 = net.cctpRouter;
+  console.log(`  router v1              ${routerV1 ? `${routerV1}${(await hasCode(routerV1)) ? "" : "  NO CODE"}` : `${target.variable("CCTP_ROUTER")} not set`}`);
   const router = net.cctpRouterV2;
-  console.log(`  router v2              ${router ? `${router}${(await hasCode(router)) ? "" : "  NO CODE"}` : "CCTP_ROUTER_V2_FUJI not set"}`);
+  console.log(`  router v2              ${router ? `${router}${(await hasCode(router)) ? "" : "  NO CODE"}` : `${target.variable("CCTP_ROUTER_V2")} not set`}`);
   console.log(`  P-256 precompile       ${net.p256Precompile}`);
 }
 
@@ -87,10 +93,18 @@ if (command === "status") {
   const routerTx = await wallet.deployContract({ abi: routerArtifact.abi, bytecode: routerArtifact.bytecode.object, args: [net.usdc.address, net.cctpV2.tokenMessenger] });
   const router = (await mined(routerTx, "router deployment")).contractAddress!;
   console.log(`  TilcaiCctpRouterV2    ${router}  ${link("tx", routerTx)}`);
-  console.log(`\nSet ACCOUNT_FACTORY_FUJI=${factory}\n    CCTP_ROUTER_V2_FUJI=${router}`);
+  console.log(`\nSet ${target.variable("ACCOUNT_FACTORY")}=${factory}\n    ${target.variable("CCTP_ROUTER_V2")}=${router}`);
+} else if (command === "deploy-router") {
+  const { account, wallet } = signer();
+  console.log(`Deploying TilcaiCctpRouter on ${net.name} from ${account.address}`);
+  const routerArtifact = artifact("TilcaiCctpRouter");
+  const routerTx = await wallet.deployContract({ abi: routerArtifact.abi, bytecode: routerArtifact.bytecode.object, args: [net.usdc.address, net.cctpV2.tokenMessenger] });
+  const router = (await mined(routerTx, "router deployment")).contractAddress!;
+  console.log(`  TilcaiCctpRouter      ${router}  ${link("tx", routerTx)}`);
+  console.log(`\nSet ${target.variable("CCTP_ROUTER")}=${router}`);
 } else if (command === "verify") {
   const factory = net.accountFactory;
-  if (!factory) throw new Error("ACCOUNT_FACTORY_FUJI is not set");
+  if (!factory) throw new Error(`${target.variable("ACCOUNT_FACTORY")} is not set`);
   const { account: dev, wallet } = signer();
 
   // The "passkey": a P-256 key that signs WebAuthn assertions, as an authenticator would.
@@ -157,6 +171,6 @@ if (command === "status") {
   console.log(`  paid       0.01 USDC back with the passkey signature  gas ${paid.gasUsed}  ${link("tx", payTx)}`);
   console.log("OK");
 } else {
-  console.error("usage: npm run sca -- status | deploy | verify");
+  console.error("usage: npm run sca -- status | deploy | deploy-router | verify  [--network fuji|monad-testnet]");
   process.exit(64);
 }

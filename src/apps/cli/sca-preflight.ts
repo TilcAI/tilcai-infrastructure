@@ -1,7 +1,8 @@
 /**
  * Preconditions of the SCA phase (smart contract accounts on Stellar and EVM), checked against
  * the real networks, the Relayer and the local toolchain. Read-only: it sends no transaction.
- *   npm run sca:preflight
+ *   npm run sca:preflight                          # Avalanche Fuji
+ *   npm run sca:preflight -- --network monad-testnet
  */
 import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
@@ -11,13 +12,17 @@ import { rpc, xdr } from "@stellar/stellar-sdk";
 import { createPublicClient, http, toFunctionSelector } from "viem";
 import { activeConfig, loadEnv } from "../../config/env.ts";
 import { networks } from "../../config/networks.ts";
+import { selectCliNetwork } from "./evm-network.ts";
 import { viemChain } from "../../modules/crosschain/adapters/evm.ts";
 import { RelayerClient } from "../../modules/relayer/client.ts";
 
 const env = loadEnv();
 const active = activeConfig(env);
 const nets = networks(env);
-const fuji = nets.avalanche;
+const target = process.argv.includes("--network") || process.argv.some((x) => x.startsWith("--network=")) || process.env.TILCAI_CLI_NETWORK ? selectCliNetwork(env) : null;
+/** The EVM network under test: the active Avalanche one unless --network says otherwise. */
+const fuji = target?.net ?? nets.avalanche;
+const evmRelayerId = target?.relayerId ?? active.evmRelayerId;
 const stellar = nets.stellar;
 const repo = (path: string) => fileURLToPath(new URL(`../../../${path}`, import.meta.url));
 
@@ -65,7 +70,7 @@ if (chainId !== undefined) {
   line(usdcCode.includes(selector.slice(2)), "USDC accepts EIP-3009 with a contract (ERC-1271) signature", `implementation ${implementation}`);
 
   if (fuji.cctpRouter) line(await hasCode(fuji.cctpRouter), "TilcaiCctpRouter deployed", fuji.cctpRouter);
-  else line(false, "TilcaiCctpRouter configured", "CCTP_ROUTER_FUJI is empty");
+  else line(false, "TilcaiCctpRouter configured", `${target?.variable("CCTP_ROUTER") ?? "CCTP_ROUTER_FUJI"} is empty`);
 }
 
 // ── Stellar: the contracts an issued account interacts with ──
@@ -89,7 +94,7 @@ line(up, "GET /api/v1/health");
 if (!active.relayerApiKey) line(false, "active relayer API key set");
 if (up && active.relayerApiKey) {
   const relayers = (await attempt("GET /api/v1/relayers", () => relayer.listRelayers())) ?? [];
-  for (const id of [active.stellarRelayerId, active.evmRelayerId]) {
+  for (const id of [active.stellarRelayerId, evmRelayerId]) {
     const found = relayers.find((x) => x.id === id);
     const balance = found ? await relayer.getBalance(id).catch(() => null) : null;
     line(Boolean(found) && !found!.paused, `relayer '${id}' enabled`, balance ? `balance ${balance.balance} ${balance.unit}` : found ? "balance ?" : "not found");

@@ -7,7 +7,7 @@ import type { TenantId } from "../../modules/tenants/ports.ts";
 import { DomainError } from "../../shared/errors.ts";
 import type { Hex } from "../../shared/hex.ts";
 
-const NETWORKS = ["eip155:43113", "stellar:testnet", "eip155:43114", "stellar:pubnet"] as const;
+const NETWORKS = ["eip155:43113", "stellar:testnet", "eip155:43114", "stellar:pubnet", "eip155:10143"] as const;
 const AccountBody = z.strictObject({
   network: z.enum(NETWORKS),
   externalRef: z.string().min(1).max(128),

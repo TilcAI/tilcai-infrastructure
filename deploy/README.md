@@ -93,13 +93,14 @@ contratos, la operación y lo pendiente están en [`MAINNET_DEPLOYMENT.md`](MAIN
 | `PORT` | no | Si la plataforma lo define, el relayer escucha ahí |
 
 El keystore es la identidad on-chain del relayer: sus direcciones pagan el gas (AVAX en Fuji,
-XLM en Stellar). **En testnet, reutiliza el keystore de test que ya tiene fondos; nunca lo uses
+MON en Monad Testnet, XLM en Stellar). **En testnet, reutiliza el keystore de test que ya tiene fondos; nunca lo uses
 en mainnet.** Con uno nuevo hay que fondear
 ambas cuentas antes de arrancar: el relayer de Stellar queda deshabilitado mientras su cuenta
 no exista en la red.
 
-`config.json` define dos relayers (`avalanche-fuji-relayer`, `stellar-example`) con el mismo
-firmante y el plugin `x402` para `eip155:43113` y `stellar:testnet`. Otras redes se añaden
+`config.json` define tres relayers (`avalanche-fuji-relayer`, `monad-testnet-relayer`,
+`stellar-example`) con el mismo firmante y el plugin `x402` para `eip155:43113`, `eip155:10143` y
+`stellar:testnet`. Otras redes se añaden
 ahí y en `relayer/config/networks/`.
 
 **Avisos del relayer.** Los dos relayers envían sus avisos (cada cambio de estado de una
@@ -121,6 +122,9 @@ decide un pago por ellos.
 | `ACCOUNT_FACTORY_FUJI` | no | `TilcaiAccountFactory` desplegada; habilita `/v1/accounts` (fase SCA). Las cuentas las piden terceros con claves de `npm run tenant -- key` |
 | `CCTP_ROUTER_V2_FUJI` | no | `TilcaiCctpRouterV2` desplegado; habilita el modo de pago `account` |
 | `VAULT_FUJI` | no | `TilcaiVault` desplegado; habilita `/v1/vault`. Su operador debe ser la cuenta del relayer `RELAYER_FUJI_ID`. Quien tenga una clave de `TILCAI_API_KEYS` puede pedir pagos hasta los límites del contrato |
+| `RELAYER_MONAD_TESTNET_ID` | no | Relayer de Monad Testnet (por defecto `monad-testnet-relayer`): envía el burn gasless, despliega cuentas y paga desembolsos en esa red |
+| `RPC_MONAD_TESTNET` | no | RPC de Monad Testnet (por defecto `https://testnet-rpc.monad.xyz`; limita `eth_getLogs` a 100 bloques) |
+| `CCTP_ROUTER_MONAD_TESTNET`, `CCTP_ROUTER_V2_MONAD_TESTNET`, `ACCOUNT_FACTORY_MONAD_TESTNET`, `VAULT_MONAD_TESTNET` | no | Lo mismo que las variables `_FUJI`, en Monad Testnet (`eip155:10143`). Se despliegan con `--network monad-testnet` en `npm run sca` y `npm run vault`. Sin ellas, esa red solo admite los modos `external` y `dev_signer` |
 | `LITESTREAM_REPLICA_URL` | no | `gcs://bucket/ruta`, `s3://bucket/ruta` o `abs://…`. Vacía, la base vive solo en `/data` |
 | `RELAYER_WEBHOOK_SIGNING_KEY` | sí | La `WEBHOOK_SIGNING_KEY` del relayer. Vacía, `/v1/webhooks/relayer` solo acepta avisos sin firmar desde el propio host |
 | `MONITOR_WEB_URL` | no | `<tilcai-web>/api/monitor/events`: adonde TilcAI envía sus eventos para el tablero. Vacía, los eventos se quedan en su base (`GET /v1/monitor/events`) |

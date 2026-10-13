@@ -13,6 +13,19 @@ accounts, `documentation/TILCAI_FASE_SCA_EMISION_DE_CUENTAS_2026-10-06.md`.
 | `TilcaiPaymaster` | deferred | Not needed while TilcAI's relayer sends the UserOperations itself with zero fees (plan ADR-12). Returns when third-party bundlers must be supported; OpenZeppelin Contracts ships `PaymasterSigner` as a base. |
 | ERC-8004 registries | 4 | Use an existing deployment if one is canonical on the chosen testnet; otherwise deploy the reference Identity/Reputation/Validation registries unmodified. |
 
+## Monad Testnet (deployed 2026-10-13)
+
+Same contracts, chain 10143 (`npm run sca -- deploy-router|deploy --network monad-testnet`, `npm run vault -- deploy --network monad-testnet`):
+
+| Contract | Address |
+| --- | --- |
+| `TilcaiCctpRouter` | `0x7fbef1b0a60021b53f1d780d6794ac2dbcc9647f` |
+| `TilcaiCctpRouterV2` | `0x4ffbd69675d2a55c8ef52b8cd93cc1ac952ccbfe` |
+| `TilcaiAccountFactory` | `0x38c2e921e2336ea59fbc58db1eeb8c106f11d958` |
+| `TilcaiVault` | `0xaa9e6460b6ba396c0b84029f347ff71255130c89` (operator: the `monad-testnet-relayer` account) |
+
+Verified with `npm run sca -- verify --network monad-testnet` (an account paid with a passkey signature).
+
 ## Dependencies
 
 `lib/` is not in git. Install the pinned versions:

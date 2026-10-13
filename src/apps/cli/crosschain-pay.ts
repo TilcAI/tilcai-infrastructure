@@ -1,5 +1,7 @@
 /**
- * Active Avalanche → Stellar USDC payment, end to end, in-process.
+ * Active EVM → Stellar USDC payment, end to end, in-process.
+ *
+ *   --source eip155:10143   starts it on Monad Testnet (default: the active Avalanche network)
  *
  *   npm run xpay -- --amount 0.5 --to G…                  # dev signer (DEV_EVM_PAYER_PRIVATE_KEY) burns, pays AVAX
  *   npm run xpay -- --amount 0.5 --to G… --gasless        # dev key signs EIP-3009; the OZ Relayer pays all gas
@@ -21,6 +23,7 @@ const { values: a } = parseArgs({
     payment: { type: "string" },
     burn: { type: "string" },
     timeout: { type: "string", default: "900" },
+    source: { type: "string" },
   },
 });
 
@@ -31,8 +34,10 @@ const out = (o: unknown) => console.log(JSON.stringify(o, (_, v) => (typeof v ==
 let paymentId = a.payment;
 if (!paymentId) {
   if (!a.amount || !a.to) throw new Error("--amount and --to are required (or --payment to follow one)");
-  const q = await svc.quote({ sourceNetwork: ctx.nets.avalanche.id, destinationNetwork: ctx.nets.stellar.id, amount: a.amount, payTo: a.to });
-  console.log(`quote ${q.id}: burn ${q.burnAmountAtomic} (6 dec) on ${ctx.nets.avalanche.name} → ${q.destinationAmountAtomic} (7 dec) on ${ctx.nets.stellar.name} to ${q.payTo}`);
+  const source = a.source ? ctx.nets.evm.find((n) => n.id === a.source || n.name.toLowerCase().includes(a.source!.toLowerCase())) : ctx.nets.avalanche;
+  if (!source) throw new Error(`--source must be one of ${ctx.nets.evm.map((n) => n.id).join(", ")}`);
+  const q = await svc.quote({ sourceNetwork: source.id, destinationNetwork: ctx.nets.stellar.id, amount: a.amount, payTo: a.to });
+  console.log(`quote ${q.id}: burn ${q.burnAmountAtomic} (6 dec) on ${source.name} → ${q.destinationAmountAtomic} (7 dec) on ${ctx.nets.stellar.name} to ${q.payTo}`);
   console.log(`preflight ${JSON.stringify(q.preflight)}`);
   const mode = a.gasless ? (a.payer ? "gasless" : "dev_gasless") : a.payer ? "external" : "dev_signer";
   const r = await svc.createPayment({ quoteId: q.id, mode, ...(a.payer ? { payer: a.payer } : {}), ...(a.order ? { orderId: a.order } : {}), idempotencyKey: randomUUID() });

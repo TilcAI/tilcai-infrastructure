@@ -29,8 +29,19 @@ import { authorizationNonce, authorizationTypedData, encodeRouterCall, encodeRou
 import { ConcurrentUpdateError, type CrosschainRepository } from "./repository.ts";
 import { checkAttestedMessage, checkDepositForBurn, checkRouterPayment } from "./verify.ts";
 
+/** One EVM network a payment can start on, with the adapters that act on it. */
+export interface SourceLeg {
+  network: EvmNetwork;
+  evm: EvmCctpPort;
+  /** Sends the gasless source burn from this network's relayer account. Absent → gasless modes disabled there. */
+  evmSubmitter?: EvmTxSubmitter;
+  /** The smart accounts TilcAI issued on this network. Absent → `account` mode disabled there. */
+  accounts?: AccountPayerPort;
+}
+
 export interface CrosschainDeps {
   repo: CrosschainRepository;
+  /** The primary source network (`source`) and its adapters. Further networks go in `extraSources`. */
   evm: EvmCctpPort;
   stellar: StellarCctpPort;
   iris: IrisPort;
@@ -41,6 +52,8 @@ export interface CrosschainDeps {
   /** The smart accounts TilcAI issued. Absent → `account` mode disabled. */
   accounts?: AccountPayerPort;
   source: EvmNetwork;
+  /** Other EVM networks a payment may start on (e.g. Monad Testnet next to Avalanche Fuji). */
+  extraSources?: SourceLeg[];
   destination: StellarNetwork;
   clock: Clock;
   log: Logger;
@@ -64,7 +77,7 @@ export interface CrosschainDeps {
 const MAX_BACKOFF_MS = 10 * 60_000;
 
 /**
- * Orchestrates the active Avalanche → Stellar USDC route over CCTP V2.
+ * Orchestrates the active EVM → Stellar USDC routes over CCTP V2 (Avalanche, and Monad on testnet).
  *
  * Safety rules (report §19, payment-rail-environment §6.2):
  *  - the source tx hash is persisted before any further step;
@@ -74,16 +87,39 @@ const MAX_BACKOFF_MS = 10 * 60_000;
  *    while a new burn is NEVER created for an existing payment.
  */
 export class CrosschainPaymentService {
-  constructor(private readonly d: CrosschainDeps) {}
+  private readonly legs = new Map<string, SourceLeg>();
+
+  constructor(private readonly d: CrosschainDeps) {
+    const primary: SourceLeg = {
+      network: d.source,
+      evm: d.evm,
+      ...(d.evmSubmitter ? { evmSubmitter: d.evmSubmitter } : {}),
+      ...(d.accounts ? { accounts: d.accounts } : {}),
+    };
+    for (const leg of [primary, ...(d.extraSources ?? [])]) this.legs.set(leg.network.id, leg);
+  }
+
+  /** The source network of a quote; one this process does not serve is "not enabled". */
+  private legOf(network: string): SourceLeg {
+    const leg = this.legs.get(network);
+    if (!leg) throw new DomainError("NETWORK_OR_ASSET", `source network ${network} not enabled`);
+    return leg;
+  }
+
+  private legOfPayment(p: Pick<CrosschainPayment, "id" | "quoteId">): SourceLeg {
+    return this.legOf(this.quoteOf(p).sourceNetwork);
+  }
 
   // ── Quotes ────────────────────────────────────────────────────────────────
 
   /** `tenantId` is who asks. Everything a tenant creates is visible only to that tenant; the default is the legacy tenant. */
   async quote(input: { sourceNetwork: string; destinationNetwork: string; amount: string; payTo: string; tenantId?: TenantId }): Promise<RouteQuote> {
-    const { source, destination } = this.d;
-    if (input.sourceNetwork !== source.id || input.destinationNetwork !== destination.id) {
+    const { destination } = this.d;
+    const leg = this.legs.get(input.sourceNetwork);
+    if (!leg || input.destinationNetwork !== destination.id) {
       throw new DomainError("NETWORK_OR_ASSET", `route ${input.sourceNetwork} → ${input.destinationNetwork} not enabled`);
     }
+    const source = leg.network;
     if (!isValidStellarRecipient(input.payTo)) throw new DomainError("INVALID_INPUT", "payTo is not a Stellar G/M/C address");
     let canonical: bigint;
     try {
@@ -94,7 +130,7 @@ export class CrosschainPaymentService {
     }
     if (canonical <= 0n) throw new DomainError("INVALID_INPUT", "amount must be positive");
 
-    const finality = 2000 as const; // Avalanche has no Fast transfer; Standard attests in ~8 s.
+    const finality = 2000 as const; // Standard transfer: attested once the source chain finalizes.
     const feeBpsHundredths = await this.d.iris.feeBpsHundredths(source.cctpDomain, destination.cctpDomain, finality);
     const maxFee = maxFeeForBps(canonical, feeBpsHundredths);
     const account = await this.d.stellar.accountStatus(input.payTo);
@@ -148,15 +184,17 @@ export class CrosschainPaymentService {
   }): Promise<{ payment: CrosschainPayment; calls: UnsignedEvmCall[]; authorization?: AuthorizationRequest; replayed: boolean }> {
     if (this.d.transactionsEnabled === false) throw new DomainError("SERVICE_UNAVAILABLE", "transactions are disabled for this environment");
     if (!/^[A-Za-z0-9_-]{8,128}$/.test(input.idempotencyKey)) throw new DomainError("INVALID_INPUT", "bad idempotency key");
-    if (input.mode === "account") {
-      if (!this.d.evm.routerV2Address() || !this.d.evmSubmitter || !this.d.accounts) {
-        throw new DomainError("SERVICE_UNAVAILABLE", "account mode needs the active CCTP router v2, account factory and EVM relayer");
-      }
-    } else if (isGaslessMode(input.mode) && (!this.d.evm.routerAddress() || !this.d.evmSubmitter)) {
-      throw new DomainError("SERVICE_UNAVAILABLE", "gasless modes need the active CCTP router and EVM relayer");
-    }
     const tenantId = input.tenantId ?? LEGACY_TENANT_ID;
-    const payer = this.resolvePayer(input.mode, input.payer);
+    // The network is the quote's: what the payment needs (router, relayer, accounts) is that network's.
+    const leg = this.legOf(this.getQuote(input.quoteId, tenantId).sourceNetwork);
+    if (input.mode === "account") {
+      if (!leg.evm.routerV2Address() || !leg.evmSubmitter || !leg.accounts) {
+        throw new DomainError("SERVICE_UNAVAILABLE", `account mode needs the CCTP router v2, account factory and EVM relayer of ${leg.network.id}`);
+      }
+    } else if (isGaslessMode(input.mode) && (!leg.evm.routerAddress() || !leg.evmSubmitter)) {
+      throw new DomainError("SERVICE_UNAVAILABLE", `gasless modes need the CCTP router and EVM relayer of ${leg.network.id}`);
+    }
+    const payer = this.resolvePayer(input.mode, leg, input.payer);
     const requestHash = sha256(
       JSON.stringify(["crosschain-payment-v1", input.quoteId, input.mode, payer?.toLowerCase() ?? null, input.orderId ?? null]),
     );
@@ -174,7 +212,7 @@ export class CrosschainPaymentService {
     const now = this.d.clock.now();
     if (now.toISOString() >= q.expiresAt) throw new DomainError("QUOTE_EXPIRED");
     // Only an account TilcAI issued to this tenant, already deployed: an address without code signs nothing.
-    if (input.mode === "account" && !(await this.d.accounts!.isActiveAccount(tenantId, payer!))) {
+    if (input.mode === "account" && !(await leg.accounts!.isActiveAccount(tenantId, payer!))) {
       throw new DomainError("NOT_FOUND", "payer is not an active account of this tenant");
     }
     const account = await this.d.stellar.accountStatus(q.payTo);
@@ -231,13 +269,13 @@ export class CrosschainPaymentService {
       const authorization = this.authorizationRequest(payment);
       if (input.mode !== "dev_gasless") return { payment, calls: [], authorization, replayed: false };
       // dev_gasless: sign with the testnet developer key, then hand the signature to the relayer.
-      const signature = await this.d.evm.devSignTypedData(authorization.typedData);
+      const signature = await leg.evm.devSignTypedData(authorization.typedData);
       const sig = parseSignature(signature);
       const submitted = await this.submitAuthorization(payment.id, { v: Number(sig.v ?? BigInt(27 + (sig.yParity ?? 0))), r: sig.r, s: sig.s }, tenantId);
       return { payment: submitted, calls: [], authorization, replayed: false };
     }
 
-    const built = await this.d.evm.buildBurnCalls({
+    const built = await leg.evm.buildBurnCalls({
       payer: payer!,
       amount: q.burnAmountAtomic,
       maxFee: q.maxFeeAtomic,
@@ -251,7 +289,7 @@ export class CrosschainPaymentService {
     // dev_signer (testnet only): the backend signs with its developer key.
     if (built.usdcBalance < q.burnAmountAtomic) throw new DomainError("BUDGET", "dev payer has insufficient USDC");
     let current = payment;
-    await this.d.evm.sendWithDevSigner(built.calls, (hash) => {
+    await leg.evm.sendWithDevSigner(built.calls, (hash) => {
       // Persist the hash the moment it exists, before waiting for the receipt.
       current = this.move(current, "BURN_SUBMITTED", "burn broadcast by dev signer", { burnTxHash: hash });
     });
@@ -265,12 +303,13 @@ export class CrosschainPaymentService {
     const q = this.quoteOf(p);
     const router = this.routerOf(p);
     if (!router || !p.payer) throw new DomainError("SERVICE_UNAVAILABLE", "router not configured");
+    const source = this.legOf(q.sourceNetwork).network;
     const paymentId32 = paymentIdBytes32(p.id);
     const route = routeOf(q.destinationDomain, q.target, q.maxFeeAtomic, q.finality);
     const nonce = authorizationNonce(paymentId32, q.burnAmountAtomic, route, p.mode === "account" ? 2 : 1);
     const ttl = this.d.options.authorizationTtlSeconds ?? 600;
     const validBefore = BigInt(Math.floor(Date.parse(p.createdAt) / 1000) + ttl);
-    const typedData = authorizationTypedData({ ...this.d.source, cctpRouter: router }, { payer: p.payer, amount: q.burnAmountAtomic, nonce, validAfter: 0n, validBefore });
+    const typedData = authorizationTypedData({ ...source, cctpRouter: router }, { payer: p.payer, amount: q.burnAmountAtomic, nonce, validAfter: 0n, validBefore });
     if (p.mode !== "account") return { router, paymentId32, nonce, validAfter: 0n, validBefore, typedData };
     const contents: TypedContents = {
       appDomainSeparator: domainSeparator({ domain: typedData.domain }),
@@ -278,12 +317,13 @@ export class CrosschainPaymentService {
       contentsHash: hashStruct({ data: typedData.message, primaryType: typedData.primaryType, types: typedData.types }),
     };
     // The passkey does not sign the typed data itself but an ERC-7739 wrapper that names the account.
-    return { router, paymentId32, nonce, validAfter: 0n, validBefore, typedData, account: { challenge: typedDataChallenge(p.payer, this.d.source.chainId, contents), contents } };
+    return { router, paymentId32, nonce, validAfter: 0n, validBefore, typedData, account: { challenge: typedDataChallenge(p.payer, source.chainId, contents), contents } };
   }
 
   /** The router that pulls this payment's funds: v2 for smart accounts, v1 for wallets. */
-  private routerOf(p: Pick<CrosschainPayment, "mode">): Hex | null {
-    return p.mode === "account" ? this.d.evm.routerV2Address() : this.d.evm.routerAddress();
+  private routerOf(p: Pick<CrosschainPayment, "id" | "mode" | "quoteId">): Hex | null {
+    const { evm } = this.legOfPayment(p);
+    return p.mode === "account" ? evm.routerV2Address() : evm.routerAddress();
   }
 
   /**
@@ -303,7 +343,7 @@ export class CrosschainPaymentService {
     }
     if (p.state !== "AWAITING_BURN") throw new DomainError("INVALID_STATE_TRANSITION");
     if (BigInt(Math.floor(this.d.clock.now().getTime() / 1000)) >= req.validBefore) throw new DomainError("EXPIRED", "authorization window closed");
-    if (!(await this.d.accounts!.isValidSignature(p.payer!, hashTypedData(req.typedData), signature))) {
+    if (!(await this.legOfPayment(p).accounts!.isValidSignature(p.payer!, hashTypedData(req.typedData), signature))) {
       throw new DomainError("APPROVAL_INVALID", "signature is not from the account's owner");
     }
     p = this.patch(p, { burnAuthorization: { validAfter: "0", validBefore: req.validBefore.toString(), v: 0, r: ZERO32, s: ZERO32, signature } });
@@ -344,7 +384,7 @@ export class CrosschainPaymentService {
     // Recorded before the call: a crash leaves evidence that a submission may be in flight.
     let cur = this.patch(p, { burnRequestedAt: iso(this.d.clock.now()) });
     try {
-      const sub = await this.d.evmSubmitter!.submit(this.routerOf(p)!, data);
+      const sub = await this.legOfPayment(p).evmSubmitter!.submit(this.routerOf(p)!, data);
       this.d.log.info("burn submitted via relayer", { paymentId: p.id, submissionId: sub.submissionId });
       return this.patch(cur, { burnSubmissionId: sub.submissionId, lastError: null, nextCheckAt: iso(this.d.clock.now()) });
     } catch (e) {
@@ -358,13 +398,13 @@ export class CrosschainPaymentService {
     if (!p.burnAuthorization || !isGaslessMode(p.mode)) return p;
     const a = p.burnAuthorization;
     if (p.burnSubmissionId) {
-      const st = await this.d.evmSubmitter!.status(p.burnSubmissionId);
+      const st = await this.legOfPayment(p).evmSubmitter!.status(p.burnSubmissionId);
       if (st.state === "confirmed") return this.move(p, "BURN_SUBMITTED", "burn mined by relayer", { burnTxHash: st.txHash.toLowerCase() as Hex, lastError: null });
       if (st.state === "pending") return this.reschedule(p, {});
       p = this.patch(p, { burnSubmissionId: null, burnRequestedAt: null, lastError: `BURN_RELAYER_FAILED:${st.reason}` });
     }
     const nonce = this.authorizationRequest(p).nonce;
-    if (await this.d.evm.authorizationUsed(p.payer!, nonce)) {
+    if (await this.legOfPayment(p).evm.authorizationUsed(p.payer!, nonce)) {
       // Consumed on-chain but the relayer lost the hash. An operator can attach it (POST /burn).
       return this.reschedule(p, { uncertain: true, error: "AUTHORIZATION_USED_HASH_UNKNOWN", backoff: true });
     }
@@ -386,7 +426,7 @@ export class CrosschainPaymentService {
       throw new DomainError("INVALID_STATE_TRANSITION", "payment already has a different burn tx");
     }
     if (p.state !== "AWAITING_BURN") throw new DomainError("INVALID_STATE_TRANSITION");
-    const other = this.d.repo.findByBurnTx(this.d.source.id, hash);
+    const other = this.d.repo.findByBurnTx(this.quoteOf(p).sourceNetwork, hash);
     if (other) throw new DomainError("DUPLICATE", "burn tx already backs another payment");
     return this.move(p, "BURN_SUBMITTED", "burn tx reported by payer", { burnTxHash: hash });
   }
@@ -427,7 +467,7 @@ export class CrosschainPaymentService {
 
   private async stepBurnSubmitted(p: CrosschainPayment): Promise<CrosschainPayment> {
     const q = this.quoteOf(p);
-    const r = await this.d.evm.inspectBurn(p.burnTxHash!);
+    const r = await this.legOfPayment(p).evm.inspectBurn(p.burnTxHash!);
     if (r.kind === "not_found") {
       const grace = this.d.options.burnLookupGraceMs ?? 30 * 60_000;
       const age = this.d.clock.now().getTime() - Date.parse(p.updatedAt);
@@ -593,17 +633,18 @@ export class CrosschainPaymentService {
   view(id: string, tenantId: TenantId = LEGACY_TENANT_ID) {
     const p = this.mustGet(id, tenantId);
     const q = this.quoteOf(p);
+    const source = this.legOf(q.sourceNetwork).network;
     return {
       payment: p,
       paymentState: paymentStateOf(p.state, p.uncertain),
       quote: q,
       links: {
-        burn: p.burnTxHash ? `${this.d.source.explorer}/tx/${p.burnTxHash}` : null,
+        burn: p.burnTxHash ? `${source.explorer}/tx/${p.burnTxHash}` : null,
         mint: p.mintTxHash ? `${this.d.destination.explorer}/tx/${p.mintTxHash}` : null,
       },
       amounts: {
         destination: `${atomicToDecimal(q.destinationAmountAtomic, this.d.destination.usdc.decimals)} USDC`,
-        burn: `${atomicToDecimal(q.burnAmountAtomic, this.d.source.usdc.decimals)} USDC`,
+        burn: `${atomicToDecimal(q.burnAmountAtomic, source.usdc.decimals)} USDC`,
       },
       receipt: this.d.repo.getReceipt(p.id) ?? null,
       events: this.d.repo.events(p.id),
@@ -613,7 +654,7 @@ export class CrosschainPaymentService {
   /** Unsigned calls for an external payer (re-built: allowance may have changed). */
   async callsFor(p: CrosschainPayment): Promise<UnsignedEvmCall[]> {
     const q = this.quoteOf(p);
-    const built = await this.d.evm.buildBurnCalls({
+    const built = await this.legOf(q.sourceNetwork).evm.buildBurnCalls({
       payer: p.payer!,
       amount: q.burnAmountAtomic,
       maxFee: q.maxFeeAtomic,
@@ -633,9 +674,9 @@ export class CrosschainPaymentService {
 
   // ── internals ─────────────────────────────────────────────────────────────
 
-  private resolvePayer(mode: PaymentMode, payer?: string): Hex | null {
+  private resolvePayer(mode: PaymentMode, leg: SourceLeg, payer?: string): Hex | null {
     if (mode === "dev_signer" || mode === "dev_gasless") {
-      const dev = this.d.evm.devSignerAddress();
+      const dev = leg.evm.devSignerAddress();
       if (!dev) throw new DomainError("FORBIDDEN", "dev signer disabled");
       if (payer && payer.toLowerCase() !== dev.toLowerCase()) throw new DomainError("INVALID_INPUT", "payer must be the dev signer");
       return dev;
@@ -644,7 +685,7 @@ export class CrosschainPaymentService {
     return payer as Hex;
   }
 
-  private quoteOf(p: CrosschainPayment): RouteQuote {
+  private quoteOf(p: Pick<CrosschainPayment, "id" | "quoteId">): RouteQuote {
     const q = this.d.repo.getQuote(p.quoteId);
     if (!q) throw new Error(`quote ${p.quoteId} missing for ${p.id}`);
     return q;

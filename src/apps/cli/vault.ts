@@ -1,13 +1,15 @@
 /**
- * TilcaiVault from the command line (Avalanche Fuji).
+ * TilcaiVault from the command line (Avalanche Fuji or Monad Testnet).
  *
- *   npm run vault -- status                                      # the vault on-chain (VAULT_FUJI)
+ *   npm run vault -- status                                      # the vault on-chain (VAULT_FUJI / VAULT_MONAD_TESTNET)
  *   npm run vault -- deploy [--owner 0x…] [--operator 0x…] [--max 100] [--daily 1000]
  *   npm run vault -- withdraw --to 0x… --amount 5                # owner takes USDC back out
  *
- * `deploy` and `withdraw` sign with DEV_EVM_PAYER_PRIVATE_KEY and pay their gas in AVAX. The
- * deployer is also the owner unless --owner says otherwise; the operator defaults to the
- * RELAYER_FUJI_ID account, which is the one that sends the payouts.
+ * Add `--network monad-testnet` (default `fuji`) to act on Monad Testnet.
+ * `deploy` and `withdraw` sign with DEV_EVM_PAYER_PRIVATE_KEY and pay their gas in the native
+ * token (AVAX, MON). The deployer is also the owner unless --owner says otherwise; the operator
+ * defaults to the account of the network's relayer (RELAYER_FUJI_ID, RELAYER_MONAD_TESTNET_ID),
+ * which is the one that sends the payouts.
  * `deploy` reads the compiled contract: run `forge build` in contracts/evm first.
  */
 import { readFileSync } from "node:fs";
@@ -15,13 +17,15 @@ import { parseArgs } from "node:util";
 import { createPublicClient, createWalletClient, getAddress, http, type Abi } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { loadEnv } from "../../config/env.ts";
-import { networks } from "../../config/networks.ts";
+import { selectCliNetwork } from "./evm-network.ts";
 import { atomicToDecimal, decimalToAtomic } from "../../shared/amount.ts";
 import { sameHex, type Hex } from "../../shared/hex.ts";
 import { viemChain } from "../../modules/crosschain/adapters/evm.ts";
 import { RelayerClient } from "../../modules/relayer/client.ts";
 import { VAULT_ABI, ViemVault } from "../../modules/vault/adapters/evm.ts";
 
+const env = loadEnv();
+const target = selectCliNetwork(env);
 const { values: a, positionals } = parseArgs({
   allowPositionals: true,
   options: {
@@ -34,9 +38,8 @@ const { values: a, positionals } = parseArgs({
   },
 });
 
-const env = loadEnv();
 if (env.TILCAI_ENV === "mainnet") throw new Error("vault deployment/operation CLI is disabled on mainnet in phase 1");
-const net = networks(env).avalancheFuji;
+const net = target.net;
 const chain = viemChain(net);
 const pub = createPublicClient({ chain, transport: http(net.rpc, { retryCount: 3 }) });
 const usdc = (atomic: bigint) => `${atomicToDecimal(atomic, net.usdc.decimals)} USDC`;
@@ -54,8 +57,8 @@ function signer() {
 
 async function relayerAddress(): Promise<Hex> {
   if (!env.RELAYER_API_KEY) throw new Error("RELAYER_API_KEY is not set: pass --operator");
-  const relayer = await new RelayerClient(env.RELAYER_URL, env.RELAYER_API_KEY).getRelayer(env.RELAYER_FUJI_ID);
-  return address(String(relayer.address ?? ""), `relayer ${env.RELAYER_FUJI_ID} address`);
+  const relayer = await new RelayerClient(env.RELAYER_URL, env.RELAYER_API_KEY).getRelayer(target.relayerId);
+  return address(String(relayer.address ?? ""), `relayer ${target.relayerId} address`);
 }
 
 async function status(vault: Hex) {
@@ -73,7 +76,7 @@ async function status(vault: Hex) {
 
 const command = positionals[0];
 if (command === "status") {
-  await status(address(net.vault, "VAULT_FUJI"));
+  await status(address(net.vault, target.variable("VAULT")));
 } else if (command === "deploy") {
   const artifactUrl = new URL("../../../contracts/evm/out/TilcaiVault.sol/TilcaiVault.json", import.meta.url);
   let artifact: { abi: Abi; bytecode: { object: Hex } };
@@ -95,9 +98,9 @@ if (command === "status") {
   if (receipt.status !== "success" || !receipt.contractAddress) throw new Error(`deployment reverted: ${hash}`);
   console.log("");
   await status(receipt.contractAddress);
-  console.log(`\nSet VAULT_FUJI=${receipt.contractAddress} and fund the vault by sending Fuji USDC (${net.usdc.address}) to that address.`);
+  console.log(`\nSet ${target.variable("VAULT")}=${receipt.contractAddress} and fund the vault by sending ${net.name} USDC (${net.usdc.address}) to that address.`);
 } else if (command === "withdraw") {
-  const vault = address(net.vault, "VAULT_FUJI");
+  const vault = address(net.vault, target.variable("VAULT"));
   const { account, wallet } = signer();
   const to = address(a.to, "--to");
   if (!a.amount) throw new Error("--amount is required");
@@ -108,6 +111,6 @@ if (command === "status") {
   console.log(`Withdrew ${usdc(amount)} to ${to}: ${net.explorer}/tx/${hash}`);
   await status(vault);
 } else {
-  console.error("usage: npm run vault -- status | deploy [--owner --operator --max --daily] | withdraw --to 0x… --amount N");
+  console.error("usage: npm run vault -- status | deploy [--owner --operator --max --daily] | withdraw --to 0x… --amount N  [--network fuji|monad-testnet]");
   process.exit(64);
 }

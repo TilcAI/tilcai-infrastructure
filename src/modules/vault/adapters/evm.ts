@@ -43,9 +43,12 @@ export const VAULT_ABI = parseAbi([
 
 export { disbursementIdBytes32 } from "../disbursement-id.ts";
 
-/** Public RPCs cap eth_getLogs ranges (2048 blocks on Avalanche's). */
-const LOG_WINDOW = 2000n;
-const MAX_LOG_WINDOWS = 12;
+/**
+ * Public RPCs cap eth_getLogs ranges (2048 blocks on Avalanche's, 100 on Monad's). A network sets
+ * its own `maxLogRange`; the search covers about 24 000 blocks either way.
+ */
+const DEFAULT_LOG_WINDOW = 2000;
+const SEARCH_SPAN = 24_000;
 
 /** Reads of a deployed TilcaiVault (viem). */
 export class ViemVault implements VaultPort {
@@ -130,9 +133,11 @@ export class ViemVault implements VaultPort {
 
   async findDisbursed(id32: Hex, fromBlock: bigint): Promise<{ txHash: Hex; blockNumber: bigint; to: Hex; amount: bigint } | null> {
     const head = await this.pub.getBlockNumber();
+    const window = BigInt(this.net.maxLogRange ?? DEFAULT_LOG_WINDOW);
+    const windows = Math.ceil(SEARCH_SPAN / Number(window));
     let from = fromBlock;
-    for (let i = 0; i < MAX_LOG_WINDOWS && from <= head; i++) {
-      const to = from + LOG_WINDOW - 1n < head ? from + LOG_WINDOW - 1n : head;
+    for (let i = 0; i < windows && from <= head; i++) {
+      const to = from + window - 1n < head ? from + window - 1n : head;
       const logs = await this.pub.getContractEvents({
         address: this.vault,
         abi: VAULT_ABI,
