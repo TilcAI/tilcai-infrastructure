@@ -138,6 +138,13 @@ const schema = z.object({
   QR_MOCK_PUBLIC_URL: optionalUrl,
   /** Opens the "Simular depósito" page to browsers that are not on this host (?key=…). */
   QR_MOCK_SIMULATOR_KEY: z.string().default(""),
+  /**
+   * What every QR encodes, e.g. the content of a real bank QR for demos. Empty = the file below,
+   * and without it, random noise in the shape of the real content.
+   */
+  QR_MOCK_PAYLOAD: z.string().default(""),
+  /** File with that content. Empty = qr-mock-payload.txt next to DATABASE_PATH, used only if it exists. */
+  QR_MOCK_PAYLOAD_FILE: z.string().default(""),
 
   WORKER_POLL_MS: z.coerce.number().int().min(500).default(4000),
   QUOTE_TTL_SECONDS: z.coerce.number().int().min(30).max(3600).default(900),

@@ -22,6 +22,11 @@ export interface QrMockConfig {
   publicUrl: string;
   /** The caller's …/api/v1/devices/simple-qr/callback. Empty = payments are only seen by polling. */
   callbackUrl: string;
+  /**
+   * What every QR image encodes (a real bank QR, for demos). Empty = each QR's own payload. The
+   * stored payload stays unique either way: it still names the QR's image.
+   */
+  payload?: string;
 }
 
 export interface CallbackOutcome {
@@ -201,7 +206,7 @@ export class QrSimpleMock {
   }
 
   private png(code: QrCode): Buffer {
-    return renderQrPng(qrMatrix(code.payload));
+    return renderQrPng(qrMatrix(this.d.config.payload || code.payload));
   }
 
   /** The PNG behind a `qr_url`, or null when the name does not match a QR. */

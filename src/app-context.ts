@@ -1,3 +1,5 @@
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { hostname } from "node:os";
 import type { DatabaseSync } from "node:sqlite";
 import { activeConfig, loadEnv, type Env } from "./config/env.ts";
@@ -238,6 +240,7 @@ export function createAppContext(name: string, env: Env = loadEnv()): AppContext
           password: env.QR_MOCK_PASSWORD,
           publicUrl: env.QR_MOCK_PUBLIC_URL || `http://${env.API_HOST === "0.0.0.0" ? "127.0.0.1" : env.API_HOST}:${env.API_PORT}`,
           callbackUrl: env.QR_MOCK_CALLBACK_URL,
+          payload: qrMockPayload(env),
         },
       })
     : null;
@@ -248,4 +251,11 @@ export function createAppContext(name: string, env: Env = loadEnv()): AppContext
     accountService,
     delegations: new SqliteDelegationRepository(db),
   };
+}
+
+/** The fixed content of the mock's QRs: QR_MOCK_PAYLOAD, else its file, else none (random). */
+function qrMockPayload(env: Env): string {
+  if (env.QR_MOCK_PAYLOAD) return env.QR_MOCK_PAYLOAD.trim();
+  const file = env.QR_MOCK_PAYLOAD_FILE || (env.DATABASE_PATH === ":memory:" ? "" : join(dirname(env.DATABASE_PATH), "qr-mock-payload.txt"));
+  return file && existsSync(file) ? readFileSync(file, "utf8").trim() : "";
 }

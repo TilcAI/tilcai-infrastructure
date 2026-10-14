@@ -134,6 +134,7 @@ decide un pago por ellos.
 | `QR_MOCK_CALLBACK_URL` | no | El callback de quien cobra: `<optipagos-backend>/api/v1/devices/simple-qr/callback` |
 | `QR_MOCK_PUBLIC_URL` | no | Base de `qr_url` tal como la ve quien llama (`http://tilcai:8787`) |
 | `QR_MOCK_SIMULATOR_KEY` | sí | Abre «Simular depósito» desde fuera del contenedor: `/mock/vendis/?key=…`. Dentro de Compose el navegador nunca es «el propio host», así que hace falta |
+| `QR_MOCK_PAYLOAD`, `QR_MOCK_PAYLOAD_FILE` | no | Contenido fijo de todas las imágenes de QR (p. ej. un QR real de banco, para demos). Sin definir, se lee `/data/qr-mock-payload.txt` si existe; si no, cada QR es ruido con la forma real |
 | `TILCAI_ROLE` | no | `all` (por defecto): API y worker en un proceso. `api` y `worker` por separado solo tienen sentido en un mismo host y compartiendo el volumen `/data`; en Cloud Run usa `all` |
 | `PORT` | no | Si la plataforma lo define, la API escucha ahí |
 

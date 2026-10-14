@@ -97,6 +97,20 @@ test("generate: returns the image, its URL and a 9-digit id, and the QR starts a
   assert.deepEqual([created.source, created.subject, created.data.amount], ["qr-simple", `qr:${qr.qr_id}`, "119.20"]);
 });
 
+test("generate: with a fixed payload every QR image encodes it, drawn the same way as the random ones", () => {
+  const payload = `${Buffer.alloc(256, 3).toString("base64")}|${"cd".repeat(12)}`;
+  const h = qrHarness({ payload });
+  const tokenId = h.mock.authenticate(`Bearer ${h.login()}`);
+  const a = h.mock.generate(tokenId, h.body());
+  const b = h.mock.generate(tokenId, h.body({ amount: 23.78 }));
+  assert.notEqual(a.qr_id, b.qr_id);
+  // Each QR keeps its own stored payload, which names its image.
+  assert.notEqual(h.repo.code(a.qr_id)!.payload, h.repo.code(b.qr_id)!.payload);
+  assert.equal(h.mock.image(a.qr_url.split("/").pop()!)?.toString("base64"), a.qr_image);
+  assert.equal(a.qr_image, renderQrPng(qrMatrix(payload)).toString("base64"));
+  assert.equal(b.qr_image, a.qr_image);
+});
+
 test("generate: a bad request gets Vendis's error and nothing is stored", () => {
   const h = qrHarness();
   const tokenId = h.mock.authenticate(`Bearer ${h.login()}`);

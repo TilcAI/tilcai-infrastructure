@@ -304,6 +304,10 @@ optipagos (quien cobra)              TilcAI · /mock/vendis                    n
 - **El QR** tiene la forma de un QR Simple real: un bloque opaco en base64, una barra y un
   identificador, con el distintivo «$» en el centro. Lleva corrección de errores H: quien
   rediseñe la tarjeta puede tapar el centro con su marca y se sigue leyendo lo mismo.
+- **Contenido fijo** (demos): con `QR_MOCK_PAYLOAD`, o un archivo `qr-mock-payload.txt` junto a
+  `DATABASE_PATH` (`QR_MOCK_PAYLOAD_FILE` lo cambia), toda imagen de QR codifica ese contenido,
+  por ejemplo el de un QR real de banco, con el mismo dibujo de siempre. Cada QR conserva su id,
+  su estado y su URL de imagen.
 - **Fechas** en hora de Bolivia (UTC−4), como las entrega un servicio boliviano; montos en
   bolivianos con dos decimales.
 - **El aviso** va a `QR_MOCK_CALLBACK_URL` con el token del QR en `Authorization`. Se da por
