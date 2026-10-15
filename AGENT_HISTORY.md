@@ -593,3 +593,17 @@ Contratos desplegados en Monad Testnet con la clave de desarrollo y probados; el
 Con el modo automático desactivado se aplicaron los pasos pendientes. Añadidas `ACCOUNT_FACTORY_STELLAR` y `VAULT_STELLAR` al `.env` local; respaldo en `~/backups/docker-pre-monad-20261013` e imágenes `:pre-monad`; imágenes `tilcai/tilcai:local` y `tilcai/tilcai-web:local` reconstruidas y los contenedores `tilcai` (testnet) y `tilcai-web` recreados. El relayer vivo ya lo había actualizado la persona con `~/relayer-monad-config.sh` (x402 `eip155:10143`).
 
 Comprobado en el contenedor: `/health` con `eip155:10143`, `vault` y `vaultStellar` en `on`; `/v1/routes` con Fuji y Monad; un pago `dev_gasless` de 0.01 USDC Monad → Stellar liquidado; los eventos `relayer.transaction_update` de `monad-testnet-relayer` llegan al tablero; el vault de Monad y el saldo MON del relayer se ven en el snapshot de recursos. `tilcai-mainnet` y `optipagos-backend-1` no se tocaron.
+
+## 2026-10-15T19:18:28Z · saulchoque · Claude Code (Sonnet 5.5)
+
+- **Sesión:** n/d
+- **Rama:** `main` (sin commit)
+- **Repositorios:** `tilcai-infrastructure`
+
+### Prompt
+
+> analiza el .env.example de tilcai_infrastructure y ordena+actualiza los valores
+
+### Salida
+
+`.env.example` reordenado en 10 secciones numeradas (núcleo, relayer, submitter Stellar, RPC, contratos testnet, monitoreo, mock QR, proveedores fiat, mainnet, pruebas). Añadidas las variables de Monad Testnet que el código ya lee (`RELAYER_MONAD_TESTNET_ID`, `RPC_MONAD_TESTNET`, router, routerV2, factory y vault) con las direcciones desplegadas el 2026-10-13; las direcciones de Fuji tomadas de `deploy/.env.example`; ids de relayer de mainnet con sus valores por defecto; `HORIZON_STELLAR_MAINNET` queda en `https://horizon.stellar.org`. Las variables `BANECO_*` y `ATC_*` se conservan pero ninguna parte de `src/` las lee todavía. `ACCOUNT_FACTORY_STELLAR` y `VAULT_STELLAR` siguen vacías porque sus IDs no están en el repositorio (el `.env` local no se leyó).
