@@ -621,3 +621,17 @@ Comprobado en el contenedor: `/health` con `eip155:10143`, `vault` y `vaultStell
 ### Salida
 
 Pasarela de QR de cobro con fallback (`src/modules/qrcollect`, `/v1/qr`, `npm run qr`), proveedores `baneco`, `atc-simple` y `atc-mld`, y el mock como único proveedor con `QR_MOCK_ENABLED=true`. Probado en los sandbox: los tres emiten QR (Bs 0.10), Baneco cancela, y el fallback pasó de Baneco a ATC Simple con Baneco inalcanzable y con credenciales malas. Hallazgo: ATC interpreta `numeroReferencia` como entero de 32 bits (12 dígitos → 500). Límites de campos de Baneco aplicados (transactionId 30, accountCredit 10, description 100). 210 pruebas pasan. `ATC.API.CUENTA.DIGITAL` no está en la documentación pública; lo más cercano es «Cuentas de Establecimientos y Consulta de Saldos» (inferencia, sin implementar). Sin probar: un pago de punta a punta (los sandbox no tienen pagador) y los webhooks (sin URL pública). Documentación en `docs/qr-providers.md`.
+
+## 2026-10-15T20:06:37Z · saulchoque · Claude Code (Sonnet 5.5)
+
+- **Sesión:** https://claude.ai/code/session_0185g9fsVV9T5JBDkvrYoGqs
+- **Rama:** `feat/qr-providers-fallback` (sin commit)
+- **Repositorios:** `tilcai-infrastructure`
+
+### Prompt
+
+> escribe un archivo postman para realizar pruebas en endpoints desde un dispositivo en red local para la API de tilcai
+
+### Salida
+
+Colección Postman v2.1 (33 peticiones en 7 carpetas) y entorno en `docs/postman/`, con README. Verificada contra una instancia local por IP LAN con clave: `/health`, `/v1/routes`, `/v1/qr/providers`, `POST /v1/qr`, `/v1/monitor/events` y la validación de cotizaciones. Hallazgo: `/v1/accounts` responde 403 a la clave de operador; pide la de un tenant con `accounts:*` (variable `tenantKey`). La API solo escucha en loopback por omisión: el README explica `API_HOST`, el puerto del Compose y el túnel SSH.

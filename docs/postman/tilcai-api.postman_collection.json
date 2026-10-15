@@ -1,0 +1,1236 @@
+{
+  "info": {
+    "name": "TilcAI API (red local)",
+    "description": "Pruebas de la API de TilcAI desde un dispositivo de la red local.\n\n1. Importa también el entorno `tilcai-local.postman_environment.json` y elígelo.\n2. Pon `baseUrl` (http://IP-DEL-SERVIDOR:8787) y `apiKey` (una clave de TILCAI_API_KEYS).\n3. Ejecuta primero «GET /health».\n\nLas carpetas 5 y 6 requieren clave de operador (la de TILCAI_API_KEYS). La carpeta 3 requiere la clave de un tenant con alcance accounts:* (`tenantKey`). Las llaves `Idempotency-Key` se generan solas con {{$guid}}.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{apiKey}}",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "if (!pm.collectionVariables.get('baseUrl') && !pm.environment.get('baseUrl')) {",
+          "  throw new Error('Define baseUrl (http://IP-DEL-SERVIDOR:8787) en el entorno o en las variables de la colección.');",
+          "}"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://192.168.1.57:8787"
+    },
+    {
+      "key": "apiKey",
+      "value": ""
+    },
+    {
+      "key": "payTo",
+      "value": ""
+    },
+    {
+      "key": "payerAddress",
+      "value": ""
+    },
+    {
+      "key": "quoteId",
+      "value": ""
+    },
+    {
+      "key": "paymentId",
+      "value": ""
+    },
+    {
+      "key": "accountId",
+      "value": ""
+    },
+    {
+      "key": "qrId",
+      "value": ""
+    },
+    {
+      "key": "disbursementId",
+      "value": ""
+    },
+    {
+      "key": "mockEmail",
+      "value": ""
+    },
+    {
+      "key": "mockPassword",
+      "value": ""
+    },
+    {
+      "key": "mockToken",
+      "value": ""
+    },
+    {
+      "key": "mockQrId",
+      "value": ""
+    },
+    {
+      "key": "simulatorKey",
+      "value": ""
+    },
+    {
+      "key": "tenantKey",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Salud y rutas",
+      "item": [
+        {
+          "name": "GET /health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Sin autenticación. Muestra entorno, red, relayer, vault, cuentas, mock y estado de la pasarela de QR.",
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP ok', () => pm.expect([200]).to.include(pm.response.code));",
+                  "pm.test('ok', () => pm.expect(pm.response.json().ok).to.eql(true));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /v1/routes",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/routes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "routes"
+              ]
+            },
+            "description": "Rutas CCTP disponibles: redes de origen, destino y modos (gasless, cuentas, vault)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Pagos crosschain (USDC → Stellar)",
+      "description": "Flujo: cotizar → crear pago → (firmar) → consultar. `external` firma el pagador y avisa el burn; `gasless` firma un mensaje y el relayer paga el gas; `dev_signer`/`dev_gasless` usan la clave de desarrollo del servidor (solo testnet).",
+      "item": [
+        {
+          "name": "Crear cotización",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/crosschain/quotes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "crosschain",
+                "quotes"
+              ]
+            },
+            "description": "`payTo`: cuenta G… de Stellar CON trustline a USDC. Redes de origen: eip155:43113 (Fuji), eip155:10143 (Monad testnet), eip155:43114 (C-Chain, mainnet).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sourceNetwork\": \"eip155:43113\",\n  \"destinationNetwork\": \"stellar:testnet\",\n  \"amount\": \"0.10\",\n  \"payTo\": \"{{payTo}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP ok', () => pm.expect([200, 201]).to.include(pm.response.code));",
+                  "const j = pm.response.json();",
+                  "const v = j.quote && j.quote.id;",
+                  "if (v !== undefined && v !== null) { pm.collectionVariables.set('quoteId', String(v)); console.log('quoteId =', v); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Consultar cotización",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/crosschain/quotes/{{quoteId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "crosschain",
+                "quotes",
+                "{{quoteId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Crear pago (dev_gasless)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Obligatorio: repetir la misma llave devuelve el mismo recurso (200 en vez de 201)."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/crosschain/payments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "crosschain",
+                "payments"
+              ]
+            },
+            "description": "Modos: external, dev_signer, gasless, dev_gasless, account. `dev_*` solo en testnet y con DEV_EVM_PAYER_PRIVATE_KEY en el servidor. La respuesta trae `unsignedCalls`/`authorization` y `next` con el siguiente paso.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quoteId\": \"{{quoteId}}\",\n  \"mode\": \"dev_gasless\",\n  \"orderId\": \"pedido-001\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP ok', () => pm.expect([200, 201]).to.include(pm.response.code));",
+                  "const j = pm.response.json();",
+                  "const v = j.payment && j.payment.id;",
+                  "if (v !== undefined && v !== null) { pm.collectionVariables.set('paymentId', String(v)); console.log('paymentId =', v); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Crear pago (gasless, firma del pagador)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Obligatorio: repetir la misma llave devuelve el mismo recurso (200 en vez de 201)."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/crosschain/payments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "crosschain",
+                "payments"
+              ]
+            },
+            "description": "Devuelve `authorization.typedData` para `eth_signTypedData_v4`; luego POST …/authorization.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quoteId\": \"{{quoteId}}\",\n  \"mode\": \"gasless\",\n  \"payer\": \"{{payerAddress}}\",\n  \"orderId\": \"pedido-002\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP ok', () => pm.expect([200, 201]).to.include(pm.response.code));",
+                  "const j = pm.response.json();",
+                  "const v = j.payment && j.payment.id;",
+                  "if (v !== undefined && v !== null) { pm.collectionVariables.set('paymentId', String(v)); console.log('paymentId =', v); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Enviar firma (gasless)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/crosschain/payments/{{paymentId}}/authorization",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "crosschain",
+                "payments",
+                "{{paymentId}}",
+                "authorization"
+              ]
+            },
+            "description": "Firma de 65 bytes del typedData. En modo `account` acepta también `{ \"webauthn\": {authenticatorData, clientDataJSON, signature} }` en base64url.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"signature\": \"0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Avisar burn (external)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/crosschain/payments/{{paymentId}}/burn",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "crosschain",
+                "payments",
+                "{{paymentId}}",
+                "burn"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"txHash\": \"0x0000000000000000000000000000000000000000000000000000000000000000\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Consultar pago",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/crosschain/payments/{{paymentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "crosschain",
+                "payments",
+                "{{paymentId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP ok', () => pm.expect([200, 201]).to.include(pm.response.code));",
+                  "pm.test('tiene estado', () => pm.expect(pm.response.json().payment.state).to.be.a('string'));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Reconciliar ahora",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/crosschain/payments/{{paymentId}}/reconcile",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "crosschain",
+                "payments",
+                "{{paymentId}}",
+                "reconcile"
+              ]
+            },
+            "description": "Ejecuta un paso de conciliación; el worker lo hace solo."
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Cuentas inteligentes",
+      "item": [
+        {
+          "name": "Crear cuenta (passkey, Fuji)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Obligatorio: repetir la misma llave devuelve el mismo recurso (200 en vez de 201)."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "accounts"
+              ]
+            },
+            "description": "La clave pública es la de la passkey del titular (65 bytes, punto sin comprimir). La dirección es final al instante; `state` pasa a ACTIVE al desplegarse.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"network\": \"eip155:43113\",\n  \"externalRef\": \"cliente-001\",\n  \"owner\": {\n    \"kind\": \"webauthn-p256\",\n    \"publicKey\": \"0x0411111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111111\",\n    \"credentialId\": \"credencial-demo\",\n    \"rpId\": \"localhost\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP ok', () => pm.expect([200, 201]).to.include(pm.response.code));",
+                  "const j = pm.response.json();",
+                  "const v = j.account && j.account.id;",
+                  "if (v !== undefined && v !== null) { pm.collectionVariables.set('accountId', String(v)); console.log('accountId =', v); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Crear cuenta (Ed25519, Stellar)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Obligatorio: repetir la misma llave devuelve el mismo recurso (200 en vez de 201)."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "accounts"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"network\": \"stellar:testnet\",\n  \"externalRef\": \"cliente-002\",\n  \"owner\": {\n    \"kind\": \"ed25519\",\n    \"publicKey\": \"0x2222222222222222222222222222222222222222222222222222222222222222\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Consultar cuenta",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/accounts/{{accountId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "accounts",
+                "{{accountId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Listar cuentas",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/accounts?limit=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "accounts"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "disabled": false
+                },
+                {
+                  "key": "network",
+                  "value": "eip155:43113",
+                  "disabled": true
+                },
+                {
+                  "key": "externalRef",
+                  "value": "cliente-001",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "auth": {
+        "type": "bearer",
+        "bearer": [
+          {
+            "key": "token",
+            "value": "{{tenantKey}}",
+            "type": "string"
+          }
+        ]
+      },
+      "description": "Requiere la clave de un TENANT con alcance accounts:read/accounts:write (variable `tenantKey`), no la clave de operador: con esta última la API responde 403 FORBIDDEN. Se crea en el servidor:\n`npm run tenant -- create --name MiComercio` y `npm run tenant -- key --tenant tenant_… --label postman --scopes payments,accounts:read,accounts:write`."
+    },
+    {
+      "name": "4. QR de cobro (pasarela con fallback)",
+      "description": "Emite un QR con el proveedor principal (Banco Económico) y cae a Red Enlace ATC si falla. Con QR_MOCK_ENABLED=true todo va al mock.",
+      "item": [
+        {
+          "name": "Emitir QR",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/qr",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "qr"
+              ]
+            },
+            "description": "`provider` (baneco | atc-simple | atc-mld | mock) fuerza uno y desactiva el fallback. `reference` hace idempotente el pedido. La respuesta trae `qr_image` (PNG base64) y `attempts`.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": \"0.10\",\n  \"description\": \"Prueba desde Postman\",\n  \"reference\": \"pedido-{{$timestamp}}\",\n  \"expires_in_seconds\": 900\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP ok', () => pm.expect([200, 201]).to.include(pm.response.code));",
+                  "const j = pm.response.json();",
+                  "const v = j.id;",
+                  "if (v !== undefined && v !== null) { pm.collectionVariables.set('qrId', String(v)); console.log('qrId =', v); }",
+                  "const img = pm.response.json().qr_image;",
+                  "if (img) { pm.visualizer.set('<img src=\"data:image/png;base64,' + img + '\" style=\"width:320px\"/><p>' + pm.response.json().provider + '</p>'); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Emitir QR forzando proveedor",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/qr",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "qr"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": \"0.10\",\n  \"description\": \"Prueba forzada\",\n  \"provider\": \"atc-simple\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Estado del QR",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/qr/{{qrId}}?image=false",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "qr",
+                "{{qrId}}"
+              ],
+              "query": [
+                {
+                  "key": "image",
+                  "value": "false",
+                  "disabled": false
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Listar QR",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/qr?limit=20",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "qr"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20",
+                  "disabled": false
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Cancelar QR (solo Baneco)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/qr/{{qrId}}/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "qr",
+                "{{qrId}}",
+                "cancel"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Proveedores y cortacircuito (operador)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/qr/providers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "qr",
+                "providers"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Simular pago (solo mock, operador)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/qr/{{qrId}}/simulate-payment",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "qr",
+                "{{qrId}}",
+                "simulate-payment"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"payer_name\": \"ANA PEREZ\",\n  \"payer_bank\": \"BNB\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Vault (operador)",
+      "description": "Desembolsos de compras cobradas fuera de la cadena (QR, transferencia). Requiere una clave de operador.",
+      "item": [
+        {
+          "name": "Estado del vault",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/vault?",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "vault"
+              ],
+              "query": [
+                {
+                  "key": "network",
+                  "value": "eip155:43113",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Sin `network`: el vault de Avalanche o el único configurado."
+          }
+        },
+        {
+          "name": "Crear desembolso",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Obligatorio: repetir la misma llave devuelve el mismo recurso (200 en vez de 201)."
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/vault/disbursements",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "vault",
+                "disbursements"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"network\": \"eip155:43113\",\n  \"to\": \"{{payerAddress}}\",\n  \"amount\": \"0.10\",\n  \"reference\": \"compra-{{$timestamp}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP ok', () => pm.expect([200, 201]).to.include(pm.response.code));",
+                  "const j = pm.response.json();",
+                  "const v = j.disbursement && j.disbursement.id;",
+                  "if (v !== undefined && v !== null) { pm.collectionVariables.set('disbursementId', String(v)); console.log('disbursementId =', v); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Consultar desembolso",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/vault/disbursements/{{disbursementId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "vault",
+                "disbursements",
+                "{{disbursementId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Reconciliar desembolso",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/vault/disbursements/{{disbursementId}}/reconcile",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "vault",
+                "disbursements",
+                "{{disbursementId}}",
+                "reconcile"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Monitor y relayer (operador)",
+      "item": [
+        {
+          "name": "Eventos (últimos)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/monitor/events?limit=50",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "monitor",
+                "events"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50",
+                  "disabled": false
+                },
+                {
+                  "key": "type",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "source",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "severity",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "after",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Recursos y alertas",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/monitor/resources",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "monitor",
+                "resources"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Estado del relayer",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/relayer/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "relayer",
+                "status"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "7. Mock de Vendis (QR_MOCK_ENABLED=true)",
+      "description": "API de Vendis «QR Dinámico para Pagos» v1.3 servida por TilcAI. Usa sus propios tokens (login), no las claves de TILCAI_API_KEYS. El simulador solo abre desde el propio equipo o con ?key=.",
+      "item": [
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/mock/vendis/api/v1/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "mock",
+                "vendis",
+                "api",
+                "v1",
+                "login"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{mockEmail}}\",\n  \"password\": \"{{mockPassword}}\",\n  \"token_name\": \"postman\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP ok', () => pm.expect([200]).to.include(pm.response.code));",
+                  "const j = pm.response.json();",
+                  "const v = j.access_token;",
+                  "if (v !== undefined && v !== null) { pm.collectionVariables.set('mockToken', String(v)); console.log('mockToken =', v); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Generar QR",
+          "request": {
+            "method": "POST",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{mockToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/mock/vendis/api/v1/devices/simple-qr/generate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "mock",
+                "vendis",
+                "api",
+                "v1",
+                "devices",
+                "simple-qr",
+                "generate"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"device_id\": 17,\n  \"amount\": \"0.10\",\n  \"modify_amount\": false,\n  \"is_multi_use\": false,\n  \"qr_expiration\": \"2030-01-01 12:00:00\",\n  \"description\": \"Prueba Postman\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "`qr_expiration` en hora de Bolivia (UTC−4), formato Y-m-d H:i:s: ajústala a una fecha futura."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP ok', () => pm.expect([200]).to.include(pm.response.code));",
+                  "const j = pm.response.json();",
+                  "const v = j.data && j.data.qr_id;",
+                  "if (v !== undefined && v !== null) { pm.collectionVariables.set('mockQrId', String(v)); console.log('mockQrId =', v); }"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Estado del QR",
+          "request": {
+            "method": "GET",
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{mockToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/mock/vendis/api/v1/devices/simple-qr/get/{{mockQrId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "mock",
+                "vendis",
+                "api",
+                "v1",
+                "devices",
+                "simple-qr",
+                "get",
+                "{{mockQrId}}"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Simulador: pendientes",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/mock/vendis/simulate/pending?key={{simulatorKey}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "mock",
+                "vendis",
+                "simulate",
+                "pending"
+              ],
+              "query": [
+                {
+                  "key": "key",
+                  "value": "{{simulatorKey}}",
+                  "disabled": false
+                }
+              ]
+            },
+            "description": "Desde otro equipo: `?key=<QR_MOCK_SIMULATOR_KEY>`.",
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        },
+        {
+          "name": "Simulador: depositar",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/mock/vendis/simulate/deposit?key={{simulatorKey}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "mock",
+                "vendis",
+                "simulate",
+                "deposit"
+              ],
+              "query": [
+                {
+                  "key": "key",
+                  "value": "{{simulatorKey}}",
+                  "disabled": false
+                }
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"qr_id\": \"{{mockQrId}}\",\n  \"payment_name\": \"ANA PEREZ\",\n  \"payment_bank\": \"BNB\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
