@@ -2,8 +2,8 @@
 
 Archivos:
 
-- `tilcai-api.postman_collection.json`: 33 peticiones en 7 carpetas (salud, pagos crosschain, cuentas,
-  QR de cobro, vault, monitor y mock de Vendis). Guardan solas los ids que devuelven (`quoteId`,
+- `tilcai-api.postman_collection.json`: 38 peticiones en 8 carpetas (salud, pagos crosschain, cuentas,
+  QR de cobro, vault, monitor, mock de Vendis y desarrollo). Guardan solas los ids que devuelven (`quoteId`,
   `paymentId`, `qrId`…) para encadenar las siguientes.
 - `tilcai-local.postman_environment.json`: `baseUrl` y las claves.
 
@@ -39,6 +39,13 @@ en `127.0.0.1`. Para probar desde el teléfono o un portátil de la misma red:
 - El **mock de Vendis**: `QR_MOCK_PUBLIC_URL=http://<IP>:8787` para que `qr_url` apunte a una
   dirección que el dispositivo alcance, y `?key=<QR_MOCK_SIMULATOR_KEY>` para abrir el simulador
   desde otro equipo.
+
+## Forzar un proveedor (solo desarrollo)
+
+`POST /v1/dev/qr/:provider` (carpeta 8) emite con exactamente `baneco`, `atc-simple`, `atc-mld` o
+`mock`, sin fallback: sirve para probar cada banco por separado. Solo con la clave de operador y
+fuera de mainnet. Lo mismo hace el campo opcional `provider` de `POST /v1/qr` (carpeta 4):
+solo fuera de mainnet (en mainnet responde 400); sin él, se usa la cadena con fallback.
 
 ## Qué esperar
 

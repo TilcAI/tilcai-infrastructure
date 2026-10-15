@@ -409,6 +409,7 @@ test("webhooks: wrong secret → 401; right secret refreshes the matching QR fro
     tenantOf: () => LEGACY_TENANT_ID,
     webhook: { header: "x-tilcai-webhook", secret: "s3cret" },
     mock: null,
+    dev: true,
     send: (reply, status, body) => reply.code(status).send(body),
   });
   const bad = await app.inject({ method: "POST", url: "/v1/qr/webhooks/atc", headers: { "x-tilcai-webhook": "nope" }, payload: { numeroReferencia: q.providerRef } });
@@ -434,4 +435,54 @@ test("webhooks: wrong secret → 401; right secret refreshes the matching QR fro
   const list = (await app.inject({ method: "GET", url: "/v1/qr/providers" })).json();
   assert.deepEqual(list.providers.map((p: any) => [p.id, p.role]), [["atc-simple", "principal"]]);
   await app.close();
+});
+
+test("forcing a provider (dev path and POST /v1/qr field): no fallback outside mainnet; refused in mainnet", async () => {
+  const mount = (dev: boolean, providers: QrProvider[]) => {
+    const g = gateway(providers);
+    const app = Fastify();
+    registerQrCollectRoutes(app, { service: g.service, tenantOf: () => LEGACY_TENANT_ID, webhook: { header: "x-tilcai-webhook", secret: "s" }, mock: null, dev, send: (reply, status, body) => reply.code(status).send(body) });
+    return { app, g };
+  };
+  const down = fake("baneco", { failIssue: "always" });
+  const up = fake("atc-simple");
+  const { app } = mount(true, [down, up]);
+  const payload = { amount: "1.00", description: "dev" };
+
+  // The principal is down and the fallback is up, but the dev endpoint does not fall back.
+  const forced = await app.inject({ method: "POST", url: "/v1/dev/qr/baneco", payload });
+  assert.equal(forced.statusCode, 502);
+  assert.equal(forced.json().error.code, "ALL_PROVIDERS_FAILED");
+  assert.deepEqual(forced.json().attempts.map((a: any) => a.provider), ["baneco"]);
+  assert.equal(up.calls.generate, 0);
+
+  const ok = await app.inject({ method: "POST", url: "/v1/dev/qr/atc-simple", payload });
+  assert.equal(ok.statusCode, 201);
+  assert.equal(ok.json().provider, "atc-simple");
+  assert.equal(ok.json().dev, true);
+  assert.equal(down.calls.generate, 1, "only the failed forced attempt");
+
+  assert.equal((await app.inject({ method: "POST", url: "/v1/dev/qr/nope", payload })).statusCode, 400);
+  assert.equal((await app.inject({ method: "POST", url: "/v1/dev/qr/atc-mld", payload })).statusCode, 503, "not in this instance's list");
+  // The same forcing as a field of POST /v1/qr: honoured outside mainnet, with no fallback.
+  const field = await app.inject({ method: "POST", url: "/v1/qr", payload: { ...payload, provider: "baneco" } });
+  assert.equal(field.statusCode, 502);
+  assert.deepEqual(field.json().attempts.map((a: any) => a.provider), ["baneco"]);
+  const fieldOk = await app.inject({ method: "POST", url: "/v1/qr", payload: { ...payload, provider: "atc-simple" } });
+  assert.equal(fieldOk.statusCode, 201);
+  assert.equal(fieldOk.json().provider, "atc-simple");
+  // The dev path owns the provider: a body that names one too is refused.
+  assert.equal((await app.inject({ method: "POST", url: "/v1/dev/qr/atc-simple", payload: { ...payload, provider: "baneco" } })).statusCode, 400);
+  await app.close();
+
+  // Mainnet: no dev path, and the field is refused instead of silently falling back.
+  const prod = mount(false, [down, up]);
+  assert.equal((await prod.app.inject({ method: "POST", url: "/v1/dev/qr/atc-simple", payload })).statusCode, 404);
+  const refused = await prod.app.inject({ method: "POST", url: "/v1/qr", payload: { ...payload, provider: "atc-simple" } });
+  assert.equal(refused.statusCode, 400);
+  assert.match(refused.json().detail, /only available outside mainnet/);
+  const normal = await prod.app.inject({ method: "POST", url: "/v1/qr", payload });
+  assert.equal(normal.statusCode, 201, "without the field the fallback chain still works");
+  assert.equal(normal.json().provider, "atc-simple");
+  await prod.app.close();
 });

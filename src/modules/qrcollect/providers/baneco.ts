@@ -117,7 +117,7 @@ export class BanecoProvider implements QrProvider {
   private async authed(method: string, path: string, json?: unknown): Promise<Record<string, unknown>> {
     for (let attempt = 0; ; attempt++) {
       const token = await this.bearer(attempt > 0);
-      const { status, body } = await callJson(this.id, this.fetchImpl, this.url(path), {
+      const { status, body, retryAfter } = await callJson(this.id, this.fetchImpl, this.url(path), {
         method,
         headers: { authorization: `Bearer ${token}`, accept: "application/json", ...(json !== undefined ? { "content-type": "application/json" } : {}) },
         ...(json !== undefined ? { body: JSON.stringify(json) } : {}),
@@ -127,6 +127,8 @@ export class BanecoProvider implements QrProvider {
         this.token = null;
         continue;
       }
+      // The provider's rate limit: say so (and for how long) instead of «without a JSON answer».
+      if (status === 429) throw new ProviderError(this.id, "http", `HTTP 429: rate limited by the provider${retryAfter ? ` (retry after ${retryAfter})` : ""}`, 429);
       if (status >= 500) throw new ProviderError(this.id, "http", `HTTP ${status}`, status);
       if (!isRecord(body)) throw new ProviderError(this.id, status >= 400 ? "http" : "invalid-response", `HTTP ${status} without a JSON answer`, status);
       // The bank reports business errors as responseCode ≠ 0 (often with HTTP 200).

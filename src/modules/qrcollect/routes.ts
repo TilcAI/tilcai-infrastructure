@@ -21,9 +21,10 @@ const CreateBody = z.strictObject({
   expires_in_seconds: z.number().int().optional(),
   single_use: z.boolean().optional(),
   modify_amount: z.boolean().optional(),
-  /** Diagnostics: skip the fallback and use exactly this provider. */
+  /** Development only: skip the fallback and use exactly this provider. Refused in mainnet. */
   provider: z.enum(["baneco", "atc-simple", "atc-mld", "mock"]).optional(),
 });
+const DEV_PROVIDERS = ["baneco", "atc-simple", "atc-mld", "mock"] as const;
 
 const SimulateBody = z.strictObject({ amount: z.union([z.string().max(20), z.number()]).optional(), payer_name: z.string().max(80).optional(), payer_bank: z.string().max(80).optional() });
 
@@ -55,12 +56,15 @@ export function collectionJson(c: Collection, o: { withImage: boolean }) {
 /**
  * QR collection gateway over HTTP.
  *
- *   POST /v1/qr                       issue a QR (principal provider, then the fallbacks)
+ *   POST /v1/qr                       issue a QR (principal provider, then the fallbacks); the optional
+ *                                     `provider` forces one without fallback, outside mainnet only
  *   GET  /v1/qr/:id                   state, refreshed from the issuing provider
  *   GET  /v1/qr                       latest QRs of the tenant
  *   POST /v1/qr/:id/cancel            cancel where the provider supports it (Baneco)
  *   GET  /v1/qr/providers             order, configuration and breaker state (operator)
  *   POST /v1/qr/:id/simulate-payment  mock mode only: pay it as a bank app would (operator)
+ *   POST /v1/dev/qr/:provider         development only (not in mainnet): issue with exactly that
+ *                                     provider, no fallback (operator)
  *   POST /v1/qr/webhooks/atc          ATC's payment confirmation (header secret)
  *   POST /v1/qr/webhooks/baneco       Banco Económico's notifyPaymentQR (?key=secret)
  *
@@ -74,6 +78,8 @@ export function registerQrCollectRoutes(
     tenantOf: (req: FastifyRequest) => TenantId;
     webhook: { header: string; secret: string };
     mock: QrSimpleMock | null;
+    /** Registers the development-only endpoint. False in mainnet. */
+    dev: boolean;
     send: (reply: FastifyReply, status: number, body: unknown) => FastifyReply;
   },
 ): void {
@@ -84,24 +90,63 @@ export function registerQrCollectRoutes(
     return send(reply, status, { error: { code: e.code, message: e.message }, ...(e.attempts.length ? { attempts: e.attempts satisfies Attempt[] } : {}) });
   };
 
+  const invalid = (reply: FastifyReply, e: z.ZodError) =>
+    send(reply, 400, { error: { code: "INVALID_INPUT", message: "Invalid request data." }, detail: e.issues.map((i) => i.path.join(".") || i.message).join("; ").slice(0, 300) });
+
   app.post("/v1/qr", async (req, reply) => {
-    const b = CreateBody.parse(req.body);
+    const parsed = CreateBody.safeParse(req.body);
+    if (!parsed.success) return invalid(reply, parsed.error);
+    const b = parsed.data;
+    // Forcing a provider bypasses the fallback: a development tool, never part of a mainnet collection.
+    if (b.provider && !o.dev) {
+      return send(reply, 400, { error: { code: "INVALID_INPUT", message: "Invalid request data." }, detail: "provider is only available outside mainnet" });
+    }
     try {
       const c = await service.create({
         tenantId: o.tenantOf(req),
         amount: b.amount,
         description: b.description,
+        ...(b.provider ? { provider: b.provider } : {}),
         ...(b.reference ? { reference: b.reference } : {}),
         ...(b.expires_in_seconds !== undefined ? { expiresInSeconds: b.expires_in_seconds } : {}),
         ...(b.single_use !== undefined ? { singleUse: b.single_use } : {}),
         ...(b.modify_amount !== undefined ? { modifyAmount: b.modify_amount } : {}),
-        ...(b.provider ? { provider: b.provider } : {}),
       });
       return send(reply, 201, collectionJson(c, { withImage: true }));
     } catch (e) {
       return fail(reply, e);
     }
   });
+
+  if (o.dev) {
+    // Development only: bypasses the fallback so each provider can be exercised on its own. The QR is a
+    // normal collection afterwards (status, cancel and the worker treat it like any other).
+    app.post<{ Params: { provider: string } }>("/v1/dev/qr/:provider", async (req, reply) => {
+      const provider = z.enum(DEV_PROVIDERS).safeParse(req.params.provider);
+      if (!provider.success) {
+        return send(reply, 400, { error: { code: "INVALID_INPUT", message: `provider must be one of ${DEV_PROVIDERS.join(", ")}` } });
+      }
+      // The provider is the path's: a body that also names one is refused rather than guessed.
+      const parsed = CreateBody.omit({ provider: true }).safeParse(req.body);
+      if (!parsed.success) return invalid(reply, parsed.error);
+      const b = parsed.data;
+      try {
+        const c = await service.create({
+          tenantId: o.tenantOf(req),
+          amount: b.amount,
+          description: b.description,
+          provider: provider.data,
+          ...(b.reference ? { reference: b.reference } : {}),
+          ...(b.expires_in_seconds !== undefined ? { expiresInSeconds: b.expires_in_seconds } : {}),
+          ...(b.single_use !== undefined ? { singleUse: b.single_use } : {}),
+          ...(b.modify_amount !== undefined ? { modifyAmount: b.modify_amount } : {}),
+        });
+        return send(reply, 201, { dev: true, ...collectionJson(c, { withImage: true }) });
+      } catch (e) {
+        return fail(reply, e);
+      }
+    });
+  }
 
   app.get("/v1/qr", async (req, reply) => {
     const limit = Number((req.query as { limit?: unknown }).limit ?? 50);

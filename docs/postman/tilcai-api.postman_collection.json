@@ -621,7 +621,7 @@
                 "qr"
               ]
             },
-            "description": "`provider` (baneco | atc-simple | atc-mld | mock) fuerza uno y desactiva el fallback. `reference` hace idempotente el pedido. La respuesta trae `qr_image` (PNG base64) y `attempts`.",
+            "description": "Principal primero y, si falla, los de respaldo en el orden de QR_PROVIDERS. `reference` hace idempotente el pedido. La respuesta trae `qr_image` (PNG base64) y `attempts`. El campo opcional `provider` solo existe fuera de mainnet (ver «Emitir QR forzando proveedor»).",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"amount\": \"0.10\",\n  \"description\": \"Prueba desde Postman\",\n  \"reference\": \"pedido-{{$timestamp}}\",\n  \"expires_in_seconds\": 900\n}",
@@ -677,8 +677,22 @@
                   "language": "json"
                 }
               }
+            },
+            "description": "`provider`: baneco | atc-simple | atc-mld | mock. Emite con exactamente ese proveedor, sin fallback (502 con `attempts` si falla). Solo fuera de mainnet: en mainnet responde 400. Con el mock activo, los reales no están en la lista (503)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const j = pm.response.json();",
+                  "if (j.id) pm.collectionVariables.set('qrId', j.id);",
+                  "pm.test('proveedor forzado', () => pm.expect(j.provider).to.eql('atc-simple'));"
+                ]
+              }
             }
-          }
+          ]
         },
         {
           "name": "Estado del QR",
@@ -1227,6 +1241,226 @@
             },
             "auth": {
               "type": "noauth"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "8. Desarrollo: forzar proveedor (solo testnet)",
+      "description": "`POST /v1/dev/qr/:provider` emite con exactamente ese proveedor y **sin fallback**: si falla, el error trae el intento (`attempts`) en vez de pasar al siguiente. Solo operador (`apiKey`) y no existe en mainnet (404). El QR resultante es un cobro normal: `GET /v1/qr/:id`, cancelar y el sondeo del worker funcionan igual. Proveedores: baneco, atc-simple, atc-mld y mock (solo con QR_MOCK_ENABLED=true; con el mock activo los reales no están en la lista y responden 503). Es equivalente a enviar `provider` en `POST /v1/qr`, pero con el proveedor en la ruta.",
+      "item": [
+        {
+          "name": "Emitir con Banco Económico",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/dev/qr/baneco",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "dev",
+                "qr",
+                "baneco"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": \"0.10\",\n  \"description\": \"Prueba baneco\",\n  \"reference\": \"dev-baneco-{{$timestamp}}\",\n  \"expires_in_seconds\": 900\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Fuerza `baneco`. Si sus credenciales o el banco fallan, responde 502 con el detalle del intento."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP ok', () => pm.expect([201]).to.include(pm.response.code));",
+                  "const j = pm.response.json();",
+                  "pm.test('emitió exactamente '+'baneco', () => pm.expect(j.provider).to.eql('baneco'));",
+                  "if (j.id) pm.collectionVariables.set('qrId', j.id);",
+                  "if (j.qr_image) pm.visualizer.set('<img src=\"data:image/png;base64,' + j.qr_image + '\" style=\"width:320px\"/><p>' + j.provider + ' · ' + j.id + '</p>');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Emitir con ATC QR Simple",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/dev/qr/atc-simple",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "dev",
+                "qr",
+                "atc-simple"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": \"0.10\",\n  \"description\": \"Prueba atc-simple\",\n  \"reference\": \"dev-atc-simple-{{$timestamp}}\",\n  \"expires_in_seconds\": 900\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Fuerza `atc-simple` (Red Enlace, QR Simple v2)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP ok', () => pm.expect([201]).to.include(pm.response.code));",
+                  "const j = pm.response.json();",
+                  "pm.test('emitió exactamente '+'atc-simple', () => pm.expect(j.provider).to.eql('atc-simple'));",
+                  "if (j.id) pm.collectionVariables.set('qrId', j.id);",
+                  "if (j.qr_image) pm.visualizer.set('<img src=\"data:image/png;base64,' + j.qr_image + '\" style=\"width:320px\"/><p>' + j.provider + ' · ' + j.id + '</p>');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Emitir con ATC QR MLD",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/dev/qr/atc-mld",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "dev",
+                "qr",
+                "atc-mld"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": \"0.10\",\n  \"description\": \"Prueba atc-mld\",\n  \"reference\": \"dev-atc-mld-{{$timestamp}}\",\n  \"expires_in_seconds\": 900\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Fuerza `atc-mld` (Red Enlace, QR MLD / BCB v2)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP ok', () => pm.expect([201]).to.include(pm.response.code));",
+                  "const j = pm.response.json();",
+                  "pm.test('emitió exactamente '+'atc-mld', () => pm.expect(j.provider).to.eql('atc-mld'));",
+                  "if (j.id) pm.collectionVariables.set('qrId', j.id);",
+                  "if (j.qr_image) pm.visualizer.set('<img src=\"data:image/png;base64,' + j.qr_image + '\" style=\"width:320px\"/><p>' + j.provider + ' · ' + j.id + '</p>');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Emitir con el mock",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/dev/qr/mock",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "dev",
+                "qr",
+                "mock"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": \"0.10\",\n  \"description\": \"Prueba mock\",\n  \"reference\": \"dev-mock-{{$timestamp}}\",\n  \"expires_in_seconds\": 900\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Solo con QR_MOCK_ENABLED=true."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('HTTP ok', () => pm.expect([201]).to.include(pm.response.code));",
+                  "const j = pm.response.json();",
+                  "pm.test('emitió exactamente '+'mock', () => pm.expect(j.provider).to.eql('mock'));",
+                  "if (j.id) pm.collectionVariables.set('qrId', j.id);",
+                  "if (j.qr_image) pm.visualizer.set('<img src=\"data:image/png;base64,' + j.qr_image + '\" style=\"width:320px\"/><p>' + j.provider + ' · ' + j.id + '</p>');"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Estado del QR emitido",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/qr/{{qrId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "qr",
+                "{{qrId}}"
+              ]
             }
           }
         }

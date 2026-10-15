@@ -133,7 +133,8 @@ webhooks se autentican con su propio secreto.
 
 | Método | Ruta | Qué hace |
 | --- | --- | --- |
-| POST | `/v1/qr` | Emite. `{amount:"12.50", description, reference?, expires_in_seconds? (60–2 592 000, 900), single_use? (true), modify_amount? (false), provider?}`. `201` con `qr_image` (PNG base64) y `attempts`. `provider` fuerza uno y desactiva el fallback (diagnóstico) |
+| POST | `/v1/qr` | Emite. `{amount:"12.50", description, reference?, expires_in_seconds? (60–2 592 000, 900), single_use? (true), modify_amount? (false), provider?}`. `201` con `qr_image` (PNG base64) y `attempts`. `provider` (`baneco`, `atc-simple`, `atc-mld`, `mock`) fuerza uno **sin fallback**: solo fuera de mainnet; en mainnet responde `400` «provider is only available outside mainnet» |
+| POST | `/v1/dev/qr/:provider` | **Solo desarrollo** (no existe en mainnet), operador. Mismo cuerpo que `/v1/qr` pero con el proveedor en la ruta (un `provider` en el cuerpo da 400); emite con exactamente `baneco`, `atc-simple`, `atc-mld` o `mock`, **sin fallback**: `502` con `attempts` si falla, `503` si el proveedor no está en la lista de la instancia. La respuesta añade `dev: true` |
 | GET | `/v1/qr/:id` | Estado, refrescado del proveedor que lo emitió. `?image=true` incluye la imagen |
 | GET | `/v1/qr` | Últimos QR del tenant |
 | POST | `/v1/qr/:id/cancel` | Cancela donde el proveedor lo permite (Baneco) |
@@ -170,6 +171,7 @@ export QR_MOCK_ENABLED=false DATABASE_PATH=/tmp/qr.db
 npm run qr -- providers                       # orden, rol y configuración
 npm run qr -- probe --amount 0.10 --out /tmp/qr   # un QR por proveedor, cada uno forzado
 npm run qr -- generate --amount 0.10          # principal primero, luego los respaldos
+npm run qr -- generate --provider atc-mld     # forzar uno (CLI)
 npm run qr -- status <id>
 npm run qr -- cancel <id>
 ```
@@ -190,7 +192,7 @@ npm run qr -- cancel <id>
 
 ### Pruebas automáticas
 
-`npm test -- test/unit/qrcollect.test.ts` (17 casos, `fetch` simulado, sin red): vector AES del
+`npm test -- test/unit/qrcollect.test.ts` (18 casos, `fetch` simulado, sin red): vector AES del
 banco, cuerpo y cabeceras de cada API, renovación de token, límites de campos, mapeo de estados,
 cadena de fallback de tres proveedores, omitidos, cortacircuito, idempotencia, interrupción del
 proveedor, caducidad, cancelación, modo mock y webhooks.

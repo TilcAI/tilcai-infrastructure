@@ -95,7 +95,7 @@ export class AtcProvider implements QrProvider {
   private async authed(method: string, path: string, json?: unknown): Promise<Record<string, unknown>> {
     for (let attempt = 0; ; attempt++) {
       const token = await this.bearer(attempt > 0);
-      const { status, body } = await callJson(this.id, this.fetchImpl, this.url(path), {
+      const { status, body, retryAfter } = await callJson(this.id, this.fetchImpl, this.url(path), {
         method,
         headers: {
           // The two pages of the portal disagree on where the token goes; both are accepted.
@@ -112,6 +112,8 @@ export class AtcProvider implements QrProvider {
         this.session.token = null;
         continue;
       }
+      // The provider's rate limit: say so (and for how long) instead of «without a JSON answer».
+      if (status === 429) throw new ProviderError(this.id, "http", `HTTP 429: rate limited by the provider${retryAfter ? ` (retry after ${retryAfter})` : ""}`, 429);
       if (status >= 500) throw new ProviderError(this.id, "http", `HTTP ${status}${isRecord(body) && str(body.message) ? `: ${str(body.message)}` : ""}`.slice(0, 200), status);
       if (!isRecord(body)) throw new ProviderError(this.id, status >= 400 ? "http" : "invalid-response", `HTTP ${status} without a JSON answer`, status);
       if (status >= 400 || body.success === false) {

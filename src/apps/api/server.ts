@@ -63,6 +63,7 @@ function requirementOf(method: string, path: string): { scope: TenantScope; oper
   const operator =
     ["/v1/vault", "/v1/monitor", "/v1/relayer"].some((prefix) => path === prefix || path.startsWith(`${prefix}/`)) ||
     path === "/v1/qr/providers" ||
+    path.startsWith("/v1/dev/") ||
     (path.startsWith("/v1/qr/") && path.endsWith("/simulate-payment"));
   return { scope: "payments", operator };
 }
@@ -166,7 +167,7 @@ export function buildServer(ctx: AppContext): FastifyInstance {
   }
 
   if (ctx.qrCollect) {
-    registerQrCollectRoutes(app, { service: ctx.qrCollect, tenantOf, webhook: ctx.qrWebhook, mock: ctx.qrMock, send });
+    registerQrCollectRoutes(app, { service: ctx.qrCollect, tenantOf, webhook: ctx.qrWebhook, mock: ctx.qrMock, dev: ctx.env.TILCAI_ENV !== "mainnet", send });
   }
 
   registerAccountRoutes(app, ctx, { tenantOf, idemKey, send });

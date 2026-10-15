@@ -12,7 +12,7 @@ export interface HttpOptions {
  * JSON all become a ProviderError, so the gateway can decide on the fallback in one place.
  * The URL is never included in the message: some carry ids, none carry secrets, but it is noise.
  */
-export async function callJson(provider: ProviderId, fetchImpl: typeof fetch, url: string, o: HttpOptions): Promise<{ status: number; body: unknown }> {
+export async function callJson(provider: ProviderId, fetchImpl: typeof fetch, url: string, o: HttpOptions): Promise<{ status: number; body: unknown; retryAfter: string | null }> {
   let res: Response;
   try {
     res = await fetchImpl(url, {
@@ -36,7 +36,7 @@ export async function callJson(provider: ProviderId, fetchImpl: typeof fetch, ur
       body = text;
     }
   }
-  return { status: res.status, body };
+  return { status: res.status, body, retryAfter: res.headers.get("retry-after") };
 }
 
 export const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
