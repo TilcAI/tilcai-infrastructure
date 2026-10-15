@@ -635,3 +635,45 @@ Pasarela de QR de cobro con fallback (`src/modules/qrcollect`, `/v1/qr`, `npm ru
 ### Salida
 
 Colección Postman v2.1 (33 peticiones en 7 carpetas) y entorno en `docs/postman/`, con README. Verificada contra una instancia local por IP LAN con clave: `/health`, `/v1/routes`, `/v1/qr/providers`, `POST /v1/qr`, `/v1/monitor/events` y la validación de cotizaciones. Hallazgo: `/v1/accounts` responde 403 a la clave de operador; pide la de un tenant con `accounts:*` (variable `tenantKey`). La API solo escucha en loopback por omisión: el README explica `API_HOST`, el puerto del Compose y el túnel SSH.
+
+## 2026-10-15T20:46:56Z · saulchoque · Claude Code (Sonnet 5.5)
+
+- **Sesión:** https://claude.ai/code/session_0185g9fsVV9T5JBDkvrYoGqs
+- **Rama:** `feat/qr-providers-fallback` (sin commit)
+- **Repositorios:** `tilcai-infrastructure`
+
+### Prompt
+
+> puedes realizar modificaciones para agregar un nuevo endpoint para generar qrs especificando que provider usar (solo para desarrollo), actualiza postman con esta info
+
+### Salida
+
+Nuevo `POST /v1/dev/qr/:provider` (solo operador, no se registra en mainnet): emite con exactamente baneco, atc-simple, atc-mld o mock, sin fallback; responde 502 con los intentos si falla y 503 si el proveedor no está en la lista de la instancia. `POST /v1/qr` dejó de aceptar `provider` (400). Las rutas validan su cuerpo y responden 400 por sí mismas. Colección Postman con la carpeta «8. Desarrollo» y documentación actualizadas. 211 pruebas pasan. Instancia paralela :8788 reiniciada con el código nuevo (pid 64017) y probada por IP LAN con los tres proveedores reales.
+
+## 2026-10-15T20:57:50Z · saulchoque · Claude Code (Sonnet 5.5)
+
+- **Sesión:** https://claude.ai/code/session_0185g9fsVV9T5JBDkvrYoGqs
+- **Rama:** `feat/qr-providers-fallback` (sin commit)
+- **Repositorios:** `tilcai-infrastructure`
+
+### Prompt
+
+> vuelve al schema anterior y corrige el campo provider para que solo funcione en en entorno de desarrollo y no de produccion, actualmente tengo este error: {"error":{"code":"INVALID_INPUT",...},"detail":"Unrecognized key: \"provider\""} [cuerpo: amount, description, provider: atc-simple]
+
+### Salida
+
+`POST /v1/qr` vuelve a aceptar el campo opcional `provider` (fuerza uno, sin fallback) y lo rechaza con 400 en mainnet; el endpoint `/v1/dev/qr/:provider` se conserva y rechaza un `provider` en el cuerpo. Los errores 429 de un proveedor se informan como tales. Postman y documentación actualizados; 211 pruebas pasan. Con :8788 verificado: `provider=baneco` emite. ATC respondía HTTP 429 (límite del sandbox) al cierre de la sesión: no pude emitir con ATC en esa instancia por esa causa.
+
+## 2026-10-15T22:27:21Z · saulchoque · Claude Code (Sonnet 5.5)
+
+- **Sesión:** https://claude.ai/code/session_0185g9fsVV9T5JBDkvrYoGqs
+- **Rama:** `feat/qr-providers-fallback` (sin push)
+- **Repositorios:** `tilcai-infrastructure`, `tilcai-sdk` (`feat/qr-collections`), `optipagos-backend` (`feat/tilcai-sdk`)
+
+### Prompt
+
+> verifica que el SDK de tilcai funciona con los nuevos cambios al QR, luego implementa el SDK de tilcai a optipagos (reemplaza la forma actual) (la generacion de qr debe de funcionar tanto en el numero de pruebas como en el de producción) y pon los servicios de optipagos en linea (configura las subrutas de ngrok como antes) verifica el funcionamiento de los qrs. Así mismo tengo un problema con los qrs de Baneco, al escanear desde una app bancaria obtengo error de certificado
+
+### Salida
+
+SDK: `tilcai.qr` (0.2.0, 82 pruebas). Optipagos: `TilcaiClient` y `TilcaiQrClient` sobre el SDK, QR por entorno (testnet y mainnet), 404 pruebas pasan. Desplegado: imagen `tilcai/tilcai:local` reconstruida (respaldo `:pre-qr` y `~/backups/docker-pre-qr-*`), `tilcai` (testnet, mock) y `tilcai-mainnet` (Baneco real, puerto también en 172.17.0.1) recreados, optipagos-backend reconstruido, relayer y ngrok por subrutas en línea. QR verificados por las URLs públicas y desde el contenedor de optipagos. El error de certificado de Baneco: los QR de sandbox llevan un bloque cifrado opaco (igual que el mock); la causa más probable es que las apps de producción no aceptan QR del entorno de certificación (hipótesis, sin confirmar con el banco).

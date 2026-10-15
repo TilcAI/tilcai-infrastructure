@@ -51,6 +51,22 @@ services:
       STELLAR_OPERATOR_SECRET: ""
       DEV_EVM_PAYER_PRIVATE_KEY: ""
       QR_MOCK_ENABLED: "false"
+      # QR collection gateway (Banco Económico, Red Enlace ATC). Credentials come from --env-file.
+      QR_PROVIDERS: ${QR_PROVIDERS:-baneco,atc-simple,atc-mld}
+      QR_PROVIDER_TIMEOUT_MS: ${QR_PROVIDER_TIMEOUT_MS:-15000}
+      QR_PUBLIC_URL: ${MAINNET_QR_PUBLIC_URL:-}
+      BANECO_BASE_URL: ${BANECO_BASE_URL:-https://apimktdesa.baneco.com.bo/ApiGateway/}
+      BANECO_USER: ${BANECO_USER:-}
+      BANECO_PASSWORD: ${BANECO_PASSWORD:-}
+      BANECO_ENCRIPTION_KEY: ${BANECO_ENCRIPTION_KEY:-}
+      BANECO_PAYMENT_ACCOUNT: ${BANECO_PAYMENT_ACCOUNT:-}
+      BANECO_BRANCH_CODE: ${BANECO_BRANCH_CODE:-}
+      ATC_BASE_URL: ${ATC_BASE_URL:-https://atcgwapitest.redenlace.com.bo/sandbox/}
+      ATC_CLIENT_ID: ${ATC_CLIENT_ID:-}
+      ATC_CLIENT_SECRET: ${ATC_CLIENT_SECRET:-}
+      ATC_ESTABLISHMENT_ID: ${ATC_ESTABLISHMENT_ID:-1}
+      ATC_ESTABLISHMENT_NAME: ${ATC_ESTABLISHMENT_NAME:-TilcAI}
+      ATC_WEBHOOK_SECRET: ${ATC_WEBHOOK_SECRET:-}
       # Dashboard: tilcai-web takes mainnet events only with its MONITOR_INGEST_SECRET_MAINNET.
       MONITOR_WEB_URL_MAINNET: ${MONITOR_WEB_URL_MAINNET:-}
       MONITOR_WEB_SECRET_MAINNET: ${MONITOR_WEB_SECRET_MAINNET:-}
@@ -61,7 +77,8 @@ services:
     volumes: [tilcai-mainnet-data:/data]
     # Reaches a relayer or a dashboard published on the host.
     extra_hosts: ["host.docker.internal:host-gateway"]
-    ports: ["127.0.0.1:${MAINNET_TILCAI_PORT:-18787}:8787"]
+    # Loopback, and the docker bridge so Optipagos (a container) reaches it as host.docker.internal.
+    ports: ["127.0.0.1:${MAINNET_TILCAI_PORT:-18787}:8787", "172.17.0.1:${MAINNET_TILCAI_PORT:-18787}:8787"]
     security_opt: [no-new-privileges]
     restart: unless-stopped
 
