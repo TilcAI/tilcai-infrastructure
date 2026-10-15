@@ -324,6 +324,14 @@ QR_MOCK_CALLBACK_URL=http://localhost:3200/api/v1/devices/simple-qr/callback npm
 # abrir http://127.0.0.1:8787/mock/vendis/
 ```
 
+## Cobro con QR bancario: pasarela con fallback
+
+`POST /v1/qr` emite un QR con un proveedor principal (Banco Económico, Red Enlace ATC QR Simple o
+QR MLD) y, si falla, con el siguiente de `QR_PROVIDERS`. Con `QR_MOCK_ENABLED=true` el mock
+reemplaza a todos; con `false`, los reales. Funcionamiento, restricciones de campos de cada API,
+pruebas y pendientes: [`docs/qr-providers.md`](docs/qr-providers.md). `npm run qr -- probe` emite
+un QR por proveedor.
+
 ## Monitorización
 
 TilcAI anota en su base lo que le pasa y lo que le cuentan, y lo envía a `tilcai-web`, que lo

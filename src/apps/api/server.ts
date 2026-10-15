@@ -12,6 +12,7 @@ import { registerAccountRoutes } from "./accounts-routes.ts";
 import type { VaultDisbursement } from "../../modules/vault/domain.ts";
 import type { VaultDisbursementService } from "../../modules/vault/service.ts";
 import { Throttle } from "../../modules/monitor/service.ts";
+import { QR_WEBHOOK_PREFIX, registerQrCollectRoutes } from "../../modules/qrcollect/routes.ts";
 import { QR_MOCK_PREFIX, registerQrMock } from "../../modules/qrsimple/routes.ts";
 import { systemClock } from "../../shared/clock.ts";
 import { bearerOf, isLoopback } from "./auth.ts";
@@ -59,7 +60,10 @@ interface Caller {
  */
 function requirementOf(method: string, path: string): { scope: TenantScope; operator: boolean } {
   if (path === "/v1/accounts" || path.startsWith("/v1/accounts/")) return { scope: method === "GET" || method === "HEAD" ? "accounts:read" : "accounts:write", operator: false };
-  const operator = ["/v1/vault", "/v1/monitor", "/v1/relayer"].some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
+  const operator =
+    ["/v1/vault", "/v1/monitor", "/v1/relayer"].some((prefix) => path === prefix || path.startsWith(`${prefix}/`)) ||
+    path === "/v1/qr/providers" ||
+    (path.startsWith("/v1/qr/") && path.endsWith("/simulate-payment"));
   return { scope: "payments", operator };
 }
 const VAULT_NETWORKS = ["eip155:43113", "stellar:testnet", "eip155:43114", "stellar:pubnet", "eip155:10143"] as const;
@@ -87,7 +91,7 @@ export function buildServer(ctx: AppContext): FastifyInstance {
     const path = req.url.split("?", 1)[0]!;
     // These authenticate on their own: the relayer signs its webhooks and the QR mock speaks
     // Vendis's API, with Vendis's tokens.
-    if (path === "/health" || path === RELAYER_WEBHOOK_PATH || path === QR_MOCK_PREFIX || path.startsWith(`${QR_MOCK_PREFIX}/`)) return;
+    if (path === "/health" || path === RELAYER_WEBHOOK_PATH || path.startsWith(QR_WEBHOOK_PREFIX) || path === QR_MOCK_PREFIX || path.startsWith(`${QR_MOCK_PREFIX}/`)) return;
     const presented = bearerOf(req.headers.authorization);
     const known = presented ? await ctx.tenants.authenticate(presented) : undefined;
     let caller: Caller | undefined = known ? { tenantId: known.tenant.id, scopes: known.scopes } : undefined;
@@ -151,6 +155,7 @@ export function buildServer(ctx: AppContext): FastifyInstance {
       vaultStellar: ctx.vaults[ctx.nets.stellar.id] ? "on" : "off",
       accounts: ctx.accountService ? "on" : "off",
       qrMock: ctx.qrMock ? "on" : "off",
+      qr: ctx.qrCollect ? { mode: ctx.qrCollect.mode, providers: ctx.qrCollect.providers().map((p) => p.id) } : "off",
       monitor: ctx.forwarder ? "push" : "local",
     });
   });
@@ -158,6 +163,10 @@ export function buildServer(ctx: AppContext): FastifyInstance {
   registerMonitorRoutes(app, ctx);
   if (ctx.qrMock) {
     registerQrMock(app, { mock: ctx.qrMock, apiKeys: keys, simulatorKey: ctx.env.QR_MOCK_SIMULATOR_KEY, callbackUrl: ctx.env.QR_MOCK_CALLBACK_URL });
+  }
+
+  if (ctx.qrCollect) {
+    registerQrCollectRoutes(app, { service: ctx.qrCollect, tenantOf, webhook: ctx.qrWebhook, mock: ctx.qrMock, send });
   }
 
   registerAccountRoutes(app, ctx, { tenantOf, idemKey, send });

@@ -37,6 +37,10 @@ export const MONITOR_EVENT_TYPES = [
   "qr.expired", // mock: a QR ran out of time without being paid
   "qr.callback_delivered", // mock: the caller acknowledged the payment notification
   "qr.callback_failed", // mock: the notification could not be delivered (retried up to 3 times)
+  "qr.collection_created", // gateway: a QR was issued (severity warning when a fallback provider did it)
+  "qr.collection_paid", // gateway: the issuing provider confirmed the payment
+  "qr.collection_closed", // gateway: a QR ended unpaid (cancelled, expired or in error)
+  "qr.provider_failed", // gateway: no provider could issue a QR
 ] as const;
 export type MonitorEventType = (typeof MONITOR_EVENT_TYPES)[number];
 

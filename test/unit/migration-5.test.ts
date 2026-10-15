@@ -16,7 +16,9 @@ const run = promisify(execFile);
 /** The migration under test: third parties, quotas, accounts and delegations (SCA phase M1). */
 const SCA_MIGRATION = 5;
 const BEFORE = Array.from({ length: SCA_MIGRATION - 1 }, (_, i) => i + 1);
-const AFTER = [...BEFORE, SCA_MIGRATION];
+/** Migrations added after the SCA one (6: QR collections). They only add tables; every assertion here is about 5. */
+const LATER = [6];
+const AFTER = [...BEFORE, SCA_MIGRATION, ...LATER];
 
 /**
  * A database exactly as the release before the SCA phase left it: the phase-1 tables with their payments

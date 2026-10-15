@@ -21,6 +21,12 @@ import type { Correlate } from "./modules/monitor/relayer-webhook.ts";
 import { SqliteMonitorRepository } from "./modules/monitor/repository.ts";
 import { ResourceMonitor } from "./modules/monitor/resources.ts";
 import { MonitorService } from "./modules/monitor/service.ts";
+import { SqliteCollectionRepository } from "./modules/qrcollect/repository.ts";
+import { QrCollectionService } from "./modules/qrcollect/service.ts";
+import type { QrProvider } from "./modules/qrcollect/domain.ts";
+import { AtcProvider, deriveWebhookSecret } from "./modules/qrcollect/providers/atc.ts";
+import { BanecoProvider } from "./modules/qrcollect/providers/baneco.ts";
+import { MockProvider } from "./modules/qrcollect/providers/mock.ts";
 import { SqliteQrMockRepository } from "./modules/qrsimple/repository.ts";
 import { QrSimpleMock } from "./modules/qrsimple/service.ts";
 import { RelayerClient } from "./modules/relayer/client.ts";
@@ -62,6 +68,10 @@ export interface AppContext {
   correlate: Correlate;
   /** QR Simple mock (Vendis API). Null unless QR_MOCK_ENABLED. */
   qrMock: QrSimpleMock | null;
+  /** QR collection gateway: the mock when QR_MOCK_ENABLED, else the real providers with fallback. Null with none. */
+  qrCollect: QrCollectionService | null;
+  /** The secret ATC echoes in its webhook header (and the header's name). */
+  qrWebhook: { header: string; secret: string };
   /** Fase SCA M1. Authentication and the HTTP API consume these (M1, Omar); the CLI uses `TenantAdmin`. */
   tenants: TenantRegistry & TenantAdmin;
   accounts: SmartAccountRepository;
@@ -245,8 +255,54 @@ export function createAppContext(name: string, env: Env = loadEnv()): AppContext
       })
     : null;
   if (qrMock && !env.QR_MOCK_CALLBACK_URL) log.warn("QR mock without QR_MOCK_CALLBACK_URL: payments are only visible by polling the QR status");
+
+  const timeoutMs = env.QR_PROVIDER_TIMEOUT_MS;
+  const webhookUrl = env.ATC_WEBHOOK_URL || (env.QR_PUBLIC_URL ? `${env.QR_PUBLIC_URL.replace(/\/+$/, "")}/v1/qr/webhooks/atc` : "");
+  const qrWebhook = { header: "x-tilcai-webhook", secret: env.ATC_WEBHOOK_SECRET || deriveWebhookSecret(env.ATC_CLIENT_SECRET || "tilcai") };
+  const atc = {
+    baseUrl: env.ATC_BASE_URL,
+    clientId: env.ATC_CLIENT_ID,
+    clientSecret: env.ATC_CLIENT_SECRET,
+    establishmentId: env.ATC_ESTABLISHMENT_ID,
+    establishmentName: env.ATC_ESTABLISHMENT_NAME,
+    // ATC requires a webhook on every QR; without a public URL the confirmation comes only by polling.
+    webhookUrl: webhookUrl || "https://tilcai.invalid/v1/qr/webhooks/atc",
+    webhookHeader: qrWebhook.header,
+    webhookSecret: qrWebhook.secret,
+    timeoutMs,
+  };
+  const realProviders: Record<string, QrProvider> = {
+    baneco: new BanecoProvider({
+      baseUrl: env.BANECO_BASE_URL,
+      user: env.BANECO_USER,
+      password: env.BANECO_PASSWORD,
+      encryptionKey: env.BANECO_ENCRIPTION_KEY,
+      paymentAccount: env.BANECO_PAYMENT_ACCOUNT,
+      branchCode: env.BANECO_BRANCH_CODE,
+      timeoutMs,
+    }),
+    "atc-simple": new AtcProvider("simple", atc),
+    "atc-mld": new AtcProvider("mld", atc),
+  };
+  // The mock replaces the real providers; without it, QR_PROVIDERS gives the order (principal first).
+  const qrProviders: QrProvider[] = qrMock
+    ? [new MockProvider(qrMock, { email: env.QR_MOCK_EMAIL, password: env.QR_MOCK_PASSWORD })]
+    : env.QR_PROVIDERS.map((id) => realProviders[id]!);
+  const qrCollect =
+    qrProviders.some((p) => p.configured())
+      ? new QrCollectionService({
+          repo: new SqliteCollectionRepository(db),
+          providers: qrProviders,
+          mode: qrMock ? "mock" : "live",
+          clock: systemClock,
+          log,
+          events: monitor,
+          options: { breakerThreshold: env.QR_PROVIDER_BREAKER_THRESHOLD, breakerCooldownMs: env.QR_PROVIDER_COOLDOWN_SECONDS * 1000 },
+        })
+      : null;
+  if (!qrMock && qrCollect && !webhookUrl) log.warn("QR_PUBLIC_URL / ATC_WEBHOOK_URL not set: ATC payments are only seen by polling verify");
   return {
-    env, runtime, nets, db, log, relayer, crosschain, vault, vaults, role, monitor, resources, forwarder, correlate: sqliteCorrelate(db), qrMock, tenants,
+    env, runtime, nets, db, log, relayer, crosschain, vault, vaults, role, monitor, resources, forwarder, correlate: sqliteCorrelate(db), qrMock, qrCollect, qrWebhook, tenants,
     accounts,
     accountService,
     delegations: new SqliteDelegationRepository(db),

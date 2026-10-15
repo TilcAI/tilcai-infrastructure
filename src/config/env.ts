@@ -146,6 +146,45 @@ const schema = z.object({
   /** File with that content. Empty = qr-mock-payload.txt next to DATABASE_PATH, used only if it exists. */
   QR_MOCK_PAYLOAD_FILE: z.string().default(""),
 
+  // ── QR collection gateway (Banco Económico, Red Enlace ATC) ─────────────────
+  /**
+   * Providers in order: the first is the principal, the others are fallbacks tried when it fails.
+   * Ids: baneco, atc-simple, atc-mld. One without credentials is skipped. Ignored while
+   * QR_MOCK_ENABLED is true: the mock then replaces them all.
+   */
+  QR_PROVIDERS: z
+    .string()
+    .default("baneco,atc-simple,atc-mld")
+    .transform((s) => s.split(",").map((x) => x.trim()).filter(Boolean))
+    .pipe(z.array(z.enum(["baneco", "atc-simple", "atc-mld"])).refine((a) => new Set(a).size === a.length, "duplicate provider")),
+  QR_PROVIDER_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60_000).default(15_000),
+  /** Consecutive failures before a provider is skipped for QR_PROVIDER_COOLDOWN_SECONDS. */
+  QR_PROVIDER_BREAKER_THRESHOLD: z.coerce.number().int().min(1).max(20).default(3),
+  QR_PROVIDER_COOLDOWN_SECONDS: z.coerce.number().int().min(5).max(3600).default(60),
+  /** Base of the webhooks providers call, as they reach this API (e.g. https://pay.example.com). */
+  QR_PUBLIC_URL: optionalUrl,
+
+  /** Banco Económico, API Market v1.3.0. Certification: https://apimktdesa.baneco.com.bo/ApiGateway/ */
+  BANECO_BASE_URL: z.string().url().default("https://apimktdesa.baneco.com.bo/ApiGateway/"),
+  BANECO_USER: z.string().default(""),
+  BANECO_PASSWORD: z.string().default(""),
+  /** The AES-256 key the bank issued for the environment. */
+  BANECO_ENCRIPTION_KEY: z.string().default(""),
+  /** Account the QR payments are credited to (at most 10 characters). */
+  BANECO_PAYMENT_ACCOUNT: z.string().default(""),
+  BANECO_BRANCH_CODE: z.string().max(5).default(""),
+
+  /** Red Enlace ATC. Sandbox: https://atcgwapitest.redenlace.com.bo/sandbox/ · production: https://api.redenlace.com.bo/ */
+  ATC_BASE_URL: z.string().url().default("https://atcgwapitest.redenlace.com.bo/sandbox/"),
+  ATC_CLIENT_ID: z.string().default(""),
+  ATC_CLIENT_SECRET: z.string().default(""),
+  ATC_ESTABLISHMENT_ID: z.coerce.number().int().min(0).default(1),
+  ATC_ESTABLISHMENT_NAME: z.string().default("TilcAI"),
+  /** Full URL ATC posts the confirmation to. Empty = QR_PUBLIC_URL/v1/qr/webhooks/atc. */
+  ATC_WEBHOOK_URL: optionalUrl,
+  /** Header value ATC echoes back. Empty = derived from ATC_CLIENT_SECRET. */
+  ATC_WEBHOOK_SECRET: z.string().default(""),
+
   WORKER_POLL_MS: z.coerce.number().int().min(500).default(4000),
   QUOTE_TTL_SECONDS: z.coerce.number().int().min(30).max(3600).default(900),
   /** Avalanche finalizes in ~1 block; Iris still decides when to attest. */

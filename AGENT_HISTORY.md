@@ -607,3 +607,17 @@ Comprobado en el contenedor: `/health` con `eip155:10143`, `vault` y `vaultStell
 ### Salida
 
 `.env.example` reordenado en 10 secciones numeradas (núcleo, relayer, submitter Stellar, RPC, contratos testnet, monitoreo, mock QR, proveedores fiat, mainnet, pruebas). Añadidas las variables de Monad Testnet que el código ya lee (`RELAYER_MONAD_TESTNET_ID`, `RPC_MONAD_TESTNET`, router, routerV2, factory y vault) con las direcciones desplegadas el 2026-10-13; las direcciones de Fuji tomadas de `deploy/.env.example`; ids de relayer de mainnet con sus valores por defecto; `HORIZON_STELLAR_MAINNET` queda en `https://horizon.stellar.org`. Las variables `BANECO_*` y `ATC_*` se conservan pero ninguna parte de `src/` las lee todavía. `ACCOUNT_FACTORY_STELLAR` y `VAULT_STELLAR` siguen vacías porque sus IDs no están en el repositorio (el `.env` local no se leyó).
+
+## 2026-10-15T20:00:21Z · saulchoque · Claude Code (Sonnet 5.5)
+
+- **Sesión:** https://claude.ai/code/session_0185g9fsVV9T5JBDkvrYoGqs
+- **Rama:** `feat/qr-providers-fallback` (sin push)
+- **Repositorios:** `tilcai-infrastructure`, `tilcai-web` (`feat/qr-gateway-events`)
+
+### Prompt
+
+> acabo de cargar .env con tokens de prueba para acceder a la api sandbox qrs de pago de prueba para el banco economico y red enlace, estas manejan distintos tipo de autorizacion asi que analiza la documentacion respectiva para realizar la implementacion. [...] existira un proveedor principal (baneco, atc, etc) para generar y verificar los cobros; existiran varios proveedores de tipo fallback en caso de que el principal falle, y continuaran al siguiente de la lista (por ahora red enlace atc (ATC.API.QR.SIMPLE.V2 y ATC.API.QR.MLD.V2) y baneco). Modifica el uso del qr mock para ser activado y reemplazar a la api real o ser desactivado y dar paso a la api real. Realiza pruebas de generacion de qrs de las tres formas, documenta el funcionamiento de los servicios de cada api y el funcionamiento del sistema de fallbacks. [Adjuntos: PDF «Api Market Baneco v1.3.0»; enlaces al portal de ATC; ATC.API.CUENTA.DIGITAL habilitada, sin documentación.] Después: «trabaja en otra rama» y «restricciones en caracteres para baneco» [captura de la tabla de campos de generateQR].
+
+### Salida
+
+Pasarela de QR de cobro con fallback (`src/modules/qrcollect`, `/v1/qr`, `npm run qr`), proveedores `baneco`, `atc-simple` y `atc-mld`, y el mock como único proveedor con `QR_MOCK_ENABLED=true`. Probado en los sandbox: los tres emiten QR (Bs 0.10), Baneco cancela, y el fallback pasó de Baneco a ATC Simple con Baneco inalcanzable y con credenciales malas. Hallazgo: ATC interpreta `numeroReferencia` como entero de 32 bits (12 dígitos → 500). Límites de campos de Baneco aplicados (transactionId 30, accountCredit 10, description 100). 210 pruebas pasan. `ATC.API.CUENTA.DIGITAL` no está en la documentación pública; lo más cercano es «Cuentas de Establecimientos y Consulta de Saldos» (inferencia, sin implementar). Sin probar: un pago de punta a punta (los sandbox no tienen pagador) y los webhooks (sin URL pública). Documentación en `docs/qr-providers.md`.

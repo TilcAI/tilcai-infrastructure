@@ -18,6 +18,7 @@
     "mainnet:stellar": "bash contracts/soroban/deploy-mainnet.sh",
     "sca": "tsx src/apps/cli/sca.ts",
     "vault": "tsx src/apps/cli/vault.ts",
+    "qr": "tsx src/apps/cli/qr.ts",
     "stellar": "tsx src/apps/cli/stellar.ts",
     "tenant": "tsx src/apps/cli/tenant.ts",
     "test": "tsx --test \"test/unit/**/*.test.ts\"",
