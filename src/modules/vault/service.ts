@@ -91,6 +91,7 @@ export class VaultDisbursementService {
 
     // Refuse what the vault could not pay right now, so the caller gets a clear answer
     // instead of a payout that keeps reverting.
+    const observedAt = this.d.clock.now().getTime();
     const [status, head] = await Promise.all([this.status(), this.d.vault.blockNumber()]).catch((e: unknown) => {
       throw new DomainError("SERVICE_UNAVAILABLE", `vault or relayer unreachable: ${errText(e)}`);
     });
@@ -150,7 +151,14 @@ export class VaultDisbursementService {
       version: 0,
     };
     try {
-      this.d.repo.insert(disbursement, { disbursementId: disbursement.id, from: null, to: "REQUESTED", note: "created", at: now });
+      this.d.repo.insert(disbursement, { disbursementId: disbursement.id, from: null, to: "REQUESTED", note: "created", at: now }, (pending) => {
+        const admittedAt = this.d.clock.now().getTime();
+        if (admittedAt - observedAt > 30_000 || Math.floor(admittedAt / 86_400_000) !== Math.floor(observedAt / 86_400_000)) {
+          throw new DomainError("SERVICE_UNAVAILABLE", "vault snapshot expired; retry with fresh capacity");
+        }
+        if (amount + pending > status.availableTodayAtomic) refuse("PAYMENT_LIMIT", "concurrent reservations exhausted daily capacity");
+        if (amount + pending > status.balanceAtomic) refuse("BUDGET", "concurrent reservations exhausted balance");
+      });
     } catch (e) {
       if (String(e).includes("UNIQUE")) {
         if (this.d.repo.getByIdempotencyKey(input.idempotencyKey)) return this.create(input); // lost a race on the same key → replay path
@@ -257,8 +265,14 @@ export class VaultDisbursementService {
 
   /** The vault says the id is paid: take the transaction from its event. */
   private async confirmFromChain(d: VaultDisbursement, note: string): Promise<VaultDisbursement> {
-    const found = await this.d.vault.findDisbursed(disbursementIdBytes32(d.id), d.fromBlock);
-    if (found && (!sameHex(found.to, d.to) || found.amount !== d.amountAtomic)) {
+    let found;
+    try {
+      found = await this.d.vault.findDisbursed(disbursementIdBytes32(d.id), d.fromBlock);
+    } catch {
+      return this.reschedule(d, { error: "DISBURSED_EVIDENCE_UNAVAILABLE", uncertain: true, backoff: true });
+    }
+    if (!found) return this.reschedule(d, { error: "DISBURSED_EVIDENCE_MISSING", uncertain: true, backoff: true });
+    if (!sameHex(found.to, d.to) || found.amount !== d.amountAtomic) {
       return this.reschedule(d, { error: "DISBURSED_EVENT_MISMATCH", uncertain: true, backoff: true });
     }
     return this.move(d, "CONFIRMED", note, {
