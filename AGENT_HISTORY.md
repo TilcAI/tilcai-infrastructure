@@ -612,6 +612,7 @@ Comprobado en el contenedor: `/health` con `eip155:10143`, `vault` y `vaultStell
 
 - **Sesión:** n/d
 - **Rama:** feat/third-party-credentials
+- **Rama:** fix/saulchoque-vault-soroban-2026-11-01
 - **Repositorios:** TilcAI/documentation, tilcai-infrastructure, tilcai-sdk, tilcai-mcp, tilcai-core, tilcai-web, tilcai-cctp-engine, .github
 
 ### Prompt
@@ -636,6 +637,7 @@ Documentación: [resultados y ramas](/home/saul-bms/proyectos/tilcai/documentati
 
 - **Sesión:** n/d
 - **Rama:** feat/third-party-credentials
+- **Rama:** fix/saulchoque-vault-soroban-2026-11-01
 - **Repositorios:** TilcAI/documentation, tilcai-infrastructure, tilcai-sdk, tilcai-mcp, tilcai-core, tilcai-web, tilcai-cctp-engine, .github
 
 ### Prompt
@@ -660,6 +662,7 @@ Documentación: [resultados y ramas](/home/saul-bms/proyectos/tilcai/documentati
 
 - **Sesión:** n/d
 - **Rama:** feat/third-party-credentials
+- **Rama:** fix/saulchoque-vault-soroban-2026-11-01
 - **Repositorios:** TilcAI/documentation, tilcai-infrastructure, tilcai-sdk, tilcai-mcp, tilcai-core, tilcai-web, tilcai-cctp-engine, .github
 
 ### Prompt
@@ -684,6 +687,7 @@ Documentación: [resultados y ramas](/home/saul-bms/proyectos/tilcai/documentati
 
 - **Sesión:** n/d
 - **Rama:** feat/third-party-credentials
+- **Rama:** fix/saulchoque-vault-soroban-2026-11-01
 - **Repositorios:** TilcAI/documentation, tilcai-infrastructure, tilcai-sdk, tilcai-mcp, tilcai-core, tilcai-web, tilcai-cctp-engine, .github
 
 ### Prompt
