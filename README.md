@@ -14,6 +14,34 @@ Plan y arquitectura completos: [`documentation/TILCAI_PLAN_ARQUITECTURA_BACKEND_
 > instancia en solo lectura. Estado, operación y pendientes en
 > [`deploy/MAINNET_DEPLOYMENT.md`](deploy/MAINNET_DEPLOYMENT.md).
 
+## Check-in · 1 de noviembre de 2026
+
+Contexto para el equipo de lo que se hizo hoy sobre los issues asignados a OmarQV (con Claude Code). Detalle en cada PR y en `AGENT_HISTORY.md`.
+
+**Entorno**
+- [x] Node.js local en **24.22.1**, la misma versión mayor que la imagen (`deploy/Dockerfile`, `NODE_VERSION=24`). Con Node 22.16 fallaban 17 tests de `node:sqlite` (`column index out of range`). Con Node 24 `main` pasa 193/193, y cada PR, su suite completa.
+
+**PRs abiertos** (todos con `npm test` y `npm run typecheck` en verde con Node 24)
+
+| PR | Issue | Qué cambia | Tests | Ojo |
+| --- | --- | --- | --- | --- |
+| [#43](https://github.com/TilcAI/tilcai-infrastructure/pull/43) | N-04 [#30](https://github.com/TilcAI/tilcai-infrastructure/issues/30) | Si `TILCAI_API_KEYS` no se sincroniza, el proceso no arranca; antes seguía y la clave retirada quedaba activa. Sin claves en los logs. | 195/195 | — |
+| [#44](https://github.com/TilcAI/tilcai-infrastructure/pull/44) | N-12 [#38](https://github.com/TilcAI/tilcai-infrastructure/issues/38) | `/health` como liveness; `/ready` como readiness por modo (relayer autenticado, red y tipo, sin pausa, firmante, submitter, worker); `?mode=transactional` antes de activar mainnet. | 208/208 | Apilado sobre #43: primero el merge de #43, después cambiar la base a `main`. |
+| [#45](https://github.com/TilcAI/tilcai-infrastructure/pull/45) | N-11 [#37](https://github.com/TilcAI/tilcai-infrastructure/issues/37) | Retención del monitor: lo pendiente se conserva hasta `MONITOR_PENDING_MAX_DAYS` (90) con alerta; pasado eso, `monitor.gap` y la alerta `MONITOR_SINK_GAP`. Nunca una pérdida silenciosa. | 201/201 | Migración **7** (la 6 es de `feat/qr-providers-fallback`). En `migration-5.test.ts` quedarse con la versión que lee `MIGRATIONS`. |
+| [#46](https://github.com/TilcAI/tilcai-infrastructure/pull/46) | N-07 [#33](https://github.com/TilcAI/tilcai-infrastructure/issues/33) | Análisis de escritor único en Cloud Run (`deploy/CLOUD_RUN_SINGLE_WRITER.md`), protocolo E0–E5 y herramienta `deploy/staging/n07-writer.mjs`. | 193/193 | **No cierra #33:** falta un staging autorizado. |
+
+**Ya en vigor, aunque falten los merges**
+- [x] No etiquetar revisiones de `tilcai` en Cloud Run: una revisión etiquetada queda encendida como segundo escritor. Está en `deploy/README.md`.
+- [x] Publicar en Cloud Run sin pagos ni desembolsos en curso.
+
+**Fuera de este repo**
+- [x] tilcai-web (`feat/monitor-gap-til07`, 20 commits): el tablero entiende `monitor.gap` y la retención; TIL-07 deja solo Fuji como verificada; el portal documenta `/ready`, la retención, las claves y Cloud Run.
+
+**Pendiente**
+- [ ] Revisiones: joseemen11 y JHAMILCALI (#43, #45, #46), SaulChoque y joseemen11 (#44).
+- [ ] N-07: proyecto de staging sin fondos autorizado por operación; correr E1–E5 con el script y adjuntar la evidencia en #33; decidir la topología y el RPO (D-06).
+- [ ] Mitigación propuesta en N-07: no arrancar con la base vacía si hay réplica configurada (H5). Necesita su propio issue.
+
 ## Estado
 
 | Capacidad | Estado |
