@@ -32,7 +32,7 @@ export const LEGACY_TENANT_ID = "tenant_legacy" as TenantId;
 
 export interface TenantRegistry {
   /** Keys are stored hashed; the comparison is constant-time. */
-  authenticate(apiKey: string): Promise<{ tenant: Tenant; scopes: readonly TenantScope[] } | undefined>;
+  authenticate(apiKey: string): Promise<{ tenant: Tenant; scopes: readonly TenantScope[]; key?: TenantApiKeyInfo } | undefined>;
   get(id: TenantId): Promise<Tenant | undefined>;
   /** Atomic: counts one sponsored action against today's quota, or returns false and counts nothing. */
   consumeQuota(id: TenantId, kind: QuotaKind): Promise<boolean>;
@@ -51,6 +51,9 @@ export interface TenantApiKeyInfo {
   source: "issued" | "env";
   createdAt: string;
   revokedAt?: string;
+  environment?: "testnet" | "mainnet";
+  expiresAt?: string;
+  lastUsedAt?: string;
 }
 
 /** Operator side (CLI). Never exposed over HTTP. */
@@ -59,7 +62,8 @@ export interface TenantAdmin {
   setStatus(id: TenantId, status: Tenant["status"]): Promise<Tenant>;
   list(): Promise<Tenant[]>;
   /** The returned `key` is the only time the secret exists in clear: only its hash is kept. */
-  issueKey(id: TenantId, input: { label: string; scopes: readonly TenantScope[] }): Promise<{ info: TenantApiKeyInfo; key: string }>;
+  issueKey(id: TenantId, input: { label: string; scopes: readonly TenantScope[]; expiresAt?: string }): Promise<{ info: TenantApiKeyInfo; key: string }>;
+  rotateKey(keyId: string, overlapSeconds?: number): Promise<{ info: TenantApiKeyInfo; key: string }>;
   revokeKey(keyId: string): Promise<void>;
   listKeys(id: TenantId): Promise<TenantApiKeyInfo[]>;
   /** Makes the legacy tenant's `env` keys match TILCAI_API_KEYS exactly: adds new ones, revokes the ones removed. */

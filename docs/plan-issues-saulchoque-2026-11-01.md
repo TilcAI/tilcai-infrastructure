@@ -2,6 +2,8 @@
 
 Fecha: 2026-11-01. Estado: análisis estático y planificación; ninguna issue implementada o cerrada por este documento. Fuente: consulta GitHub `org:tilcai is:issue is:open assignee:saulchoque`, 4 resultados completos.
 
+> Actualización posterior: #28/#35/#42 tienen implementación en la rama fix/saulchoque-vault-soroban-2026-11-01; ver resultados de Vault/Soroban. #32 tiene dos experimentos SDK ejecutados y protocolo pendiente de archivo/restauración real. Las secciones del plan conservan su estado de elaboración para distinguir propuestas de evidencia posterior.
+
 ## Base y arquitectura observada
 
 - Infrastructure: rama `feat/qr-providers-fallback`, HEAD `39cc88eeaf3acad9db6a1f52821b8f4394a8095e`; base remota main `58066a73e999abd604577d0bf5b2ea3524e8ac6f`. Hay cambios locales QR/config/deploy/test/historial e imagen que se conservan. Este análisis lee el árbol de trabajo, no atribuye esos cambios a esta tarea.

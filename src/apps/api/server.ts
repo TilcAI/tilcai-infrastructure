@@ -6,7 +6,7 @@ import { atomicToDecimal } from "../../shared/amount.ts";
 import type { CrosschainPayment, RouteQuote } from "../../modules/crosschain/domain.ts";
 import { PAYMENT_MODES, paymentStateOf } from "../../modules/crosschain/domain.ts";
 import { challengeBase64Url, encodeWebAuthnSignature, fromBase64Url, PasskeyFormatError } from "../../modules/accounts/evm/passkey.ts";
-import { LEGACY_TENANT_ID, TENANT_SCOPES, type TenantId, type TenantScope } from "../../modules/tenants/ports.ts";
+import { LEGACY_TENANT_ID, TENANT_SCOPES, type TenantApiKeyInfo, type TenantId, type TenantScope } from "../../modules/tenants/ports.ts";
 import type { Hex } from "../../shared/hex.ts";
 import { registerAccountRoutes } from "./accounts-routes.ts";
 import type { VaultDisbursement } from "../../modules/vault/domain.ts";
@@ -51,13 +51,15 @@ const AccountAuthorizationBody = z.union([
 interface Caller {
   tenantId: TenantId;
   scopes: readonly TenantScope[];
+  key?: TenantApiKeyInfo;
 }
 
 /**
  * What a route asks of its caller. The vault, the event log and the relayer's status are TilcAI's
  * own: only the operator's keys (TILCAI_API_KEYS, the legacy tenant) reach them.
  */
-function requirementOf(method: string, path: string): { scope: TenantScope; operator: boolean } {
+function requirementOf(method: string, path: string): { scope: TenantScope | null; operator: boolean } {
+  if (path === "/v1/auth/context") return { scope: null, operator: false };
   if (path === "/v1/accounts" || path.startsWith("/v1/accounts/")) return { scope: method === "GET" || method === "HEAD" ? "accounts:read" : "accounts:write", operator: false };
   const operator = ["/v1/vault", "/v1/monitor", "/v1/relayer"].some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
   return { scope: "payments", operator };
@@ -90,12 +92,12 @@ export function buildServer(ctx: AppContext): FastifyInstance {
     if (path === "/health" || path === RELAYER_WEBHOOK_PATH || path === QR_MOCK_PREFIX || path.startsWith(`${QR_MOCK_PREFIX}/`)) return;
     const presented = bearerOf(req.headers.authorization);
     const known = presented ? await ctx.tenants.authenticate(presented) : undefined;
-    let caller: Caller | undefined = known ? { tenantId: known.tenant.id, scopes: known.scopes } : undefined;
+    let caller: Caller | undefined = known ? { tenantId: known.tenant.id, scopes: known.scopes, ...(known.key ? { key: known.key } : {}) } : undefined;
     // Development: without operator keys, this host is the operator.
-    if (!caller && keys.length === 0 && isLoopback(req.ip)) caller = { tenantId: LEGACY_TENANT_ID, scopes: TENANT_SCOPES };
+    if (!caller && req.headers.authorization === undefined && keys.length === 0 && isLoopback(req.ip)) caller = { tenantId: LEGACY_TENANT_ID, scopes: TENANT_SCOPES };
     if (!caller) return send(reply, 401, { error: new DomainError("UNAUTHENTICATED").contract });
     const need = requirementOf(req.method, path);
-    if ((need.operator && caller.tenantId !== LEGACY_TENANT_ID) || !caller.scopes.includes(need.scope)) {
+    if ((need.operator && caller.tenantId !== LEGACY_TENANT_ID) || (need.scope !== null && !caller.scopes.includes(need.scope))) {
       return send(reply, 403, { error: new DomainError("FORBIDDEN").contract });
     }
     callers.set(req, caller);
@@ -152,6 +154,19 @@ export function buildServer(ctx: AppContext): FastifyInstance {
       accounts: ctx.accountService ? "on" : "off",
       qrMock: ctx.qrMock ? "on" : "off",
       monitor: ctx.forwarder ? "push" : "local",
+    });
+  });
+
+  app.get("/v1/auth/context", async (req, reply) => {
+    const caller = callers.get(req)!;
+    const tenant = await ctx.tenants.get(caller.tenantId);
+    reply.header("cache-control", "no-store");
+    return send(reply, 200, {
+      tenantId: caller.tenantId,
+      tenantName: tenant?.name,
+      scopes: caller.scopes,
+      environment: ctx.env.TILCAI_ENV,
+      credential: caller.key ?? null,
     });
   });
 

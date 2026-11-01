@@ -407,3 +407,10 @@ contracts/soroban    Cargo: cuenta, factory, vault, verificadores y política de
 test/unit            174 tests sin red     test/integration   relayer y e2e reales (se omiten sin credenciales)
 deploy/              imágenes Docker de TilcAI y del relayer, compose del stack y manifiestos de Cloud Run
 ```
+
+## Seguridad y planificación · 2026-11-01
+
+- [Correcciones Vault/Soroban y tests](docs/vault-safety-results-2026-11-01.md).
+- [Investigación TTL Soroban](docs/soroban-ttl-investigation-2026-11-01.md), todavía pendiente de archivo/restauración real.
+- [Credenciales para terceros](docs/third-party-credentials.md) y [decisión API keys/OAuth](docs/third-party-auth-plan.md).
+- [Facturación SIN Bolivia](../documentation/2-ARQUITECTURA/TILCAI_FACTURACION_SIN_2026-11-01.md): propuesta, no módulo fiscal desplegado.
