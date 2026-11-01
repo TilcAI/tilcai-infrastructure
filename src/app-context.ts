@@ -95,12 +95,16 @@ export function createAppContext(name: string, env: Env = loadEnv()): AppContext
   }
   const evmSubmitter = evmSubmitters[nets.avalanche.id] ?? null;
   // The keys of TILCAI_API_KEYS belong to the legacy tenant (scope `payments`): Optipagos and optus-agentBE keep working.
-  // SQLite runs this to completion before the call returns, so the keys are in place when the context is.
+  // A failed sync rolls back as a whole, revocations included: going on would serve keys the operator removed,
+  // so no context is built and the process stops before it listens (fail closed).
   const tenants = new SqliteTenantRegistry(db, systemClock);
-  tenants
-    .syncLegacyKeys(runtime.apiKeys)
-    .then((r) => log.info("legacy tenant keys synced", r))
-    .catch((e) => log.error("could not sync TILCAI_API_KEYS with the legacy tenant", { error: e instanceof Error ? e.message : String(e) }));
+  try {
+    log.info("legacy tenant keys synced", tenants.syncLegacyKeysSync(runtime.apiKeys));
+  } catch (e) {
+    log.error("could not sync TILCAI_API_KEYS with the legacy tenant", { error: e instanceof Error ? e.message : String(e) });
+    db.close();
+    throw new Error("TILCAI_API_KEYS could not be synced with the legacy tenant; refusing to start", { cause: e });
+  }
 
   const accounts = new SqliteSmartAccountRepository(db, systemClock);
   const stellarSubmitter = runtime.relayerApiKey && runtime.transactionsEnabled ? new RelayerStellarSubmitter(relayer, runtime.stellarRelayerId, nets.stellar) : null;

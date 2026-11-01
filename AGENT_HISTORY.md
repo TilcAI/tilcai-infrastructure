@@ -607,3 +607,45 @@ Comprobado en el contenedor: `/health` con `eip155:10143`, `vault` y `vaultStell
 ### Salida
 
 `.env.example` reordenado en 10 secciones numeradas (núcleo, relayer, submitter Stellar, RPC, contratos testnet, monitoreo, mock QR, proveedores fiat, mainnet, pruebas). Añadidas las variables de Monad Testnet que el código ya lee (`RELAYER_MONAD_TESTNET_ID`, `RPC_MONAD_TESTNET`, router, routerV2, factory y vault) con las direcciones desplegadas el 2026-10-13; las direcciones de Fuji tomadas de `deploy/.env.example`; ids de relayer de mainnet con sus valores por defecto; `HORIZON_STELLAR_MAINNET` queda en `https://horizon.stellar.org`. Las variables `BANECO_*` y `ATC_*` se conservan pero ninguna parte de `src/` las lee todavía. `ACCOUNT_FACTORY_STELLAR` y `VAULT_STELLAR` siguen vacías porque sus IDs no están en el repositorio (el `.env` local no se leyó).
+
+## 2026-11-01T18:30:19Z · OmarQV · Claude Code (claude-opus-5-5)
+
+- **Sesión:** n/d
+- **Rama:** main
+- **Repositorios:** tilcai-web, tilcai-infrastructure
+
+### Prompt
+
+> Solo nos vamos a enfocar en el proyecto tilcai, revisa mis issues
+
+### Salida
+
+Revisión, sin cambios de código, de los issues asignados a OmarQV en este repo, contra main 58066a7 (la misma base que auditaron los issues). Los cuatro problemas siguen presentes: N-04 #30, app-context.ts registra el fallo de syncLegacyKeys y continúa; N-12 #38, /health devuelve siempre 200 ok:true y Cloud Run lo usa como startup y liveness; N-11 #37, repository.ts prune borra por fecha sin consultar monitor_sinks.last_seq; N-07 #33, maxScale 1 y litestream restore sin fencing, y falta staging autorizado. No hay PR para ninguno. La rama feat/qr-providers-fallback cambia app-context.ts y server.ts, los mismos archivos que N-04 y N-12. Orden sugerido: N-04, N-12, N-11, N-07.
+
+## 2026-11-01T18:31:00Z · OmarQV · Claude Code (claude-opus-5-5)
+
+- **Sesión:** n/d
+- **Rama:** fix/n04-legacy-sync-fail-closed
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> Si empieza N-04
+
+### Salida
+
+N-04 (#30) implementado como fallo de arranque explícito (fail closed), sin commit. `createAppContext` (src/app-context.ts) ya no sigue cuando falla la sincronización de `TILCAI_API_KEYS`: registra el error sin valores de clave, cierra la DB y lanza `refusing to start`, así que api, worker, all-in-one y xpay salen antes de escuchar. Para eso `SqliteTenantRegistry` tiene `syncLegacyKeysSync`, que lanza en la misma llamada; `syncLegacyKeys` (async, del puerto) la reutiliza. Tests nuevos en test/unit/app-context-tenants.test.ts con SQLite persistente: colisión con una clave emitida y error SQL inyectado con un trigger. Ambos fallaban antes del cambio y pasan después; el control con un valor nuevo arranca, acepta la nueva clave, rechaza la retirada y conserva la del tenant. Comprobado con los procesos reales: api y all-in-one salen con código 1, sin escuchar y sin la clave en la salida; con una clave válida arrancan. Typecheck correcto. Suite unitaria: 178 de 195; los 17 fallos ya estaban en main y se deben a Node v22.16.0 local (el repo pide ≥ 22.20.0). Documentado en README.md y deploy/README.md. Pendiente: commit, PR y revisión de joseemen11 y JHAMILCALI.
+
+## 2026-11-01T18:53:45Z · OmarQV · Claude Code (claude-opus-5-5)
+
+- **Sesión:** n/d
+- **Rama:** fix/n04-legacy-sync-fail-closed
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> ¿Hago el commit y abro el PR que cierra #30? SI
+
+### Salida
+
+Commit de N-04 en fix/n04-legacy-sync-fail-closed (código, tests, documentación e historial), push a origin y PR contra main que cierra #30, con revisión pedida a joseemen11 y JHAMILCALI.
