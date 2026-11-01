@@ -607,3 +607,38 @@ Comprobado en el contenedor: `/health` con `eip155:10143`, `vault` y `vaultStell
 ### Salida
 
 `.env.example` reordenado en 10 secciones numeradas (núcleo, relayer, submitter Stellar, RPC, contratos testnet, monitoreo, mock QR, proveedores fiat, mainnet, pruebas). Añadidas las variables de Monad Testnet que el código ya lee (`RELAYER_MONAD_TESTNET_ID`, `RPC_MONAD_TESTNET`, router, routerV2, factory y vault) con las direcciones desplegadas el 2026-10-13; las direcciones de Fuji tomadas de `deploy/.env.example`; ids de relayer de mainnet con sus valores por defecto; `HORIZON_STELLAR_MAINNET` queda en `https://horizon.stellar.org`. Las variables `BANECO_*` y `ATC_*` se conservan pero ninguna parte de `src/` las lee todavía. `ACCOUNT_FACTORY_STELLAR` y `VAULT_STELLAR` siguen vacías porque sus IDs no están en el repositorio (el `.env` local no se leyó).
+
+## 2026-11-01T20:05:00Z · OmarQV · Claude Code (claude-opus-5-5)
+
+- **Sesión:** n/d
+- **Rama:** docs/n07-single-writer (desde main)
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> vamos con el N-07
+
+### Salida
+
+Investigación de N-07 (#33), sin commit. Queda en estado NEEDS_VALIDATION: el análisis está hecho, pero el ensayo en staging no se ejecutó porque no hay un entorno autorizado. deploy/CLOUD_RUN_SINGLE_WRITER.md recoge la configuración actual, lo que dice la documentación oficial (citada) y cinco hipótesis:
+- H1: `maxScale` es por revisión y el servicio no tiene límite propio, así que en un rollout conviven dos instancias.
+- H2: la instancia vieja sigue escribiendo con su worker hasta el SIGTERM.
+- H3: dos Litestream 0.3 en la misma ruta abren generaciones distintas y el restore se queda con una sola.
+- H4: una revisión etiquetada queda encendida para siempre como segundo escritor.
+- H5: con `-if-replica-exists`, una réplica ausente arranca una base vacía que se ve sana.
+
+El documento analiza el impacto: la cadena protege el burn, el mint y el `disbursementId` repetido, pero la idempotencia de la API es local y un reintento puede pagar con otro id, acotado por los límites del vault. Incluye el protocolo E0–E5 y las mitigaciones a decidir (D-06), sin aplicar ninguna. deploy/staging/n07-writer.mjs hace escrituras sintéticas sobre el mock de QR y su verificación; se ensayó en local con una copia `VACUUM INTO` a mitad de la carga: 29 confirmadas, B conservó 14 y perdió 15. deploy/README.md ahora enlaza el análisis y prohíbe etiquetar revisiones de tilcai. No se ejecutó nada en GCP ni hubo pagos. Pendiente: staging autorizado, ensayos E1–E5, decisión D-06 y revisión de JHAMILCALI y joseemen11.
+
+## 2026-11-01T20:30:20Z · OmarQV · Claude Code (claude-opus-5-5)
+
+- **Sesión:** n/d
+- **Rama:** docs/n07-single-writer
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> Si, hazlo
+
+### Salida
+
+Commit de la investigación N-07 en docs/n07-single-writer, push a origin, PR contra main que referencia #33 sin cerrarlo, con revisión de JHAMILCALI y joseemen11, y comentario en #33 con el resumen y el pedido de un staging autorizado.
