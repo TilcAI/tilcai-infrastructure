@@ -37,6 +37,7 @@ export const MONITOR_EVENT_TYPES = [
   "qr.expired", // mock: a QR ran out of time without being paid
   "qr.callback_delivered", // mock: the caller acknowledged the payment notification
   "qr.callback_failed", // mock: the notification could not be delivered (retried up to 3 times)
+  "monitor.gap", // events a receiver never got were pruned (MONITOR_PENDING_MAX_DAYS): the loss, made explicit
 ] as const;
 export type MonitorEventType = (typeof MONITOR_EVENT_TYPES)[number];
 
@@ -87,4 +88,27 @@ export interface SinkState {
   nextAttemptAt: string;
   lastError: string | null;
   lastDeliveredAt: string | null;
+  /** Pending events of this receiver that were pruned and it has not been told about yet. */
+  gap: SinkGap | null;
+}
+
+/** Positions a receiver will never get. `count` is exact; the range may hold events it did get. */
+export interface SinkGap {
+  fromSeq: number;
+  toSeq: number;
+  count: number;
+  /** When the last of them was pruned. */
+  prunedAt: string;
+}
+
+/**
+ * What a prune may delete. Delivered events go after `retentionDays`. Events a configured receiver
+ * has not acknowledged are kept for up to `pendingMaxDays`; past that they go too, and the receiver
+ * gets a gap instead of a silent loss.
+ */
+export interface RetentionPolicy {
+  retentionDays: number;
+  pendingMaxDays: number;
+  /** The receivers configured now. A sink left in the table but no longer configured protects nothing. */
+  sinks: readonly string[];
 }

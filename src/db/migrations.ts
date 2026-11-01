@@ -357,4 +357,13 @@ WHEN NEW.tenant_id IS NOT OLD.tenant_id
 BEGIN SELECT RAISE(ABORT, 'tenant_id is immutable'); END;
 `,
   },
+  {
+    // 7, not 6: feat/qr-providers-fallback takes 6 for qr_collections. The runner applies whatever id is
+    // missing, so either branch can reach main first.
+    // The pending events a receiver lost to MONITOR_PENDING_MAX_DAYS, until it is told (JSON SinkGap).
+    id: 7,
+    sql: `
+ALTER TABLE monitor_sinks ADD COLUMN gap_json TEXT;
+`,
+  },
 ];

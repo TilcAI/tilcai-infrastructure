@@ -1,4 +1,4 @@
-import type { AppContext } from "../../app-context.ts";
+import { monitorSinks, type AppContext } from "../../app-context.ts";
 import type { ResourceSnapshot } from "../../modules/monitor/resources.ts";
 
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -28,8 +28,10 @@ export function startWorker(ctx: AppContext): { stop(): Promise<void> } {
     async () => {
       if (Date.now() - lastPruneAt < 3_600_000) return;
       lastPruneAt = Date.now();
-      const removed = ctx.monitor.prune(ctx.env.MONITOR_RETENTION_DAYS);
-      if (removed > 0) ctx.log.info("old monitor events removed", { removed, olderThanDays: ctx.env.MONITOR_RETENTION_DAYS });
+      // Pending events of a configured receiver stay up to MONITOR_PENDING_MAX_DAYS; a loss past that becomes a `monitor.gap`.
+      const policy = { retentionDays: ctx.env.MONITOR_RETENTION_DAYS, pendingMaxDays: ctx.env.MONITOR_PENDING_MAX_DAYS, sinks: monitorSinks(ctx.runtime) };
+      const removed = ctx.monitor.prune(policy);
+      if (removed > 0) ctx.log.info("old monitor events removed", { removed, ...policy });
     },
   ]);
   // An event of this process goes out now, not at the next tick.

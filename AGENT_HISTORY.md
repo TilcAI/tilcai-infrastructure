@@ -607,3 +607,31 @@ Comprobado en el contenedor: `/health` con `eip155:10143`, `vault` y `vaultStell
 ### Salida
 
 `.env.example` reordenado en 10 secciones numeradas (núcleo, relayer, submitter Stellar, RPC, contratos testnet, monitoreo, mock QR, proveedores fiat, mainnet, pruebas). Añadidas las variables de Monad Testnet que el código ya lee (`RELAYER_MONAD_TESTNET_ID`, `RPC_MONAD_TESTNET`, router, routerV2, factory y vault) con las direcciones desplegadas el 2026-10-13; las direcciones de Fuji tomadas de `deploy/.env.example`; ids de relayer de mainnet con sus valores por defecto; `HORIZON_STELLAR_MAINNET` queda en `https://horizon.stellar.org`. Las variables `BANECO_*` y `ATC_*` se conservan pero ninguna parte de `src/` las lee todavía. `ACCOUNT_FACTORY_STELLAR` y `VAULT_STELLAR` siguen vacías porque sus IDs no están en el repositorio (el `.env` local no se leyó).
+
+## 2026-11-01T19:19:00Z · OmarQV · Claude Code (claude-opus-5-5)
+
+- **Sesión:** n/d
+- **Rama:** fix/n11-monitor-prune (desde main)
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> Si, continua
+
+### Salida
+
+N-11 (#37) implementado, sin commit, con la política híbrida que aprobó OmarQV. Lo que todos los receptores configurados recibieron se borra a los `MONITOR_RETENTION_DAYS` (14). Lo pendiente se conserva hasta `MONITOR_PENDING_MAX_DAYS` (nuevo, 90, nunca menor que la retención), con la alerta `MONITOR_BACKLOG_RETAINED:<receptor>` desde el día 14. Pasado el tope se borra y la pérdida queda explícita: evento `monitor.gap` con posiciones y cantidad exacta, alerta `MONITOR_SINK_GAP:<receptor>`, y campo `gap` en el siguiente envío hasta un 2xx. Dos brechas antes de avisar se suman, y una brecha que crece durante un envío no se borra con él. Un receptor no configurado no retiene nada. La migración es la 7 (`monitor_sinks.gap_json`) porque feat/qr-providers-fallback ya usa la 6. migration-5.test.ts ahora calcula las migraciones esperadas desde `MIGRATIONS`. Antes del cambio se reprodujo la pérdida silenciosa. 8 tests nuevos (reinicio con SQLite en archivo, tope y brecha, 5xx, brechas sumadas, carrera, dos cursores, receptor retirado, alertas, validación de env). Typecheck correcto. Suite: 184 de 201; los mismos 17 fallos que la base, por Node v22.16 local. Documentado en README.md, .env.example y deploy/docker-compose.yml. Pendiente en tilcai-web: agregar `monitor.gap` a su espejo del contrato y mostrar `gap`; hoy los acepta sin rechazar la entrega.
+
+## 2026-11-01T19:47:04Z · OmarQV · Claude Code (claude-opus-5-5)
+
+- **Sesión:** n/d
+- **Rama:** fix/n11-monitor-prune
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> si
+
+### Salida
+
+Commit de N-11 en fix/n11-monitor-prune (código, migración 7, tests, documentación e historial), push a origin y PR contra main que cierra #37, con revisión pedida a joseemen11 y JHAMILCALI.

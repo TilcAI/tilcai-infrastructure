@@ -118,7 +118,13 @@ const schema = z.object({
   MONITOR_WEB_SECRET_MAINNET: z.string().default(""),
   /** How often a `resources.snapshot` event is taken. */
   MONITOR_RESOURCES_INTERVAL_MS: z.coerce.number().int().min(5000).default(30_000),
+  /** Events every configured receiver already has are kept this long. */
   MONITOR_RETENTION_DAYS: z.coerce.number().int().min(1).max(365).default(14),
+  /**
+   * Events a configured receiver has not acknowledged are kept up to this long (alert from
+   * MONITOR_RETENTION_DAYS on). Past it they are pruned and the receiver is told the gap.
+   */
+  MONITOR_PENDING_MAX_DAYS: z.coerce.number().int().min(1).max(3650).default(90),
   /**
    * The relayer's WEBHOOK_SIGNING_KEY: authenticates POST /v1/webhooks/relayer. Empty = only
    * unsigned notifications from loopback are accepted.
@@ -161,6 +167,7 @@ const checked = schema.superRefine((env, ctx) => {
   };
   need(!env.MONITOR_WEB_URL || env.MONITOR_WEB_SECRET.length >= 16, "MONITOR_WEB_SECRET", "16+ characters with MONITOR_WEB_URL");
   need(!env.MONITOR_WEB_URL_MAINNET || env.MONITOR_WEB_SECRET_MAINNET.length >= 16, "MONITOR_WEB_SECRET_MAINNET", "16+ characters with MONITOR_WEB_URL_MAINNET");
+  need(env.MONITOR_PENDING_MAX_DAYS >= env.MONITOR_RETENTION_DAYS, "MONITOR_PENDING_MAX_DAYS", "must be at least MONITOR_RETENTION_DAYS");
   need(!env.QR_MOCK_ENABLED || Boolean(env.QR_MOCK_EMAIL), "QR_MOCK_EMAIL", "required with QR_MOCK_ENABLED");
   need(!env.QR_MOCK_ENABLED || env.QR_MOCK_PASSWORD.length >= 8, "QR_MOCK_PASSWORD", "8+ characters with QR_MOCK_ENABLED");
   if (env.TILCAI_ENV === "mainnet") {

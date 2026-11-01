@@ -76,7 +76,13 @@ export interface ResourceSnapshot {
   vaultError?: string;
   /** Every configured vault, the primary first. Absent when no vault is configured. */
   vaults?: VaultEntry[];
-  monitor: { head: number; sinks: Array<SinkState & { lag: number }> };
+  monitor: {
+    head: number;
+    /** `configured`: receives events now; only its pending events are kept. `oldestPendingAt`: when the first one it lacks happened. */
+    sinks: Array<SinkState & { lag: number; configured: boolean; oldestPendingAt: string | null }>;
+    retentionDays: number;
+    pendingMaxDays: number;
+  };
   alerts: Array<Omit<MonitorAlert, "since">>;
 }
 
@@ -94,7 +100,7 @@ export interface ResourceDeps {
   primaryVaultNetwork?: string;
   /** Vaults of other networks (Stellar's). Their alerts carry the network as target: `VAULT_EMPTY:stellar:testnet`. */
   otherVaults?: Array<{ network: string; service: VaultDisbursementService; usdcDecimals: number }>;
-  monitor: { head(): number; sinks(): SinkState[] };
+  monitor: { head(): number; sinks(): SinkState[]; oldestPendingAt(afterSeq: number): string | null; configuredSinks: readonly string[]; retentionDays: number; pendingMaxDays: number };
   now(): Date;
 }
 
@@ -122,7 +128,13 @@ export class ResourceMonitor {
     const [relayer, vault, others] = await Promise.all([this.relayer(), this.vault(), this.otherVaults()]);
     const database = this.database();
     const head = this.d.monitor.head();
-    const sinks = this.d.monitor.sinks().map((s) => ({ ...s, lag: Math.max(head - s.lastSeq, 0) }));
+    const m = this.d.monitor;
+    const sinks = m.sinks().map((s) => ({
+      ...s,
+      lag: Math.max(head - s.lastSeq, 0),
+      configured: m.configuredSinks.includes(s.name),
+      oldestPendingAt: s.lastSeq < head ? m.oldestPendingAt(s.lastSeq) : null,
+    }));
     const snapshot: ResourceSnapshot = {
       takenAt: this.d.now().toISOString(),
       primaryVaultNetwork: this.d.primaryVaultNetwork ?? PRIMARY_VAULT_NETWORK,
@@ -135,7 +147,7 @@ export class ResourceMonitor {
       ...(this.d.vault || others.length > 0
         ? { vaults: [...(this.d.vault ? [{ network: this.d.primaryVaultNetwork ?? PRIMARY_VAULT_NETWORK, vault: vault.status, ...(vault.error ? { error: vault.error } : {}) }] : []), ...others] }
         : {}),
-      monitor: { head, sinks },
+      monitor: { head, sinks, retentionDays: m.retentionDays, pendingMaxDays: m.pendingMaxDays },
       alerts: [],
     };
     snapshot.alerts = alertsOf(snapshot, Boolean(this.d.vault));
@@ -287,6 +299,18 @@ export function alertsOf(s: ResourceSnapshot, vaultConfigured: boolean): Array<O
 
   for (const sink of s.monitor.sinks) {
     if (sink.attempts >= 3) add(`MONITOR_SINK_FAILING:${sink.name}`, "warning", `Los eventos no llegan a «${sink.name}» (${sink.lag} pendientes): ${sink.lastError ?? "sin detalle"}`);
+    if (!sink.configured) continue;
+    const { retentionDays, pendingMaxDays } = s.monitor;
+    if (sink.oldestPendingAt && Date.parse(s.takenAt) - Date.parse(sink.oldestPendingAt) > retentionDays * 86_400_000) {
+      add(
+        `MONITOR_BACKLOG_RETAINED:${sink.name}`,
+        "warning",
+        `«${sink.name}» tiene eventos sin recibir de hace más de ${retentionDays} días (${sink.lag} pendientes): se conservan hasta ${pendingMaxDays} días y después se pierden.`,
+      );
+    }
+    if (sink.gap) {
+      add(`MONITOR_SINK_GAP:${sink.name}`, "error", `«${sink.name}» perdió ${sink.gap.count} evento(s) (posiciones ${sink.gap.fromSeq}–${sink.gap.toSeq}) que esperaron más de ${pendingMaxDays} días; se le avisará en el próximo envío.`);
+    }
   }
   if (s.database.crosschainPayments.UNCERTAIN) add("PAYMENTS_UNCERTAIN", "warning", `${s.database.crosschainPayments.UNCERTAIN} pago(s) crosschain en estado incierto.`);
   if (s.process.eventLoopDelayMs.p99 > 500) add("EVENT_LOOP_SLOW", "warning", `El proceso responde lento (p99 del event loop: ${s.process.eventLoopDelayMs.p99} ms).`);

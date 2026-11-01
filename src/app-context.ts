@@ -16,7 +16,7 @@ import type { MintSubmitter } from "./modules/crosschain/ports.ts";
 import { SqliteCrosschainRepository } from "./modules/crosschain/repository.ts";
 import { CrosschainPaymentService, type SourceLeg } from "./modules/crosschain/service.ts";
 import { sqliteCorrelate } from "./modules/monitor/correlate.ts";
-import { WebForwarder } from "./modules/monitor/forwarder.ts";
+import { WEB_SINK, WebForwarder } from "./modules/monitor/forwarder.ts";
 import type { Correlate } from "./modules/monitor/relayer-webhook.ts";
 import { SqliteMonitorRepository } from "./modules/monitor/repository.ts";
 import { ResourceMonitor } from "./modules/monitor/resources.ts";
@@ -216,7 +216,14 @@ export function createAppContext(name: string, env: Env = loadEnv()): AppContext
       ...nets.evm.filter((n) => n.id !== nets.avalanche.id && vaults[n.id]).map((n) => ({ network: n.id, service: vaults[n.id]!, usdcDecimals: n.usdc.decimals })),
       ...(stellarVault ? [{ network: nets.stellar.id, service: stellarVault, usdcDecimals: nets.stellar.usdc.decimals }] : []),
     ],
-    monitor: { head: () => monitorRepo.head(), sinks: () => monitorRepo.sinks() },
+    monitor: {
+      head: () => monitorRepo.head(),
+      sinks: () => monitorRepo.sinks(),
+      oldestPendingAt: (afterSeq) => monitorRepo.oldestPendingAt(afterSeq),
+      configuredSinks: monitorSinks(runtime),
+      retentionDays: env.MONITOR_RETENTION_DAYS,
+      pendingMaxDays: env.MONITOR_PENDING_MAX_DAYS,
+    },
     now: systemClock.now,
   });
   const forwarder = runtime.monitorWebUrl
@@ -251,6 +258,11 @@ export function createAppContext(name: string, env: Env = loadEnv()): AppContext
     accountService,
     delegations: new SqliteDelegationRepository(db),
   };
+}
+
+/** The receivers of the event log configured now: their pending events are kept when the log is pruned. */
+export function monitorSinks(runtime: { monitorWebUrl: string }): string[] {
+  return runtime.monitorWebUrl ? [WEB_SINK] : [];
 }
 
 /** The fixed content of the mock's QRs: QR_MOCK_PAYLOAD, else its file, else none (random). */

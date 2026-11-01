@@ -1,7 +1,7 @@
 import { createHmac, randomUUID } from "node:crypto";
 import { iso, type Clock } from "../../shared/clock.ts";
 import type { Logger } from "../../shared/log.ts";
-import { MONITOR_SCHEMA, type MonitorEvent } from "./domain.ts";
+import { MONITOR_SCHEMA, type MonitorEvent, type SinkGap } from "./domain.ts";
 import type { MonitorRepository } from "./repository.ts";
 
 export const WEB_SINK = "web";
@@ -17,6 +17,11 @@ export interface MonitorDelivery {
   /** Newest position in TilcAI's log: tells the receiver how far behind it is. */
   head: number;
   events: MonitorEvent[];
+  /**
+   * Positions this receiver will never get: they waited longer than MONITOR_PENDING_MAX_DAYS and were
+   * pruned. Present until a delivery that carries it is acknowledged. A `monitor.gap` event says the same in the log.
+   */
+  gap?: SinkGap;
 }
 
 /** `v1=<hex>`: HMAC-SHA256 of "<unix seconds>.<body>" with the shared secret. */
@@ -28,7 +33,8 @@ export function signDelivery(secret: string, timestamp: string, body: string): s
  * Sends the event log to tilcai-web, in order and at least once.
  *
  * The cursor only moves when the receiver answers 2xx, so a dashboard that was down gets
- * everything it missed. The receiver ignores events it already has (same `id`).
+ * everything it missed, for up to MONITOR_PENDING_MAX_DAYS: past that, what it missed is pruned and
+ * the next delivery carries the `gap`. The receiver ignores events it already has (same `id`).
  */
 export class WebForwarder {
   constructor(
@@ -70,6 +76,7 @@ export class WebForwarder {
       origin: this.d.origin,
       head: this.d.repo.head(),
       events,
+      ...(sink.gap ? { gap: sink.gap } : {}),
     };
     const body = JSON.stringify(delivery);
     const timestamp = Math.floor(now.getTime() / 1000).toString();
@@ -102,6 +109,7 @@ export class WebForwarder {
       { ...sink, lastSeq: events[events.length - 1]!.seq, attempts: 0, lastError: null, lastDeliveredAt: iso(now), nextAttemptAt: iso(now) },
       iso(now),
     );
+    if (sink.gap) this.d.repo.clearGap(WEB_SINK, sink.gap);
     return events.length;
   }
 }
