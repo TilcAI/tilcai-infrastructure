@@ -72,6 +72,7 @@ opcionalmente, el relayer.
 cp deploy/.env.mainnet.example deploy/.env.mainnet      # completar secretos
 docker compose -f deploy/docker-compose.mainnet.yml --env-file deploy/.env.mainnet up -d
 curl -s http://127.0.0.1:18787/health                   # env: mainnet, transactionsEnabled
+curl -s http://127.0.0.1:18787/ready?mode=transactional # 200 antes de activar transacciones
 ```
 
 `TILCAI_ENV=mainnet` exige base, claves de API, ids de relayer, RPC y router propios, y rechaza la
@@ -151,7 +152,19 @@ cp deploy/.env.example deploy/.env       # completar los secretos
 docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d
 
 curl http://127.0.0.1:8787/health        # {"ok":true,"env":"testnet","relayer":"up"}
+curl http://127.0.0.1:8787/ready         # {"ready":true,"mode":"transactional","checks":[…]}
 ```
+
+**Sondas.** `/health` es la de liveness: responde 200 mientras el proceso vive, aunque el relayer
+esté caído, para que la plataforma no reinicie el contenedor por una dependencia externa. `/ready`
+es la de readiness y responde 503 cuando falta algo que el modo exige. En solo lectura exige solo
+la base. En modo transaccional exige además: que el relayer responda y acepte la clave; que cada
+relayer que usa este proceso (uno por red EVM activa y el de Stellar) exista, esté en la red y el
+tipo esperados, no esté pausado y tenga firmante; el submitter de Stellar; y, en `all-in-one`, que
+el worker siga haciendo rondas. Cada respuesta lista sus comprobaciones sin secretos y se reutiliza
+durante 5 s. No verifica roles on-chain, como que la cuenta del relayer sea la operadora del vault:
+eso sigue en `npm run mainnet:preflight` y en el acta de despliegue. Los manifiestos de Cloud Run y
+Compose siguen usando `/health`; usar `/ready` en un manifiesto requiere aprobación operativa.
 
 Los puertos 8080 (relayer) y 8787 (TilcAI) quedan en `127.0.0.1`. Para exponerlos, pon
 delante un proxy con TLS. Los datos viven en los volúmenes `tilcai-data` (SQLite) y

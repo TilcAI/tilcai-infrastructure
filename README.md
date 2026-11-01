@@ -88,7 +88,7 @@ npm run xpay -- --payment payment_attempt_… --burn 0x…HASH
 
 ### API (v1)
 
-Todas las rutas salvo `/health` exigen `Authorization: Bearer <clave>`. Cada clave pertenece a un
+Todas las rutas salvo `/health` y `/ready` exigen `Authorization: Bearer <clave>`. Cada clave pertenece a un
 tercero (*tenant*) y lleva permisos:
 
 - Las claves de `TILCAI_API_KEYS` son las del operador: permiso `payments` y acceso a lo que es de
@@ -103,7 +103,8 @@ tercero (*tenant*) y lleva permisos:
 
 | Método | Ruta | Descripción |
 | --- | --- | --- |
-| GET | `/health` | Estado y Relayer arriba/abajo |
+| GET | `/health` | Liveness: 200 mientras el proceso vive, con el estado y el Relayer arriba/abajo como información |
+| GET | `/ready` | Readiness: 200 si puede hacer lo que promete su modo, 503 si no, con cada comprobación. `?mode=transactional` hace las de pagos activos en una instancia de solo lectura |
 | GET | `/v1/routes` | Rutas crosschain habilitadas |
 | POST | `/v1/crosschain/quotes` | `{sourceNetwork:"eip155:43113", destinationNetwork:"stellar:testnet", amount:"1.25", payTo:"G…"}` |
 | GET | `/v1/crosschain/quotes/:id` | Cotización |

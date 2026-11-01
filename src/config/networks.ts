@@ -44,6 +44,8 @@ export interface EvmNetwork {
   id: EvmNetworkId;
   family: "evm";
   name: string;
+  /** What an OpenZeppelin Relayer serving this network reports as its `network` (deploy/relayer/config/networks). */
+  relayerNetwork: string;
   chainId: number;
   rpc: string;
   explorer: string;
@@ -71,6 +73,8 @@ export interface StellarNetwork {
   id: StellarNetworkId;
   family: "stellar";
   name: string;
+  /** What an OpenZeppelin Relayer serving this network reports as its `network` (deploy/relayer/config/networks). */
+  relayerNetwork: string;
   rpc: string;
   horizon: string;
   passphrase: string;
@@ -111,6 +115,7 @@ export function networks(env: Env): NetworkRegistry {
     id: "eip155:43113",
     family: "evm",
     name: "Avalanche Fuji",
+    relayerNetwork: "avalanche-fuji-testnet",
     chainId: 43113,
     rpc: env.RPC_AVALANCHE_FUJI,
     explorer: "https://testnet.snowtrace.io",
@@ -134,6 +139,7 @@ export function networks(env: Env): NetworkRegistry {
     id: "stellar:testnet",
     family: "stellar",
     name: "Stellar Testnet",
+    relayerNetwork: "testnet",
     rpc: env.RPC_STELLAR_TESTNET,
     horizon: env.HORIZON_STELLAR_TESTNET,
     passphrase: "Test SDF Network ; September 2015",
@@ -158,6 +164,7 @@ export function networks(env: Env): NetworkRegistry {
     id: AVALANCHE_MAINNET.id,
     family: "evm",
     name: "Avalanche C-Chain",
+    relayerNetwork: "avalanche-c-chain",
     chainId: AVALANCHE_MAINNET.chainId,
     rpc: env.RPC_AVALANCHE_MAINNET,
     explorer: "https://explorer.avax.network/c-chain",
@@ -183,6 +190,7 @@ export function networks(env: Env): NetworkRegistry {
     id: STELLAR_MAINNET.id,
     family: "stellar",
     name: "Stellar Public Network",
+    relayerNetwork: "mainnet",
     rpc: env.RPC_STELLAR_MAINNET,
     horizon: env.HORIZON_STELLAR_MAINNET,
     passphrase: STELLAR_MAINNET.passphrase,
@@ -208,6 +216,7 @@ export function networks(env: Env): NetworkRegistry {
     id: MONAD_TESTNET.id,
     family: "evm",
     name: "Monad Testnet",
+    relayerNetwork: "monad-testnet",
     chainId: MONAD_TESTNET.chainId,
     rpc: env.RPC_MONAD_TESTNET,
     explorer: "https://testnet.monadscan.com",
