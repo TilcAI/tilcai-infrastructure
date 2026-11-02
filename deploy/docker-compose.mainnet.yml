@@ -55,7 +55,7 @@ services:
       QR_PROVIDERS: ${QR_PROVIDERS:-baneco,atc-simple,atc-mld}
       QR_PROVIDER_TIMEOUT_MS: ${QR_PROVIDER_TIMEOUT_MS:-15000}
       QR_PUBLIC_URL: ${MAINNET_QR_PUBLIC_URL:-}
-      BANECO_BASE_URL: ${BANECO_BASE_URL:-https://apimktdesa.baneco.com.bo/ApiGateway/}
+      BANECO_BASE_URL: ${BANECO_BASE_URL:-https://apimkt.baneco.com.bo/apiGateway/}
       BANECO_USER: ${BANECO_USER:-}
       BANECO_PASSWORD: ${BANECO_PASSWORD:-}
       BANECO_ENCRIPTION_KEY: ${BANECO_ENCRIPTION_KEY:-}
@@ -78,7 +78,7 @@ services:
     # Reaches a relayer or a dashboard published on the host.
     extra_hosts: ["host.docker.internal:host-gateway"]
     # Loopback, and the docker bridge so Optipagos (a container) reaches it as host.docker.internal.
-    ports: ["127.0.0.1:${MAINNET_TILCAI_PORT:-18787}:8787", "172.17.0.1:${MAINNET_TILCAI_PORT:-18787}:8787"]
+    ports: ["127.0.0.1:${MAINNET_TILCAI_PORT:-18787}:8787", "172.17.0.1:${MAINNET_TILCAI_PORT:-18787}:8787", "${MAINNET_TAILSCALE_IP:-100.111.32.67}:${MAINNET_TILCAI_PORT:-18787}:8787"]
     security_opt: [no-new-privileges]
     restart: unless-stopped
 

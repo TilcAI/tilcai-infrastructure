@@ -164,8 +164,8 @@ const schema = z.object({
   /** Base of the webhooks providers call, as they reach this API (e.g. https://pay.example.com). */
   QR_PUBLIC_URL: optionalUrl,
 
-  /** Banco Económico, API Market v1.3.0. Certification: https://apimktdesa.baneco.com.bo/ApiGateway/ */
-  BANECO_BASE_URL: z.string().url().default("https://apimktdesa.baneco.com.bo/ApiGateway/"),
+  /** Banco Económico, API Market v1.3.0. Production: https://apimkt.baneco.com.bo/apiGateway/ */
+  BANECO_BASE_URL: z.string().url().default("https://apimkt.baneco.com.bo/apiGateway/"),
   BANECO_USER: z.string().default(""),
   BANECO_PASSWORD: z.string().default(""),
   /** The AES-256 key the bank issued for the environment. */

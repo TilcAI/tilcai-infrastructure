@@ -13,7 +13,7 @@ import {
 import { callJson, isRecord, str, toCents } from "../http.ts";
 
 export interface BanecoConfig {
-  /** https://apimktdesa.baneco.com.bo/ApiGateway/ in certification. */
+  /** https://apimkt.baneco.com.bo/apiGateway/ in production. */
   baseUrl: string;
   user: string;
   password: string;
