@@ -803,3 +803,17 @@ Documentación: [resultados y ramas](/home/saul-bms/proyectos/tilcai/documentati
 ### Salida
 
 El servicio genera el QR desde el payload configurado o el payload propio del QR. Las 15 pruebas de QR Simple pasaron. El commit dfb7006 se publicó en feat/qr-providers-fallback. Los demás cambios locales permanecen sin commit.
+
+## 2026-11-02T01:14:59Z · saulchoque · Codex / gpt-6.1-sol
+
+- **Sesión:** n/d
+- **Rama:** feat/qr-providers-fallback
+- **Repositorios:** documentation, tilcai-core, tilcai-infrastructure, tilcai-sdk, tilcai-mcp, tilcai-web, tilcai-cctp-engine, .github
+
+### Prompt
+
+> actualiza los readme de todos los repos tambien, y haz push
+
+### Salida
+
+Actualicé el README de este repositorio con su alcance en la entrega, ramas publicadas, enlaces a la documentación y pendientes. Los cambios se publicaron en la rama indicada. Se revisaron el formato del diff y los enlaces locales de los README; no se modificó código ni se ejecutaron pruebas funcionales.
