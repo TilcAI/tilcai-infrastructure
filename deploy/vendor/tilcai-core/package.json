@@ -1,0 +1,10 @@
+{
+  "name": "tilcai-core",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --experimental-strip-types --test test/*.test.ts"
+  },
+  "engines": { "node": ">=22.16.0" }
+}

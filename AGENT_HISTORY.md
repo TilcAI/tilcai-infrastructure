@@ -607,3 +607,257 @@ Comprobado en el contenedor: `/health` con `eip155:10143`, `vault` y `vaultStell
 ### Salida
 
 `.env.example` reordenado en 10 secciones numeradas (núcleo, relayer, submitter Stellar, RPC, contratos testnet, monitoreo, mock QR, proveedores fiat, mainnet, pruebas). Añadidas las variables de Monad Testnet que el código ya lee (`RELAYER_MONAD_TESTNET_ID`, `RPC_MONAD_TESTNET`, router, routerV2, factory y vault) con las direcciones desplegadas el 2026-10-13; las direcciones de Fuji tomadas de `deploy/.env.example`; ids de relayer de mainnet con sus valores por defecto; `HORIZON_STELLAR_MAINNET` queda en `https://horizon.stellar.org`. Las variables `BANECO_*` y `ATC_*` se conservan pero ninguna parte de `src/` las lee todavía. `ACCOUNT_FACTORY_STELLAR` y `VAULT_STELLAR` siguen vacías porque sus IDs no están en el repositorio (el `.env` local no se leyó).
+
+## 2026-10-15T20:00:21Z · saulchoque · Claude Code (Sonnet 5.5)
+
+- **Sesión:** https://claude.ai/code/session_0185g9fsVV9T5JBDkvrYoGqs
+- **Rama:** `feat/qr-providers-fallback` (sin push)
+- **Repositorios:** `tilcai-infrastructure`, `tilcai-web` (`feat/qr-gateway-events`)
+
+### Prompt
+
+> acabo de cargar .env con tokens de prueba para acceder a la api sandbox qrs de pago de prueba para el banco economico y red enlace, estas manejan distintos tipo de autorizacion asi que analiza la documentacion respectiva para realizar la implementacion. [...] existira un proveedor principal (baneco, atc, etc) para generar y verificar los cobros; existiran varios proveedores de tipo fallback en caso de que el principal falle, y continuaran al siguiente de la lista (por ahora red enlace atc (ATC.API.QR.SIMPLE.V2 y ATC.API.QR.MLD.V2) y baneco). Modifica el uso del qr mock para ser activado y reemplazar a la api real o ser desactivado y dar paso a la api real. Realiza pruebas de generacion de qrs de las tres formas, documenta el funcionamiento de los servicios de cada api y el funcionamiento del sistema de fallbacks. [Adjuntos: PDF «Api Market Baneco v1.3.0»; enlaces al portal de ATC; ATC.API.CUENTA.DIGITAL habilitada, sin documentación.] Después: «trabaja en otra rama» y «restricciones en caracteres para baneco» [captura de la tabla de campos de generateQR].
+
+### Salida
+
+Pasarela de QR de cobro con fallback (`src/modules/qrcollect`, `/v1/qr`, `npm run qr`), proveedores `baneco`, `atc-simple` y `atc-mld`, y el mock como único proveedor con `QR_MOCK_ENABLED=true`. Probado en los sandbox: los tres emiten QR (Bs 0.10), Baneco cancela, y el fallback pasó de Baneco a ATC Simple con Baneco inalcanzable y con credenciales malas. Hallazgo: ATC interpreta `numeroReferencia` como entero de 32 bits (12 dígitos → 500). Límites de campos de Baneco aplicados (transactionId 30, accountCredit 10, description 100). 210 pruebas pasan. `ATC.API.CUENTA.DIGITAL` no está en la documentación pública; lo más cercano es «Cuentas de Establecimientos y Consulta de Saldos» (inferencia, sin implementar). Sin probar: un pago de punta a punta (los sandbox no tienen pagador) y los webhooks (sin URL pública). Documentación en `docs/qr-providers.md`.
+
+## 2026-10-15T20:06:37Z · saulchoque · Claude Code (Sonnet 5.5)
+
+- **Sesión:** https://claude.ai/code/session_0185g9fsVV9T5JBDkvrYoGqs
+- **Rama:** `feat/qr-providers-fallback` (sin commit)
+- **Repositorios:** `tilcai-infrastructure`
+
+### Prompt
+
+> escribe un archivo postman para realizar pruebas en endpoints desde un dispositivo en red local para la API de tilcai
+
+### Salida
+
+Colección Postman v2.1 (33 peticiones en 7 carpetas) y entorno en `docs/postman/`, con README. Verificada contra una instancia local por IP LAN con clave: `/health`, `/v1/routes`, `/v1/qr/providers`, `POST /v1/qr`, `/v1/monitor/events` y la validación de cotizaciones. Hallazgo: `/v1/accounts` responde 403 a la clave de operador; pide la de un tenant con `accounts:*` (variable `tenantKey`). La API solo escucha en loopback por omisión: el README explica `API_HOST`, el puerto del Compose y el túnel SSH.
+
+## 2026-10-15T20:46:56Z · saulchoque · Claude Code (Sonnet 5.5)
+
+- **Sesión:** https://claude.ai/code/session_0185g9fsVV9T5JBDkvrYoGqs
+- **Rama:** `feat/qr-providers-fallback` (sin commit)
+- **Repositorios:** `tilcai-infrastructure`
+
+### Prompt
+
+> puedes realizar modificaciones para agregar un nuevo endpoint para generar qrs especificando que provider usar (solo para desarrollo), actualiza postman con esta info
+
+### Salida
+
+Nuevo `POST /v1/dev/qr/:provider` (solo operador, no se registra en mainnet): emite con exactamente baneco, atc-simple, atc-mld o mock, sin fallback; responde 502 con los intentos si falla y 503 si el proveedor no está en la lista de la instancia. `POST /v1/qr` dejó de aceptar `provider` (400). Las rutas validan su cuerpo y responden 400 por sí mismas. Colección Postman con la carpeta «8. Desarrollo» y documentación actualizadas. 211 pruebas pasan. Instancia paralela :8788 reiniciada con el código nuevo (pid 64017) y probada por IP LAN con los tres proveedores reales.
+
+## 2026-10-15T20:57:50Z · saulchoque · Claude Code (Sonnet 5.5)
+
+- **Sesión:** https://claude.ai/code/session_0185g9fsVV9T5JBDkvrYoGqs
+- **Rama:** `feat/qr-providers-fallback` (sin commit)
+- **Repositorios:** `tilcai-infrastructure`
+
+### Prompt
+
+> vuelve al schema anterior y corrige el campo provider para que solo funcione en en entorno de desarrollo y no de produccion, actualmente tengo este error: {"error":{"code":"INVALID_INPUT",...},"detail":"Unrecognized key: \"provider\""} [cuerpo: amount, description, provider: atc-simple]
+
+### Salida
+
+`POST /v1/qr` vuelve a aceptar el campo opcional `provider` (fuerza uno, sin fallback) y lo rechaza con 400 en mainnet; el endpoint `/v1/dev/qr/:provider` se conserva y rechaza un `provider` en el cuerpo. Los errores 429 de un proveedor se informan como tales. Postman y documentación actualizados; 211 pruebas pasan. Con :8788 verificado: `provider=baneco` emite. ATC respondía HTTP 429 (límite del sandbox) al cierre de la sesión: no pude emitir con ATC en esa instancia por esa causa.
+
+## 2026-10-15T22:27:21Z · saulchoque · Claude Code (Sonnet 5.5)
+
+- **Sesión:** https://claude.ai/code/session_0185g9fsVV9T5JBDkvrYoGqs
+- **Rama:** `feat/qr-providers-fallback` (sin push)
+- **Repositorios:** `tilcai-infrastructure`, `tilcai-sdk` (`feat/qr-collections`), `optipagos-backend` (`feat/tilcai-sdk`)
+
+### Prompt
+
+> verifica que el SDK de tilcai funciona con los nuevos cambios al QR, luego implementa el SDK de tilcai a optipagos (reemplaza la forma actual) (la generacion de qr debe de funcionar tanto en el numero de pruebas como en el de producción) y pon los servicios de optipagos en linea (configura las subrutas de ngrok como antes) verifica el funcionamiento de los qrs. Así mismo tengo un problema con los qrs de Baneco, al escanear desde una app bancaria obtengo error de certificado
+
+### Salida
+
+SDK: `tilcai.qr` (0.2.0, 82 pruebas). Optipagos: `TilcaiClient` y `TilcaiQrClient` sobre el SDK, QR por entorno (testnet y mainnet), 404 pruebas pasan. Desplegado: imagen `tilcai/tilcai:local` reconstruida (respaldo `:pre-qr` y `~/backups/docker-pre-qr-*`), `tilcai` (testnet, mock) y `tilcai-mainnet` (Baneco real, puerto también en 172.17.0.1) recreados, optipagos-backend reconstruido, relayer y ngrok por subrutas en línea. QR verificados por las URLs públicas y desde el contenedor de optipagos. El error de certificado de Baneco: los QR de sandbox llevan un bloque cifrado opaco (igual que el mock); la causa más probable es que las apps de producción no aceptan QR del entorno de certificación (hipótesis, sin confirmar con el banco).
+
+## 2026-10-17T21:44:15Z · SaulChoque · Claude Code (Sonnet 5.5)
+
+- **Sesión:** https://claude.ai/code/session_01CUZdyei1sqiFaCFit7JBXw
+- **Rama:** feat/qr-providers-fallback
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> sigue siendo el antiguo qr, debe de ser este, MANTEN el mismo diseño en optipagos. recuerda que tilcai SOLO envia el QR por lo que en lugar de enviar el actual envia este, modificalo para darle el mismo margen y dimensiones que el actual, SOLO CAMBIA EL QR [adjunto: imagen del QR de Banco Unión recortado]
+
+### Salida
+
+El mock de QR Simple devuelve ahora siempre un QR real de Banco Unión (`src/modules/qrsimple/bank-qr.png`), reescalado a 630 × 630 px con margen blanco de 24 px, las medidas del QR generado antes. `service.ts` lo sirve en `qr_image` y `qr_url`; el test de imagen compara contra ese archivo. 211 tests pasan; la imagen `tilcai/tilcai:local` se reconstruyó y el contenedor `tilcai` se recreó. Optipagos no cambió: su tarjeta monta este QR (69 módulos) con el mismo diseño. `tilcai-mainnet` no se actualizó por faltar variables MAINNET_* en el `.env`.
+
+## 2026-11-01T06:46:23Z · saulchoque · Codex / gpt-6.1-sol
+
+- **Sesión:** n/d
+- **Rama:** feat/qr-providers-fallback
+- **Repositorios:** TilcAI/documentation, tilcai-infrastructure, tilcai-sdk, tilcai-mcp, tilcai-core, tilcai-web, tilcai-cctp-engine, .github
+
+### Prompt
+
+> actualiza todos los repositorios del proyecto, analiza el proyecto tilcai-infraestructure y planea la resolucion y modificaciones para resolver las issues asignadas, asi tambien investiga y crea documentacion para implementar facturacion enlinea para terceros y una fase intermedia facturando todo con una sola empresa usando el servicio de impuestos nacionales de bolivia
+
+### Salida
+
+Actualicé los **8 repositorios**, preservando tus cambios locales.
+
+- **Correcciones:** rama `fix/saulchoque-vault-soroban-2026-11-01`, con cambios para #28, #35 y #42.
+- **Credenciales:** rama `feat/third-party-credentials`, basada en las correcciones. API keys por tenant y entorno, caducidad, rotación, revocación e introspección.
+- **SDK y MCP:** ramas `feat/third-party-credentials`, con soporte para rotación e inspección de permisos.
+
+**Tests:** backend 206, SDK 85, MCP 7, Soroban 12 y despliegue 5: todos pasan. También pasaron typecheck, builds y comprobaciones entre backend, SDK y MCP.
+
+Documentación: [resultados y ramas](/home/saul-bms/proyectos/tilcai/documentation/3-CONSTRUCCION/ESTADO_REPOSITORIOS_2026-11-01.md), [credenciales](/home/saul-bms/proyectos/tilcai/documentation/3-CONSTRUCCION/CREDENCIALES_TERCEROS_IMPLEMENTACION_2026-11-01.md) y [facturación SIN: empresa única y terceros](/home/saul-bms/proyectos/tilcai/documentation/2-ARQUITECTURA/TILCAI_FACTURACION_SIN_2026-11-01.md).
+
+**Pendiente:** completar archivo/restauración real para #32 y verificar íntegramente la normativa/anexo SIN 2026. La facturación está documentada, todavía no implementada. Los cambios quedan locales, sin despliegue ni publicación.
+
+## 2026-11-01T06:46:23Z · saulchoque · Codex / gpt-6.1-sol
+
+- **Sesión:** n/d
+- **Rama:** feat/qr-providers-fallback
+- **Repositorios:** TilcAI/documentation, tilcai-infrastructure, tilcai-sdk, tilcai-mcp, tilcai-core, tilcai-web, tilcai-cctp-engine, .github
+
+### Prompt
+
+> posteriormente, luego de realizar la planeacion, realiza la implementacion y modificaciones necesarias  en una rama separada para tilcai infraestructure, realiza tests
+
+### Salida
+
+Actualicé los **8 repositorios**, preservando tus cambios locales.
+
+- **Correcciones:** rama `fix/saulchoque-vault-soroban-2026-11-01`, con cambios para #28, #35 y #42.
+- **Credenciales:** rama `feat/third-party-credentials`, basada en las correcciones. API keys por tenant y entorno, caducidad, rotación, revocación e introspección.
+- **SDK y MCP:** ramas `feat/third-party-credentials`, con soporte para rotación e inspección de permisos.
+
+**Tests:** backend 206, SDK 85, MCP 7, Soroban 12 y despliegue 5: todos pasan. También pasaron typecheck, builds y comprobaciones entre backend, SDK y MCP.
+
+Documentación: [resultados y ramas](/home/saul-bms/proyectos/tilcai/documentation/3-CONSTRUCCION/ESTADO_REPOSITORIOS_2026-11-01.md), [credenciales](/home/saul-bms/proyectos/tilcai/documentation/3-CONSTRUCCION/CREDENCIALES_TERCEROS_IMPLEMENTACION_2026-11-01.md) y [facturación SIN: empresa única y terceros](/home/saul-bms/proyectos/tilcai/documentation/2-ARQUITECTURA/TILCAI_FACTURACION_SIN_2026-11-01.md).
+
+**Pendiente:** completar archivo/restauración real para #32 y verificar íntegramente la normativa/anexo SIN 2026. La facturación está documentada, todavía no implementada. Los cambios quedan locales, sin despliegue ni publicación.
+
+## 2026-11-01T06:46:23Z · saulchoque · Codex / gpt-6.1-sol
+
+- **Sesión:** n/d
+- **Rama:** feat/qr-providers-fallback
+- **Repositorios:** TilcAI/documentation, tilcai-infrastructure, tilcai-sdk, tilcai-mcp, tilcai-core, tilcai-web, tilcai-cctp-engine, .github
+
+### Prompt
+
+> continua
+
+### Salida
+
+Actualicé los **8 repositorios**, preservando tus cambios locales.
+
+- **Correcciones:** rama `fix/saulchoque-vault-soroban-2026-11-01`, con cambios para #28, #35 y #42.
+- **Credenciales:** rama `feat/third-party-credentials`, basada en las correcciones. API keys por tenant y entorno, caducidad, rotación, revocación e introspección.
+- **SDK y MCP:** ramas `feat/third-party-credentials`, con soporte para rotación e inspección de permisos.
+
+**Tests:** backend 206, SDK 85, MCP 7, Soroban 12 y despliegue 5: todos pasan. También pasaron typecheck, builds y comprobaciones entre backend, SDK y MCP.
+
+Documentación: [resultados y ramas](/home/saul-bms/proyectos/tilcai/documentation/3-CONSTRUCCION/ESTADO_REPOSITORIOS_2026-11-01.md), [credenciales](/home/saul-bms/proyectos/tilcai/documentation/3-CONSTRUCCION/CREDENCIALES_TERCEROS_IMPLEMENTACION_2026-11-01.md) y [facturación SIN: empresa única y terceros](/home/saul-bms/proyectos/tilcai/documentation/2-ARQUITECTURA/TILCAI_FACTURACION_SIN_2026-11-01.md).
+
+**Pendiente:** completar archivo/restauración real para #32 y verificar íntegramente la normativa/anexo SIN 2026. La facturación está documentada, todavía no implementada. Los cambios quedan locales, sin despliegue ni publicación.
+
+## 2026-11-01T06:46:23Z · saulchoque · Codex / gpt-6.1-sol
+
+- **Sesión:** n/d
+- **Rama:** feat/qr-providers-fallback
+- **Repositorios:** TilcAI/documentation, tilcai-infrastructure, tilcai-sdk, tilcai-mcp, tilcai-core, tilcai-web, tilcai-cctp-engine, .github
+
+### Prompt
+
+> posteriormente, analiza y planea la implementacion de un sistema de emision de api keys para tercerros (optipagos, fexpo, etc) es mejor usar api keys? oauth?, etc, elige la mejor opcion para tilcai, lugo realiza las modificaciones en otra rama (esta debe estar al dia con los cambios realizados en la rama en la que se esta trabajando ahora), asi tambien modifica el sdk de tilcai y su mcp, y finalmente actualiza toda la documentacion con estos nuevos cambios
+
+### Salida
+
+Actualicé los **8 repositorios**, preservando tus cambios locales.
+
+- **Correcciones:** rama `fix/saulchoque-vault-soroban-2026-11-01`, con cambios para #28, #35 y #42.
+- **Credenciales:** rama `feat/third-party-credentials`, basada en las correcciones. API keys por tenant y entorno, caducidad, rotación, revocación e introspección.
+- **SDK y MCP:** ramas `feat/third-party-credentials`, con soporte para rotación e inspección de permisos.
+
+**Tests:** backend 206, SDK 85, MCP 7, Soroban 12 y despliegue 5: todos pasan. También pasaron typecheck, builds y comprobaciones entre backend, SDK y MCP.
+
+Documentación: [resultados y ramas](/home/saul-bms/proyectos/tilcai/documentation/3-CONSTRUCCION/ESTADO_REPOSITORIOS_2026-11-01.md), [credenciales](/home/saul-bms/proyectos/tilcai/documentation/3-CONSTRUCCION/CREDENCIALES_TERCEROS_IMPLEMENTACION_2026-11-01.md) y [facturación SIN: empresa única y terceros](/home/saul-bms/proyectos/tilcai/documentation/2-ARQUITECTURA/TILCAI_FACTURACION_SIN_2026-11-01.md).
+
+**Pendiente:** completar archivo/restauración real para #32 y verificar íntegramente la normativa/anexo SIN 2026. La facturación está documentada, todavía no implementada. Los cambios quedan locales, sin despliegue ni publicación.
+
+## 2026-11-02T00:00:00Z · saulchoque · Codex / gpt-6.1-terra
+
+- **Sesión:** n/d
+- **Rama:** feat/qr-providers-fallback
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> realiza las siguientes modificaciones:
+> - modifica el servicio de qr simple para generar el qr a partir del payload en desarrollo y produccion, ajusta los tests para este proposito
+> - sube los cambios en su rama correspondiente
+
+### Salida
+
+El servicio genera el QR desde el payload configurado o el payload propio del QR. Las 15 pruebas de QR Simple pasaron. El commit dfb7006 se publicó en feat/qr-providers-fallback. Los demás cambios locales permanecen sin commit.
+
+## 2026-11-02T01:14:59Z · saulchoque · Codex / gpt-6.1-sol
+
+- **Sesión:** n/d
+- **Rama:** feat/qr-providers-fallback
+- **Repositorios:** documentation, tilcai-core, tilcai-infrastructure, tilcai-sdk, tilcai-mcp, tilcai-web, tilcai-cctp-engine, .github
+
+### Prompt
+
+> actualiza los readme de todos los repos tambien, y haz push
+
+### Salida
+
+Actualicé el README de este repositorio con su alcance en la entrega, ramas publicadas, enlaces a la documentación y pendientes. Los cambios se publicaron en la rama indicada. Se revisaron el formato del diff y los enlaces locales de los README; no se modificó código ni se ejecutaron pruebas funcionales.
+
+## 2026-11-02T02:49:26Z · saulchoque · Codex / gpt-6.1-terra
+
+- **Sesión:** n/d
+- **Rama:** feat/qr-providers-fallback
+- **Repositorios:** tilcai-infrastructure, tilcai-sdk, tilcai-mcp
+
+### Prompt
+
+> actualiza el agents history en las ramas de mis implementaciones, asi como un resumen de lo que se implemento en la rama y como
+
+### Salida
+
+La rama feat/qr-providers-fallback implementa gateway de cobros QR con proveedores de respaldo; dfb7006 genera el PNG desde el payload configurado o el propio del código. e064378 actualiza la URL de Banco Económico y el bind de Tailscale. Pasaron 15 tests QR Simple; el simulador no acredita abono bancario.
+
+## 2026-11-02T02:59:28Z · saulchoque · Codex / gpt-6.1-terra
+
+- **Sesión:** n/d
+- **Rama:** feat/qr-providers-fallback
+- **Repositorios:** tilcai-infrastructure, tilcai-sdk, tilcai-mcp
+
+### Prompt
+
+> genial, crea un documento en todas las ramas asociadas a mis implementaciones explicando que se implemento y como, estos son archivos exclusivos de las ramas y no deben llegar a main
+
+### Salida
+
+Se creó `IMPLEMENTACION_RAMA_QR_PROVIDERS.md` con alcance, implementación, validación y pendientes de esta rama. El documento indica que debe excluirse del resultado de integración a main.
+
+## 2026-11-02T07:05:00Z · saulchoque · Codex / gpt-6.1-sol
+
+- **Sesión:** n/d
+- **Rama:** feat/continuous-deploy-baneco
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> realiza las siguientes operaciones:
+> - configura e integra el deploy continuo de tilcai y sus dependencias dockerizadas en el servidor 'ssh saul-tilcai-lor' asi como esta implementado fexpo (revisa los manuales de integracion continua guardados en este dispositivo) y verifica su funcionamiento
+> - revisa tu implementacion de los qrs reales de baneco, verifica el correcto funcionamiento de la generacion de qrs reales como opcion primaria en produccion y en desarollo, revisa la limpieza, organizaicion y linteo del repo y realiza un merge a main con estos cambios (veifica que el ci/cd este funcionando y haz tests a la version del servidor)
+
+### Salida
+
+Se preparó CI con lint, typecheck, 212 pruebas y smoke de imagen real; pasó en la rama antes de integrar. Se configuró Debian/Docker y Redis/relayer saludables en saul-tilcai-lor, despliegue SSH restringido con lock/rollback y secretos fuera de Git. Core se fija mediante snapshot porque su repo privado no permite deploy keys. Se verificó generación real Baneco de Bs 0,10 pendiente. La integración elimina el documento exclusivo de rama y el PNG bancario no usado del árbol final. La verificación de release remoto se registra posteriormente.
