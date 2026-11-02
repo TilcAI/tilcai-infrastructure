@@ -30,3 +30,16 @@ Respaldar SQLite y Redis antes de actualizaciones de esquema. Conservar imágene
 anterior/actual. Las claves y signers se provisionan por canal administrativo, nunca en CI logs.
 La imagen del relayer se provisiona inicialmente desde la versión existente; comprobar su
 referencia inmutable y actualizarla deliberadamente al cambiar dependencias.
+
+## Dependencia privada de Core
+
+La organización deshabilita deploy keys y el GITHUB_TOKEN de infraestructura no puede
+leer Core. `deploy/vendor/tilcai-core` conserva un snapshot de fuentes del commit indicado
+en SOURCE.md. CI lo copia al directorio hermano para respetar la dependencia `file:`.
+Al actualizar Core, renovar ese snapshot y ejecutar las suites; no requiere tokens personales.
+
+## Validación del 2 de noviembre de 2026
+
+212 pruebas unitarias, lint y typecheck pasan en GitHub Actions; el smoke construye y arranca
+la imagen real. Antes de integrar se emitió un QR bancario real de Bs 0,10 en estado pendiente
+con una base temporal; no se simuló depósito ni se realizó pago.
