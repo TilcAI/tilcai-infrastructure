@@ -44,7 +44,7 @@ build_tilcai() {
   # The app links tilcai-core as file:../tilcai-core, so the context needs both side by side.
   ctx="$(mktemp -d)"
   mkdir -p "$ctx/tilcai-core" "$ctx/tilcai-infrastructure/deploy"
-  cp -r "$core/package.json" "$core/src" "$ctx/tilcai-core/"
+  cp -r "$core/package.json" "$core/package-lock.json" "$core/tsconfig.contracts.json" "$core/tsup.config.ts" "$core/src" "$ctx/tilcai-core/"
   cp -r "$repo/package.json" "$repo/package-lock.json" "$repo/tsconfig.json" "$repo/src" \
     "$ctx/tilcai-infrastructure/"
   cp "$here/entrypoint.sh" "$ctx/tilcai-infrastructure/deploy/"

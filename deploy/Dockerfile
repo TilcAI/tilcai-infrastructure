@@ -25,6 +25,7 @@ FROM litestream/litestream:${LITESTREAM_VERSION} AS litestream
 FROM node:${NODE_VERSION}-bookworm-slim AS deps
 # Same layout as on disk, so the `file:../tilcai-core` link resolves.
 COPY tilcai-core /srv/tilcai-core
+RUN cd /srv/tilcai-core && npm ci && npm run build && rm -rf node_modules
 WORKDIR /srv/tilcai-infrastructure
 COPY tilcai-infrastructure/package.json tilcai-infrastructure/package-lock.json ./
 # tsx (a devDependency) is the runtime: the app runs its TypeScript sources directly.
@@ -46,7 +47,8 @@ ENV TILCAI_ENV=testnet \
     NO_COLOR=1
 
 COPY --from=litestream /usr/local/bin/litestream /usr/local/bin/litestream
-COPY --from=deps --chown=node:node /srv/tilcai-core /srv/tilcai-core
+COPY --from=deps --chown=node:node /srv/tilcai-core/dist /srv/tilcai-core/dist
+COPY --from=deps --chown=node:node /srv/tilcai-core/package.json /srv/tilcai-core/package.json
 WORKDIR /srv/tilcai-infrastructure
 COPY --from=deps --chown=node:node /srv/tilcai-infrastructure/node_modules ./node_modules
 COPY --chown=node:node tilcai-infrastructure/package.json tilcai-infrastructure/tsconfig.json ./

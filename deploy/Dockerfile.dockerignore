@@ -8,3 +8,7 @@
 !tilcai-infrastructure/tsconfig.json
 !tilcai-infrastructure/src
 !tilcai-infrastructure/deploy/entrypoint.sh
+
+!tilcai-core/package-lock.json
+!tilcai-core/tsconfig.contracts.json
+!tilcai-core/tsup.config.ts

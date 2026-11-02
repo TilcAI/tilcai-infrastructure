@@ -3,7 +3,7 @@ import { tx } from "../../db/sqlite.ts";
 import type { Hex } from "../../shared/hex.ts";
 import type { RouteQuoteId } from "../../shared/ids.ts";
 import { LEGACY_TENANT_ID, type TenantId } from "../tenants/ports.ts";
-import type { PaymentAttemptId } from "tilcai-core/src/contracts.ts";
+import type { PaymentAttemptId } from "tilcai-core/contracts";
 import type { CrosschainPayment, CrosschainState, PaymentEvent, RouteQuote } from "./domain.ts";
 
 export class ConcurrentUpdateError extends Error {

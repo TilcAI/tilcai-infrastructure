@@ -26,13 +26,15 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: TilcAI/tilcai-core
-          ref: d376e07da844c0aeaafaa122ddd942f32c9f17d4
+          ref: 1e59d508e487a866e06b58800f64299c57d46720
           token: ${{ secrets.CORE_READ_TOKEN }}
           persist-credentials: false
           path: tilcai-core
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+      - run: npm ci && npm run build
+        working-directory: tilcai-core
       - run: npm ci
         working-directory: tilcai-infrastructure
       - run: npm run lint && npm run typecheck && npm test && git diff --check

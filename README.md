@@ -447,3 +447,9 @@ La [facturación SIN](https://github.com/TilcAI/documentation/blob/main/2-ARQUIT
 y desplegarla en `saul-tilcai-lor`. Redis y relayer se ejecutan en Docker; los secretos
 permanecen fuera de Git. Operación, rollback y smoke bancario en
 [deploy/server/README.md](deploy/server/README.md).
+
+## Contratos centralizados · Core 0.1.0
+
+Esta rama consume entradas compiladas de Core y conserva separados los módulos experimentales.
+Consultar [integración, compatibilidad y distribución](docs/CORE_INTEGRATION.md).
+La dependencia file es para desarrollo con repositorios hermanos; requiere compilar Core primero.

@@ -1,5 +1,5 @@
 // Phase 2 · owner: team. Decision, payment and fulfillment evidence stay separate (report §16.1, §17.4).
-import type { ReceiptReference } from "tilcai-core/src/contracts.ts";
+import type { ReceiptReference } from "tilcai-core/contracts";
 
 export interface ReceiptStore {
   put(ref: ReceiptReference, evidence: unknown): Promise<void>;
