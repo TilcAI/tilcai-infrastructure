@@ -861,3 +861,17 @@ Se creó `IMPLEMENTACION_RAMA_QR_PROVIDERS.md` con alcance, implementación, val
 ### Salida
 
 Se preparó CI con lint, typecheck, 212 pruebas y smoke de imagen real; pasó en la rama antes de integrar. Se configuró Debian/Docker y Redis/relayer saludables en saul-tilcai-lor, despliegue SSH restringido con lock/rollback y secretos fuera de Git. Core se fija mediante snapshot porque su repo privado no permite deploy keys. Se verificó generación real Baneco de Bs 0,10 pendiente. La integración elimina el documento exclusivo de rama y el PNG bancario no usado del árbol final. La verificación de release remoto se registra posteriormente.
+
+## 2026-11-02T16:43:24Z · saulchoque · Codex / gpt-6.1-sol
+
+- **Sesión:** n/d
+- **Rama:** main
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> continua
+
+### Salida
+
+Se integró QR y CI/CD a main mediante 13d74cb. El run 41482765021 completó publicación de imagen y despliegue SSH en saul-tilcai-lor. Pasaron lint, typecheck, 212 tests y smoke de contenedor. Redis, relayer y API están saludables. El smoke remoto confirmó Baneco real principal, PNG, idempotencia, estado y cancelación; el estado persistió tras reiniciar API. Se verificó también generación real con configuración mainnet en base temporal. Se corrigió el cuerpo de cancelación del smoke, se reforzó salud y se limitaron tiempos de CI/SSH. Operación y evidencia en deploy/server/README.md. El host permanece en blockchain testnet, con QR bancario real y API en loopback; no se verificaron depósitos ni callbacks públicos. Los documentos exclusivos de rama no están en el árbol main.

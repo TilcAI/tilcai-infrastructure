@@ -27,6 +27,6 @@ if (process.argv.includes('--real-qr')) {
   assert.equal(png.subarray(0,8).toString('hex'), '89504e470d0a1a0a');
   assert.equal((await call('/v1/qr', {method:'POST',body})).id, qr.id);
   assert.equal((await call(`/v1/qr/${qr.id}`)).status, 'PENDING');
-  assert.equal((await call(`/v1/qr/${qr.id}/cancel`, {method:'POST'})).status, 'CANCELLED');
+  assert.equal((await call(`/v1/qr/${qr.id}/cancel`, {method:'POST', body:'{}'})).status, 'CANCELLED');
   console.log('PASS real Baneco QR, PNG, idempotency, status and cancel');
 }

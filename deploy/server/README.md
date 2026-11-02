@@ -63,3 +63,16 @@ Esto valida el adaptador QR, no la disponibilidad de los rieles blockchain mainn
 El pipeline omite releases por cambios exclusivos de Markdown. Las dependencias iniciales
 se provisionan por administración; los releases actualizan la API por SHA. La salud del stack
 exige relayer disponible, QR real y Banco Económico primero.
+
+## Evidencia del primer release remoto
+
+El [run 41482765021](https://github.com/TilcAI/tilcai-infrastructure/actions/runs/41482765021)
+completó verify y deploy; instaló la imagen de 22026fa. En el host pasaron salud,
+autenticación, Baneco live/principal, generación de Bs 0,10, PNG válido, idempotencia,
+consulta de estado y cancelación. Tras reiniciar el contenedor, el QR cancelado persistió
+y el relayer continuó disponible. El smoke usa un cuerpo JSON vacío al cancelar.
+
+La API se publica en loopback; no se configuró un dominio HTTPS nuevo ni se probaron
+callbacks bancarios públicos o abonos reales. El host ejecuta blockchain testnet y QR
+bancario real. La generación con configuración mainnet se probó separadamente en base
+temporal; no se habilitaron pagos blockchain mainnet en este host.
