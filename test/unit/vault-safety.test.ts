@@ -16,13 +16,14 @@ import { disbursementIdBytes32 } from "../../src/modules/vault/disbursement-id.t
 const request = { to: BUYER, amount: "10", idempotencyKey: "concurrent-vault-01" };
 const network = networks(loadEnv({})).avalancheFuji;
 
-for (const sameKey of [false, true]) test(`two SQLite connections: ${sameKey ? "same key replays" : "only one reservation fits"}`, async () => {
+for (const capacity of ["balance", "daily"] as const) for (const sameKey of [false, true]) test(`two SQLite connections (${capacity}): ${sameKey ? "same key replays" : "only one reservation fits"}`, async () => {
   const dir = mkdtempSync(join(tmpdir(), "vault-reserve-"));
   const file = join(dir, "db.sqlite");
   const dbs = [openDatabase(file), openDatabase(file)];
   try {
     const vault = new FakeVault();
-    vault.balance = 10_000_000n;
+    if (capacity === "balance") vault.balance = 10_000_000n;
+    else vault.dailyLimit = 10_000_000n;
     const submitter = new FakeVaultSubmitter(vault);
     submitter.autoMine = false;
     const clock = new FakeClock();
@@ -46,7 +47,7 @@ for (const sameKey of [false, true]) test(`two SQLite connections: ${sameKey ? "
       assert.equal(values.filter(v => v.replayed).length, 1);
     } else {
       const failed = results.find(r => r.status === "rejected");
-      assert.equal(failed?.status === "rejected" && failed.reason.contract.code, "BUDGET");
+      assert.equal(failed?.status === "rejected" && failed.reason.contract.code, capacity === "balance" ? "BUDGET" : "PAYMENT_LIMIT");
     }
     assert.equal(submitter.submits.length, 1);
     const reopened = openDatabase(file);

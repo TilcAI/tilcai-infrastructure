@@ -731,3 +731,226 @@ Se implementaron #28, #35 y #42 en 73805cc: recuperación de payout conserva inc
 ### Salida
 
 Se creó `IMPLEMENTACION_RAMA_FIX_VAULT_SOROBAN.md` con alcance, implementación, validación y pendientes de esta rama. El documento indica que debe excluirse del resultado de integración a main.
+
+
+## 2026-11-02T03:35:46Z · SaulChoque · Codex (GPT-6)
+
+- **Sesión:** n/d
+- **Rama:** fix/saulchoque-vault-soroban-2026-11-01
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> # Context from my IDE setup:
+>
+> ## Open tabs:
+> - IMPLEMENTACION_RAMA_FIX_VAULT_SOROBAN.md: IMPLEMENTACION_RAMA_FIX_VAULT_SOROBAN.md
+> - AGENT_HISTORY.md: AGENT_HISTORY.md
+>
+> ## My request:
+> Analiza mis issues asignadas en tilcai (28, 35, 42, 32) y verifica que las implementaciones hechas para resolverlas en esta rama (si no se encuentran aqui revisa las otras ramas) cumplan con lo descrito en las issues (realiza tests y pruebas)
+
+### Salida
+
+Turno interrumpido por el usuario durante la consulta de GitHub. La revisión se retomó con el prompt repetido; no se emitió respuesta final en ese turno.
+
+
+## 2026-11-02T03:37:30Z · SaulChoque · Codex (GPT-6)
+
+- **Sesión:** n/d
+- **Rama:** fix/saulchoque-vault-soroban-2026-11-01
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> # Context from my IDE setup:
+>
+> ## Open tabs:
+> - IMPLEMENTACION_RAMA_FIX_VAULT_SOROBAN.md: IMPLEMENTACION_RAMA_FIX_VAULT_SOROBAN.md
+> - AGENT_HISTORY.md: AGENT_HISTORY.md
+>
+> ## My request:
+> Analiza mis issues asignadas en tilcai (28, 35, 42, 32) y verifica que las implementaciones hechas para resolverlas en esta rama (si no se encuentran aqui revisa las otras ramas) cumplan con lo descrito en las issues (realiza tests y pruebas)
+
+### Salida
+
+La revisión encontró **dos defectos pendientes en #35**. #28 y #42 superan las pruebas realizadas; #32 sigue siendo una investigación incompleta. Las cuatro issues están abiertas y asignadas a `SaulChoque`.
+
+La implementación está en esta rama, principalmente en el commit `73805cc`; también aparece en `origin/feat/third-party-credentials`. Revisé HEAD `58b6906`.
+
+| Issue | Resultado |
+|---|---|
+| [#28](https://github.com/TilcAI/tilcai-infrastructure/issues/28) | Corrección central validada, incluyendo reapertura de SQLite. Falta revisión independiente. |
+| [#35](https://github.com/TilcAI/tilcai-infrastructure/issues/35) | Cumplimiento parcial: quedan dos carreras reproducibles. |
+| [#42](https://github.com/TilcAI/tilcai-infrastructure/issues/42) | Preflight, importes exactos y recuperación parcial validados con CLI falsa. Falta revisión independiente. |
+| [#32](https://github.com/TilcAI/tilcai-infrastructure/issues/32) | Faltan archivo/restauración en ledger local y decisión D-05. |
+
+**Los problemas encontrados en #35**
+
+1. **Una confirmación puede dejar obsoleto el saldo usado para admitir otra reserva.** Una petición lee 10 USDC y espera; otra paga esos 10 y confirma, liberando su reserva. La primera continúa, encuentra cero pendientes y acepta otros 10 contra el saldo antiguo. Queda `REQUESTED` por `InsufficientBalance`. Lo reproduje con dos conexiones SQLite. No demuestra sobrepago on-chain.
+2. **La misma clave puede devolver `BUDGET` en vez del resultado existente.** Ambas peticiones pasan la búsqueda inicial; una reserva mientras la otra espera. La segunda rechaza por capacidad antes de alcanzar la resolución de idempotencia del insert.
+
+Ambos afectan a [service.ts](/run/media/nobarasaul/NV3aca/proyectos/tilcai/tilcai-infrastructure/src/modules/vault/service.ts:94). El bloqueo SQL corrige la carrera original, pero no garantiza coherencia entre un saldo antiguo y reservas liberadas posteriormente.
+
+**Qué cambió la implementación para resolver cada problema**
+
+- **#28 — evidencia del pago:** `confirmFromChain` en [service.ts](/run/media/nobarasaul/NV3aca/proyectos/tilcai/tilcai-infrastructure/src/modules/vault/service.ts:266) conserva incertidumbre cuando falta evidencia, falla su consulta o no coinciden receptor e importe. Un mapping positivo ya no basta. El adaptador EVM busca el evento por ID; Soroban puede aportar su registro persistente `Payout(id)` aunque falte el hash. Mis cuatro pruebas adicionales comprobaron persistencia tras cerrar/reabrir SQLite, reserva retenida, ausencia de otro envío y confirmación única al recuperar evidencia.
+- **#35 — reserva atómica:** [repository.ts](/run/media/nobarasaul/NV3aca/proyectos/tilcai/tilcai-infrastructure/src/modules/vault/repository.ts:34) recalcula pendientes por red/vault con `BigInt` dentro de `BEGIN IMMEDIATE`, antes de insertar. Reserva y evento revierten juntos. El servicio rechaza snapshots de más de 30 segundos o que cruzan día UTC. Esto resuelve el intercalado original, pero necesita corregir los dos casos anteriores.
+- **#42 — validación previa:** el shell delega en [deploy_testnet.py](/run/media/nobarasaul/NV3aca/proyectos/tilcai/tilcai-infrastructure/contracts/soroban/deploy_testnet.py:39). Python valida flags, identidad, direcciones, precisión y `max ≤ daily` antes de operaciones de contrato. Convierte importes con enteros, sin interpolarlos como código. El manifiesto registra `UNKNOWN` antes de emitir y `COMPLETED` después; su existencia bloquea repeticiones ciegas. El procedimiento de recuperación está documentado.
+- **#32 — investigación TTL:** se añadieron dos tests SDK en [test.rs](/run/media/nobarasaul/NV3aca/proyectos/tilcai/tilcai-infrastructure/contracts/soroban/vault/src/test.rs:189): leer no renueva TTL y el último ledger vivo rechaza duplicados. No prueban archivo ni restore, y no permiten prometer un horizonte antirreplay.
+
+**Pruebas ejecutadas:** 201 unitarias TypeScript, 5 Python, 12 Rust y typecheck correctos. Añadí 6 sondas: cuatro validan #28 y dos reproducen los defectos de #35. Estas últimas pasan al detectar el defecto; no significan que #35 esté resuelta.
+
+Dejé el análisis, comandos, limitaciones y recomendaciones en el [informe detallado](/run/media/nobarasaul/NV3aca/proyectos/tilcai/tilcai-infrastructure/docs/revision-issues-saulchoque-2026-11-02.md), y las sondas en [vault-issues.test.ts](/run/media/nobarasaul/NV3aca/proyectos/tilcai/tilcai-infrastructure/test/review/vault-issues.test.ts). En esta revisión añadí pruebas y documentación; los cambios de negocio descritos ya existían. No ejecuté operaciones financieras en red ni cerré issues.
+
+
+## 2026-11-02T03:38:00Z · SaulChoque · Codex (GPT-6)
+
+- **Sesión:** n/d
+- **Rama:** fix/saulchoque-vault-soroban-2026-11-01
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> # Context from my IDE setup:
+>
+> ## Open tabs:
+> - IMPLEMENTACION_RAMA_FIX_VAULT_SOROBAN.md: IMPLEMENTACION_RAMA_FIX_VAULT_SOROBAN.md
+> - AGENT_HISTORY.md: AGENT_HISTORY.md
+>
+> ## My request:
+> luego explica detalladamente en tu salida que se modifico y en que parte del codigo para resolver el problema
+
+### Salida
+
+La revisión encontró **dos defectos pendientes en #35**. #28 y #42 superan las pruebas realizadas; #32 sigue siendo una investigación incompleta. Las cuatro issues están abiertas y asignadas a `SaulChoque`.
+
+La implementación está en esta rama, principalmente en el commit `73805cc`; también aparece en `origin/feat/third-party-credentials`. Revisé HEAD `58b6906`.
+
+| Issue | Resultado |
+|---|---|
+| [#28](https://github.com/TilcAI/tilcai-infrastructure/issues/28) | Corrección central validada, incluyendo reapertura de SQLite. Falta revisión independiente. |
+| [#35](https://github.com/TilcAI/tilcai-infrastructure/issues/35) | Cumplimiento parcial: quedan dos carreras reproducibles. |
+| [#42](https://github.com/TilcAI/tilcai-infrastructure/issues/42) | Preflight, importes exactos y recuperación parcial validados con CLI falsa. Falta revisión independiente. |
+| [#32](https://github.com/TilcAI/tilcai-infrastructure/issues/32) | Faltan archivo/restauración en ledger local y decisión D-05. |
+
+**Los problemas encontrados en #35**
+
+1. **Una confirmación puede dejar obsoleto el saldo usado para admitir otra reserva.** Una petición lee 10 USDC y espera; otra paga esos 10 y confirma, liberando su reserva. La primera continúa, encuentra cero pendientes y acepta otros 10 contra el saldo antiguo. Queda `REQUESTED` por `InsufficientBalance`. Lo reproduje con dos conexiones SQLite. No demuestra sobrepago on-chain.
+2. **La misma clave puede devolver `BUDGET` en vez del resultado existente.** Ambas peticiones pasan la búsqueda inicial; una reserva mientras la otra espera. La segunda rechaza por capacidad antes de alcanzar la resolución de idempotencia del insert.
+
+Ambos afectan a [service.ts](/run/media/nobarasaul/NV3aca/proyectos/tilcai/tilcai-infrastructure/src/modules/vault/service.ts:94). El bloqueo SQL corrige la carrera original, pero no garantiza coherencia entre un saldo antiguo y reservas liberadas posteriormente.
+
+**Qué cambió la implementación para resolver cada problema**
+
+- **#28 — evidencia del pago:** `confirmFromChain` en [service.ts](/run/media/nobarasaul/NV3aca/proyectos/tilcai/tilcai-infrastructure/src/modules/vault/service.ts:266) conserva incertidumbre cuando falta evidencia, falla su consulta o no coinciden receptor e importe. Un mapping positivo ya no basta. El adaptador EVM busca el evento por ID; Soroban puede aportar su registro persistente `Payout(id)` aunque falte el hash. Mis cuatro pruebas adicionales comprobaron persistencia tras cerrar/reabrir SQLite, reserva retenida, ausencia de otro envío y confirmación única al recuperar evidencia.
+- **#35 — reserva atómica:** [repository.ts](/run/media/nobarasaul/NV3aca/proyectos/tilcai/tilcai-infrastructure/src/modules/vault/repository.ts:34) recalcula pendientes por red/vault con `BigInt` dentro de `BEGIN IMMEDIATE`, antes de insertar. Reserva y evento revierten juntos. El servicio rechaza snapshots de más de 30 segundos o que cruzan día UTC. Esto resuelve el intercalado original, pero necesita corregir los dos casos anteriores.
+- **#42 — validación previa:** el shell delega en [deploy_testnet.py](/run/media/nobarasaul/NV3aca/proyectos/tilcai/tilcai-infrastructure/contracts/soroban/deploy_testnet.py:39). Python valida flags, identidad, direcciones, precisión y `max ≤ daily` antes de operaciones de contrato. Convierte importes con enteros, sin interpolarlos como código. El manifiesto registra `UNKNOWN` antes de emitir y `COMPLETED` después; su existencia bloquea repeticiones ciegas. El procedimiento de recuperación está documentado.
+- **#32 — investigación TTL:** se añadieron dos tests SDK en [test.rs](/run/media/nobarasaul/NV3aca/proyectos/tilcai/tilcai-infrastructure/contracts/soroban/vault/src/test.rs:189): leer no renueva TTL y el último ledger vivo rechaza duplicados. No prueban archivo ni restore, y no permiten prometer un horizonte antirreplay.
+
+**Pruebas ejecutadas:** 201 unitarias TypeScript, 5 Python, 12 Rust y typecheck correctos. Añadí 6 sondas: cuatro validan #28 y dos reproducen los defectos de #35. Estas últimas pasan al detectar el defecto; no significan que #35 esté resuelta.
+
+Dejé el análisis, comandos, limitaciones y recomendaciones en el [informe detallado](/run/media/nobarasaul/NV3aca/proyectos/tilcai/tilcai-infrastructure/docs/revision-issues-saulchoque-2026-11-02.md), y las sondas en [vault-issues.test.ts](/run/media/nobarasaul/NV3aca/proyectos/tilcai/tilcai-infrastructure/test/review/vault-issues.test.ts). En esta revisión añadí pruebas y documentación; los cambios de negocio descritos ya existían. No ejecuté operaciones financieras en red ni cerré issues.
+
+
+## 2026-11-02T05:32:54Z · SaulChoque · Codex (GPT-6)
+
+- **Sesión:** n/d
+- **Rama:** fix/saulchoque-vault-soroban-2026-11-01
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> # Context from my IDE setup:
+>
+> ## Active file: src/modules/vault/repository.ts
+>
+> ## Open tabs:
+> - repository.ts: src/modules/vault/repository.ts
+> - service.ts: src/modules/vault/service.ts
+> - deploy-mainnet.sh: contracts/soroban/deploy-mainnet.sh
+> - IMPLEMENTACION_RAMA_FIX_VAULT_SOROBAN.md: IMPLEMENTACION_RAMA_FIX_VAULT_SOROBAN.md
+> - AGENT_HISTORY.md: AGENT_HISTORY.md
+>
+> ## My request:
+> Realiza las modificaciones necesarias a #35, completa la investigacion de #32 y realiza pruebas de todos para verificar el funcionamiento
+
+### Salida
+
+Corregí los dos problemas de **#35** y completé la **parte experimental de #32** en un ledger Stellar local. Las pruebas realizadas pasan.
+
+**Qué modifiqué para #35**
+
+- En [repository.ts](/run/media/nobarasaul/NV3aca/proyectos/tilcai/tilcai-infrastructure/src/modules/vault/repository.ts:37), `insert` resuelve primero la clave idempotente dentro de `BEGIN IMMEDIATE`. Si otra petición ya la admitió, devuelve ese registro antes de comprobar capacidad. El servicio responde con el mismo ID o con `IDEMPOTENCY_CONFLICT` si cambió el contenido.
+- Añadí `capacityRevision`, una revisión durable basada en los eventos de confirmación/fallo de cada red y vault. En [service.ts](/run/media/nobarasaul/NV3aca/proyectos/tilcai/tilcai-infrastructure/src/modules/vault/service.ts:94), se captura antes de consultar RPC y se comprueba nuevamente dentro de la transacción. Si una confirmación liberó reservas mientras se consultaba el saldo, ese snapshot se rechaza con `SERVICE_UNAVAILABLE`, sin reservar ni enviar otro payout.
+- Los controles de capacidad se ejecutan después de resolver idempotencia. También se recupera el resultado existente si falla RPC después de una admisión concurrente.
+- La notificación de rechazo al monitor se emite después del rollback, para que el evento permanezca en SQLite. Conservé las restricciones de antigüedad, día UTC y reservas inciertas. No hizo falta migración.
+
+Las reproducciones anteriores ahora son pruebas de aceptación dentro de `npm test`. Añadí casos de cupo diario, referencia, payload distinto, caída RPC, reapertura de SQLite y persistencia del monitor. Detalles en el [informe de #35](/run/media/nobarasaul/NV3aca/proyectos/tilcai/tilcai-infrastructure/docs/vault-capacity-fix-2026-11-02.md).
+
+**Qué comprobé para #32**
+
+Usé Core 26.1.0 y RPC 26.0.0, una imagen fijada por digest, fondos sintéticos y el WASM del Vault sin modificar.
+
+| Caso | Resultado observado |
+|---|---|
+| Repetir antes del vencimiento | Rechazado |
+| Último ledger vivo: `1054216` | Transacción fallida |
+| Primer ledger vencido: `1054217` | Falló con `entry_archived` |
+| Restaurar `Payout` | Conservó exactamente receptor e importe |
+| Repetir el ID tras restaurarlo | Rechazado; saldo sin cambios |
+| Pagar con un ID nuevo | Pagó exactamente una vez |
+| Renovar TTL | Extendió la vida del registro |
+| Reiniciar Core/RPC y cliente | ID anterior rechazado; ID nuevo pagó correctamente |
+
+**No se reprodujo doble pago tras el TTL**, por lo que no apliqué un parche al contrato Soroban. Guardé versiones, hashes, resultados XDR, saldos y limitaciones en el [informe experimental de #32](/run/media/nobarasaul/NV3aca/proyectos/tilcai/tilcai-infrastructure/docs/soroban-ttl-results-2026-11-02.md).
+
+El avance utilizó saltos controlados de ledger; no reprodujo un millón de cierres consecutivos. El experimento sí se ejecutó. El [arnés consolidado](/run/media/nobarasaul/NV3aca/proyectos/tilcai/tilcai-infrastructure/test/local/soroban-ttl/README.md) quedó comprobado sintácticamente, sin una segunda corrida completa desde cero.
+
+**Verificación final**
+
+| Comprobación | Resultado |
+|---|---:|
+| Unitarias TypeScript, incluidas #28/#35 | 215/215 |
+| Deploy Soroban con CLI falsa, #42 | 5/5 |
+| Rust Vault y TTL | 12/12 |
+| Verificación offline de evidencia #32 | 5/5 |
+| Typecheck y `git diff --check` | Correctos |
+
+El cierre formal de #32 sigue pendiente de revisión independiente y aceptación de D-05 por el equipo. No se operó en redes públicas. Los contenedores de investigación quedaron detenidos; los cambios permanecen sin commit ni push.
+
+
+## 2026-11-02T06:23:32Z · SaulChoque · Codex (GPT-6)
+
+- **Sesión:** n/d
+- **Rama:** fix/saulchoque-vault-soroban-2026-11-01
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> # Context from my IDE setup:
+>
+> ## Open tabs:
+> - repository.ts: src/modules/vault/repository.ts
+> - service.ts: src/modules/vault/service.ts
+> - deploy-mainnet.sh: contracts/soroban/deploy-mainnet.sh
+> - IMPLEMENTACION_RAMA_FIX_VAULT_SOROBAN.md: IMPLEMENTACION_RAMA_FIX_VAULT_SOROBAN.md
+> - AGENT_HISTORY.md: AGENT_HISTORY.md
+>
+> ## My request:
+> genial, crea una PR asignadas a los revisores tecnicos asignados para mergerar a main y especificando que las ramas deben de eliminarse una vez resuelta la PR
+> Detalla toda la informacion de la resolucion de las issues
+
+### Salida
+
+Creé la [PR #48](https://github.com/TilcAI/tilcai-infrastructure/pull/48) hacia `main`, con **JHAMILCALI, OmarQV y joseemen11** como revisores solicitados y asignados.
+
+La descripción detalla las cuatro issues, cambios de código, experimentos, evidencia, limitaciones y rollback. Incluye las pruebas: **215 TypeScript, 5 Python, 12 Rust y 5 de evidencia**, todas correctas, además del typecheck.
+
+También especifica:
+
+- Integrar mediante **Squash and merge** y eliminar la rama de origen después del merge.
+- Excluir el documento exclusivo de la rama del resultado en `main`; su copia local se conserva.
+- Mantener #32 abierta hasta aceptar D-05 y completar las revisiones.
+
+La PR quedó lista para revisión. No realicé el merge.

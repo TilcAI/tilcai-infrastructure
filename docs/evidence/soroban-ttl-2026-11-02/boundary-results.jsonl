@@ -1,0 +1,2 @@
+{"ledger_seq":1054216,"tx_result_set":{"results":[{"transaction_hash":"2865eebbcf358c7ed6e4754552bc0d60a9a8f8f1274bc80f44a0c09a051bea06","result":{"fee_charged":"145705","result":{"tx_failed":[{"op_inner":{"invoke_host_function":"trapped"}}]},"ext":"v0"}}]},"ext":"v0"}
+{"ledger_seq":1054217,"tx_result_set":{"results":[{"transaction_hash":"3d0f013dc45b216b425d07ca7174ff076a37d2aeb6c218a432aeff0683030d1f","result":{"fee_charged":"145705","result":{"tx_failed":[{"op_inner":{"invoke_host_function":"entry_archived"}}]},"ext":"v0"}}]},"ext":"v0"}

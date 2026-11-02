@@ -10,7 +10,10 @@ export class ConcurrentUpdateError extends Error {
 }
 
 export interface VaultRepository {
-  insert(d: VaultDisbursement, ev: DisbursementEvent, admit?: (pendingAtomic: bigint) => void): void;
+  /** Returns the existing request when its key was admitted concurrently. */
+  insert(d: VaultDisbursement, ev: DisbursementEvent, admit?: (pendingAtomic: bigint) => void): VaultDisbursement | undefined;
+  /** Durable token changed whenever capacity is released by a terminal transition. */
+  capacityRevision(network: string, vault: string): bigint;
   get(id: VaultDisbursementId): VaultDisbursement | undefined;
   getByIdempotencyKey(key: string): VaultDisbursement | undefined;
   /** The payout of a reference that has not failed, if there is one. */
@@ -31,15 +34,14 @@ const json = (v: unknown) => JSON.stringify(v, (_, x) => (typeof x === "bigint" 
 export class SqliteVaultRepository implements VaultRepository {
   constructor(private readonly db: DatabaseSync) {}
 
-  insert(d: VaultDisbursement, ev: DisbursementEvent, admit?: (pendingAtomic: bigint) => void): void {
-    tx(this.db, () => {
-      // Check after acquiring the writer lock. Repeated keys go through the UNIQUE
-      // constraint so the service can replay them even when capacity is exhausted.
-      if (!this.getByIdempotencyKey(d.idempotencyKey)) {
-        const rows = this.db.prepare("SELECT amount_atomic FROM vault_disbursements WHERE network = ? AND vault = ? AND state IN ('REQUESTED','SUBMITTED')")
-          .all(d.network, d.vault.toLowerCase()) as Array<{ amount_atomic: string }>;
-        admit?.(rows.reduce((sum, row) => sum + BigInt(row.amount_atomic), 0n));
-      }
+  insert(d: VaultDisbursement, ev: DisbursementEvent, admit?: (pendingAtomic: bigint) => void): VaultDisbursement | undefined {
+    return tx(this.db, () => {
+      // Resolve idempotency before any capacity/snapshot checks under the writer lock.
+      const existing = this.getByIdempotencyKey(d.idempotencyKey);
+      if (existing) return existing;
+      const rows = this.db.prepare("SELECT amount_atomic FROM vault_disbursements WHERE network = ? AND vault = ? AND state IN ('REQUESTED','SUBMITTED')")
+        .all(d.network, d.vault.toLowerCase()) as Array<{ amount_atomic: string }>;
+      admit?.(rows.reduce((sum, row) => sum + BigInt(row.amount_atomic), 0n));
       this.db
         .prepare(
           `INSERT INTO vault_disbursements (id, state, uncertain, network, vault, to_address, amount_atomic, reference,
@@ -51,7 +53,18 @@ export class SqliteVaultRepository implements VaultRepository {
           d.idempotencyKey, d.requestHash, d.fromBlock.toString(), d.attempts, d.nextCheckAt, d.createdAt, d.updatedAt,
         );
       this.appendEvent(ev);
+      return undefined;
     });
+  }
+
+  capacityRevision(network: string, vault: string): bigint {
+    // seq is durable and monotonic. No schema change or clock resolution assumption.
+    const stmt = this.db.prepare(`SELECT COALESCE(MAX(e.seq), 0) AS revision
+      FROM vault_disbursement_events e JOIN vault_disbursements d ON d.id = e.disbursement_id
+      WHERE d.network = ? AND d.vault = ? AND e.to_state IN ('CONFIRMED','FAILED')
+        AND e.from_state IS NOT e.to_state`);
+    stmt.setReadBigInts(true);
+    return (stmt.get(network, vault.toLowerCase()) as { revision: bigint }).revision;
   }
 
   get(id: VaultDisbursementId): VaultDisbursement | undefined {
