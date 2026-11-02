@@ -635,3 +635,63 @@ N-11 (#37) implementado, sin commit, con la política híbrida que aprobó OmarQ
 ### Salida
 
 Commit de N-11 en fix/n11-monitor-prune (código, migración 7, tests, documentación e historial), push a origin y PR contra main que cierra #37, con revisión pedida a joseemen11 y JHAMILCALI.
+Commit de la investigación N-07 en docs/n07-single-writer, push a origin, PR contra main que referencia #33 sin cerrarlo, con revisión de JHAMILCALI y joseemen11, y comentario en #33 con el resumen y el pedido de un staging autorizado.
+
+## 2026-11-01T20:25:00Z · OmarQV · Claude Code (claude-opus-5-5)
+
+- **Sesión:** n/d
+- **Rama:** docs/n07-single-writer
+- **Repositorios:** tilcai-infrastructure, tilcai-web
+
+### Prompt
+
+> ACTUALIZA mi version de node (prioridad). Termina con las issues completamente, documenta en los readmes lo realizado en una lista como un check-in para que mis compañeros tengan el contexto. En tilcai-web agrega lo que falta lo de monitor.gap y lo demas, actualiza la Documentación (al terminar en el repo de tilcai-web debes reflejar en Documentacion todo lo realizado, se contabiliza los commits solo desde el repo tilcai-web así que realiza 20 add+commit).
+
+### Salida
+
+En este repo: Node.js local pasó de 22.16.0 a 24.22.1. Con eso `main` pasa 193/193, y las ramas de los PR #43 (195/195), #44 (208/208), #45 (201/201) y #46 (193/193), todas con typecheck limpio. La casilla de tests pendiente de #43, #44 y #45 quedó marcada con esos resultados. El README abre con un check-in para el equipo: los PR, su orden de merge, las reglas ya en vigor para Cloud Run y lo pendiente. N-07 sigue sin poder cerrarse: necesita un staging autorizado. El resto del trabajo de este pedido está en tilcai-web (20 commits).
+
+## 2026-11-01T21:40:00Z · OmarQV · Claude Code (claude-opus-5-5)
+
+- **Sesión:** n/d
+- **Rama:** feat/monitor-gap-til07 (tilcai-web), docs/n07-single-writer (tilcai-infrastructure)
+- **Repositorios:** tilcai-web, tilcai-infrastructure
+
+### Prompt
+
+> Si hazlo
+
+### Salida
+
+Push de feat/monitor-gap-til07 (20 commits) y PR tilcai-web#30 contra main, que referencia #24 sin cerrarlo, con revisión de SaulChoque y JHAMILCALI y el orden de merge indicado: tilcai-infrastructure#45 va antes. Push del check-in del README a docs/n07-single-writer (PR #46). Comentarios en tilcai-infrastructure#45 (enlace al espejo de la web) y en tilcai-web#24 (avance; falta la revisión visual en móvil y escritorio). Esta entrada queda sin commit, por la regla 9.
+
+## 2026-11-01T22:05:00Z · OmarQV · Claude Code (claude-opus-5-5)
+
+- **Sesión:** n/d
+- **Rama:** fix/n11-monitor-prune
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> Que cambios hizo mi compañero, revisa los repositorios
+
+### Salida
+
+Revisión, sin cambios: todo lo nuevo es de saulchoque, del 1 de noviembre.
+- En este repo: corrección del vault (#28, #35, #42) y despliegue de Soroban, credenciales de terceros con caducidad y rotación, y QR generado desde el payload.
+- En los demás: SDK y MCP con introspección de credenciales; documentación con plan SIN, autenticación de terceros y estado de repositorios; READMEs de entrega.
+- Hallazgo: feat/third-party-credentials usa la migración 7, la misma que N-11 (#45). Hay conflictos de Git menores con #43, #44 y #45. Ninguna revisión en los PR.
+
+## 2026-11-01T22:10:00Z · OmarQV · Claude Code (claude-opus-5-5)
+
+- **Sesión:** n/d
+- **Rama:** fix/n11-monitor-prune
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> Hazlo
+
+### Salida
+
+La migración de N-11 (`monitor_sinks.gap_json`) pasa de 7 a 8: la 6 es de feat/qr-providers-fallback y la 7 de feat/third-party-credentials. Dos migraciones con el mismo id dejarían la segunda sin aplicar en una base que ya corrió la primera. Se actualizó el comentario de migration-5.test.ts. Suite 201/201 y typecheck correcto. Se comprueba la combinación con las dos ramas de saulchoque, se actualiza el PR #45 y se avisa ahí a SaulChoque.

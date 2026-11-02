@@ -18,7 +18,7 @@ const run = promisify(execFile);
 const SCA_MIGRATION = 5;
 const BEFORE = Array.from({ length: SCA_MIGRATION - 1 }, (_, i) => i + 1);
 /**
- * Everything a full migration applies: 5 and whatever came after it (7: monitor gaps). Those only add tables
+ * Everything a full migration applies: 5 and whatever came after it (8: monitor gaps). Those only add tables
  * or columns that no assertion here reads; taken from MIGRATIONS so a new one does not break this file.
  */
 const AFTER = MIGRATIONS.map((m) => m.id).sort((a, b) => a - b);

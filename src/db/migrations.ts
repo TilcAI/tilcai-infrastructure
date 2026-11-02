@@ -358,10 +358,11 @@ BEGIN SELECT RAISE(ABORT, 'tenant_id is immutable'); END;
 `,
   },
   {
-    // 7, not 6: feat/qr-providers-fallback takes 6 for qr_collections. The runner applies whatever id is
-    // missing, so either branch can reach main first.
+    // 8, not 6 or 7: feat/qr-providers-fallback takes 6 (qr_collections) and feat/third-party-credentials takes 7
+    // (tenant key expiry and events). Two migrations with one id would leave the second one never applied on a
+    // database that ran the first. The runner applies whatever id is missing, so the branches can reach main in any order.
     // The pending events a receiver lost to MONITOR_PENDING_MAX_DAYS, until it is told (JSON SinkGap).
-    id: 7,
+    id: 8,
     sql: `
 ALTER TABLE monitor_sinks ADD COLUMN gap_json TEXT;
 `,
