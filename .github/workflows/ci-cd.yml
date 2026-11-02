@@ -1,0 +1,80 @@
+name: CI/CD
+on:
+  push:
+    branches: [main, feat/continuous-deploy-baneco]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: tilcai-infrastructure
+      - uses: actions/checkout@v4
+        with:
+          repository: TilcAI/tilcai-core
+          ref: d376e07
+          path: tilcai-core
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci
+        working-directory: tilcai-infrastructure
+      - run: npm run lint && npm run typecheck && npm test && git diff --check
+        working-directory: tilcai-infrastructure
+      - name: Build API image
+        run: docker build --build-arg VCS_REF=$GITHUB_SHA -f tilcai-infrastructure/deploy/Dockerfile -t tilcai-ci .
+      - name: Test real container
+        run: |
+          docker run -d --name tilcai-ci -e TILCAI_API_KEYS=ci-test-key -p 127.0.0.1:8787:8787 tilcai-ci
+          trap 'docker logs tilcai-ci; docker rm -f tilcai-ci' EXIT
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8787/health > /dev/null; then exit 0; fi
+            sleep 2
+          done
+          exit 1
+      - uses: docker/login-action@v3
+        if: github.ref == 'refs/heads/main'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish verified image
+        if: github.ref == 'refs/heads/main'
+        run: |
+          docker tag tilcai-ci ghcr.io/tilcai/tilcai-infrastructure:$GITHUB_SHA
+          docker push ghcr.io/tilcai/tilcai-infrastructure:$GITHUB_SHA
+    permissions:
+      contents: read
+      packages: write
+  deploy:
+    needs: verify
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      packages: read
+    steps:
+      - name: Deploy restricted SSH
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          HOST: ${{ secrets.DEPLOY_HOST }}
+          SSH_PORT: ${{ secrets.DEPLOY_PORT }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEPLOY_SHA: ${{ github.sha }}
+          DEPLOY_ACTOR: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          trap 'rm -f ~/.ssh/id_deploy' EXIT
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          printf '%s\n' "$REGISTRY_TOKEN" | ssh -T -i ~/.ssh/id_deploy -p "$SSH_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes "deploy@$HOST" "$DEPLOY_SHA $DEPLOY_ACTOR"

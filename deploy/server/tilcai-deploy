@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# Root-owned forced SSH deployment command. stdin: short-lived GHCR token.
+set -euo pipefail
+[[ $# == 1 && "$1" =~ ^([0-9a-f]{40})\ ([a-zA-Z0-9_-]+(\[bot\])?)$ ]] || {
+  echo 'Expected: <40-character commit SHA> <GitHub actor>' >&2; exit 2;
+}
+tag="${BASH_REMATCH[1]}"
+actor="${BASH_REMATCH[2]}"
+cd /srv/tilcai
+exec 9>.deploy.lock
+flock -w 300 9
+previous="$(cat .current_tag 2>/dev/null || true)"
+export DOCKER_CONFIG
+DOCKER_CONFIG="$(mktemp -d)"
+trap 'rm -rf "$DOCKER_CONFIG"' EXIT
+# No token is saved on the host after this command exits.
+IFS= read -r token
+[[ -n "$token" ]] || { echo 'Missing GHCR token' >&2; exit 2; }
+printf '%s' "$token" | docker login ghcr.io --username "$actor" --password-stdin >/dev/null
+unset token
+export IMAGE_TAG="$tag"
+docker compose pull
+revision="$(docker image inspect "ghcr.io/tilcai/tilcai-infrastructure:$tag" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
+[[ "$revision" == "$tag" ]] || { echo 'Image revision does not match requested commit' >&2; exit 1; }
+# Keep the old image available locally for rollback (no registry needed).
+if docker compose up -d --wait --wait-timeout 180; then
+  if [[ -n "$previous" && "$previous" != "$tag" ]]; then
+    printf '%s\n' "$previous" > .previous_tag
+  fi
+  printf '%s\n' "$tag" > .current_tag.tmp
+  mv .current_tag.tmp .current_tag
+  echo "Deployed $tag (stack healthy)"
+else
+  echo "Deployment failed: $tag" >&2
+  if [[ -n "$previous" ]]; then
+    IMAGE_TAG="$previous" docker compose up -d --pull never --wait --wait-timeout 180
+    echo "Rolled back to $previous" >&2
+  else
+    docker compose stop tilcai
+  fi
+  exit 1
+fi

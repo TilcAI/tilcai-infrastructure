@@ -32,6 +32,9 @@ RUN --mount=type=cache,target=/root/.npm npm ci
 
 # ── Runtime ──────────────────────────────────────────────────────────────────
 FROM node:${NODE_VERSION}-bookworm-slim AS runtime
+ARG VCS_REF=unknown
+LABEL org.opencontainers.image.revision=$VCS_REF
+LABEL org.opencontainers.image.source=https://github.com/TilcAI/tilcai-infrastructure
 # ca-certificates: Litestream talks TLS to the object store.
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates \

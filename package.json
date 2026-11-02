@@ -4,7 +4,9 @@
   "private": true,
   "description": "TilcAI backend: gateway, crosschain USDC payments (CCTP V2), x402 rail and relayer integration",
   "type": "module",
-  "engines": { "node": ">=22.20.0" },
+  "engines": {
+    "node": ">=22.20.0"
+  },
   "scripts": {
     "api": "tsx src/apps/api/main.ts",
     "worker": "tsx src/apps/worker/main.ts",
@@ -23,7 +25,8 @@
     "tenant": "tsx src/apps/cli/tenant.ts",
     "test": "tsx --test \"test/unit/**/*.test.ts\"",
     "test:integration": "tsx --test \"test/integration/**/*.test.ts\"",
-    "typecheck": "tsc -p ."
+    "typecheck": "tsc -p .",
+    "lint": "eslint src test"
   },
   "dependencies": {
     "@stellar/stellar-sdk": "17.2.1",
@@ -36,7 +39,9 @@
   },
   "devDependencies": {
     "@types/node": "26.6.4",
+    "eslint": "^9.39.5",
     "tsx": "4.23.15",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "typescript-eslint": "^8.72.1"
   }
 }
