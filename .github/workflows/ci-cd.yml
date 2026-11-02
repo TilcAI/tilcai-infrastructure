@@ -12,6 +12,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   verify:
+    timeout-minutes: 20
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -56,6 +57,7 @@ jobs:
       contents: read
       packages: write
   deploy:
+    timeout-minutes: 15
     needs: verify
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
@@ -79,4 +81,4 @@ jobs:
           printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy
           chmod 600 ~/.ssh/id_deploy
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
-          printf '%s\n' "$REGISTRY_TOKEN" | ssh -T -i ~/.ssh/id_deploy -p "$SSH_PORT" -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes "deploy@$HOST" "$DEPLOY_SHA $DEPLOY_ACTOR"
+          printf '%s\n' "$REGISTRY_TOKEN" | ssh -T -i ~/.ssh/id_deploy -p "$SSH_PORT" -o BatchMode=yes -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes "deploy@$HOST" "$DEPLOY_SHA $DEPLOY_ACTOR"
