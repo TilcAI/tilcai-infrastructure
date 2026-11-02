@@ -43,3 +43,19 @@ Al actualizar Core, renovar ese snapshot y ejecutar las suites; no requiere toke
 212 pruebas unitarias, lint y typecheck pasan en GitHub Actions; el smoke construye y arranca
 la imagen real. Antes de integrar se emitió un QR bancario real de Bs 0,10 en estado pendiente
 con una base temporal; no se simuló depósito ni se realizó pago.
+
+## Smoke remoto reproducible
+
+Desde el checkout local, después de un release saludable:
+
+```sh
+ssh saul-tilcai-lor 'docker exec -i tilcai-tilcai-1 node --input-type=module - --real-qr' < scripts/smoke-server.mjs
+```
+
+El argumento `--real-qr` crea un QR bancario real de Bs 0,10, verifica PNG e idempotencia,
+consulta su estado y lo cancela. Sin ese argumento solo verifica salud, autenticación y
+configuración del proveedor. No simula depósitos ni envía fondos.
+
+También se comprobó generación real sin forzar proveedor con configuración mainnet y
+base temporal: Banco Económico respondió primero, QR pendiente de Bs 0,10.
+Esto valida el adaptador QR, no la disponibilidad de los rieles blockchain mainnet en el nuevo host.

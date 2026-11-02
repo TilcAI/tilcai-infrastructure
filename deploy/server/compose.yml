@@ -65,7 +65,7 @@ services:
         max-file: '3'
     pids_limit: 256
   tilcai:
-    image: ghcr.io/tilcai/tilcai-infrastructure:${IMAGE_TAG:?IMAGE_TAG required}
+    image: ghcr.io/tilcai/tilcai-api:${IMAGE_TAG:?IMAGE_TAG required}
     environment:
       TILCAI_ENV: ${TILCAI_ENV:-testnet}
       MAINNET_TRANSACTIONS_ENABLED: ${MAINNET_TRANSACTIONS_ENABLED:-false}

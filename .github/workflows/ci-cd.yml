@@ -44,8 +44,8 @@ jobs:
       - name: Publish verified image
         if: github.ref == 'refs/heads/main'
         run: |
-          docker tag tilcai-ci ghcr.io/tilcai/tilcai-infrastructure:$GITHUB_SHA
-          docker push ghcr.io/tilcai/tilcai-infrastructure:$GITHUB_SHA
+          docker tag tilcai-ci ghcr.io/tilcai/tilcai-api:$GITHUB_SHA
+          docker push ghcr.io/tilcai/tilcai-api:$GITHUB_SHA
     permissions:
       contents: read
       packages: write

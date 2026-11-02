@@ -19,8 +19,8 @@ IFS= read -r token
 printf '%s' "$token" | docker login ghcr.io --username "$actor" --password-stdin >/dev/null
 unset token
 export IMAGE_TAG="$tag"
-docker compose pull
-revision="$(docker image inspect "ghcr.io/tilcai/tilcai-infrastructure:$tag" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
+docker compose pull tilcai
+revision="$(docker image inspect "ghcr.io/tilcai/tilcai-api:$tag" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
 [[ "$revision" == "$tag" ]] || { echo 'Image revision does not match requested commit' >&2; exit 1; }
 # Keep the old image available locally for rollback (no registry needed).
 if docker compose up -d --wait --wait-timeout 180; then

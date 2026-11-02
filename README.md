@@ -440,3 +440,10 @@ además de typecheck. Estas cifras pertenecen a las ramas y ejecuciones document
 representan un recuento actualizado de todas las ramas combinadas.
 [Resultados y pendientes](https://github.com/TilcAI/documentation/blob/main/3-CONSTRUCCION/ESTADO_REPOSITORIOS_2026-11-01.md) · [QR/configuración](https://github.com/TilcAI/documentation/blob/main/3-CONSTRUCCION/QR_PAYLOAD_Y_CONFIGURACION_2026-11-02.md) · [Credenciales](https://github.com/TilcAI/documentation/blob/main/3-CONSTRUCCION/CREDENCIALES_TERCEROS_IMPLEMENTACION_2026-11-01.md).
 La [facturación SIN](https://github.com/TilcAI/documentation/blob/main/2-ARQUITECTURA/TILCAI_FACTURACION_SIN_2026-11-01.md) sigue siendo diseño y requiere habilitación e implementación.
+
+## Despliegue continuo en servidor
+
+`main` ejecuta lint, typecheck, tests y smoke de la imagen Docker antes de publicarla
+y desplegarla en `saul-tilcai-lor`. Redis y relayer se ejecutan en Docker; los secretos
+permanecen fuera de Git. Operación, rollback y smoke bancario en
+[deploy/server/README.md](deploy/server/README.md).
