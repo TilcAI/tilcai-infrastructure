@@ -16,12 +16,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: tilcai-infrastructure
-      - uses: actions/checkout@v4
-        with:
-          repository: TilcAI/tilcai-core
-          ssh-key: ${{ secrets.CORE_READ_KEY }}
-          ref: d376e07da844c0aeaafaa122ddd942f32c9f17d4
-          path: tilcai-core
+      - run: cp -a tilcai-infrastructure/deploy/vendor/tilcai-core tilcai-core
       - uses: actions/setup-node@v4
         with:
           node-version: 24
