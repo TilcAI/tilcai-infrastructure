@@ -703,3 +703,17 @@ Actualicé los **8 repositorios**, preservando tus cambios locales.
 Documentación: [resultados y ramas](/home/saul-bms/proyectos/tilcai/documentation/3-CONSTRUCCION/ESTADO_REPOSITORIOS_2026-11-01.md), [credenciales](/home/saul-bms/proyectos/tilcai/documentation/3-CONSTRUCCION/CREDENCIALES_TERCEROS_IMPLEMENTACION_2026-11-01.md) y [facturación SIN: empresa única y terceros](/home/saul-bms/proyectos/tilcai/documentation/2-ARQUITECTURA/TILCAI_FACTURACION_SIN_2026-11-01.md).
 
 **Pendiente:** completar archivo/restauración real para #32 y verificar íntegramente la normativa/anexo SIN 2026. La facturación está documentada, todavía no implementada. Los cambios quedan locales, sin despliegue ni publicación.
+
+## 2026-11-02T02:49:26Z · saulchoque · Codex / gpt-6.1-terra
+
+- **Sesión:** n/d
+- **Rama:** fix/saulchoque-vault-soroban-2026-11-01
+- **Repositorios:** tilcai-infrastructure, tilcai-sdk, tilcai-mcp
+
+### Prompt
+
+> actualiza el agents history en las ramas de mis implementaciones, asi como un resumen de lo que se implemento en la rama y como
+
+### Salida
+
+Se implementaron #28, #35 y #42 en 73805cc: recuperación de payout conserva incertidumbre y reserva si falta evidencia concordante; admisión Vault recalcula reservas dentro de BEGIN IMMEDIATE con aritmética exacta; despliegue Soroban valida entradas y usa manifiesto durable para reconciliar interrupciones. Se documentaron pruebas offline: 201 unitarias, 5 Python y 12 Rust. Las issues requieren revisión; #32 sigue parcial.
