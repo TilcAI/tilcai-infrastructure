@@ -831,3 +831,17 @@ Actualicé el README de este repositorio con su alcance en la entrega, ramas pub
 ### Salida
 
 La rama feat/qr-providers-fallback implementa gateway de cobros QR con proveedores de respaldo; dfb7006 genera el PNG desde el payload configurado o el propio del código. e064378 actualiza la URL de Banco Económico y el bind de Tailscale. Pasaron 15 tests QR Simple; el simulador no acredita abono bancario.
+
+## 2026-11-02T02:59:28Z · saulchoque · Codex / gpt-6.1-terra
+
+- **Sesión:** n/d
+- **Rama:** feat/qr-providers-fallback
+- **Repositorios:** tilcai-infrastructure, tilcai-sdk, tilcai-mcp
+
+### Prompt
+
+> genial, crea un documento en todas las ramas asociadas a mis implementaciones explicando que se implemento y como, estos son archivos exclusivos de las ramas y no deben llegar a main
+
+### Salida
+
+Se creó `IMPLEMENTACION_RAMA_QR_PROVIDERS.md` con alcance, implementación, validación y pendientes de esta rama. El documento indica que debe excluirse del resultado de integración a main.
