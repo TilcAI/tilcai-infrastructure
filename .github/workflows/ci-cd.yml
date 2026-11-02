@@ -18,7 +18,18 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: tilcai-infrastructure
-      - run: cp -a tilcai-infrastructure/deploy/vendor/tilcai-core tilcai-core
+      - name: Require scoped read access to Core
+        env:
+          CORE_READ_TOKEN: ${{ secrets.CORE_READ_TOKEN }}
+        run: |
+          test -n "$CORE_READ_TOKEN" || { echo 'Configure CORE_READ_TOKEN with Contents:read for TilcAI/tilcai-core only.'; exit 1; }
+      - uses: actions/checkout@v4
+        with:
+          repository: TilcAI/tilcai-core
+          ref: d376e07da844c0aeaafaa122ddd942f32c9f17d4
+          token: ${{ secrets.CORE_READ_TOKEN }}
+          persist-credentials: false
+          path: tilcai-core
       - uses: actions/setup-node@v4
         with:
           node-version: 24

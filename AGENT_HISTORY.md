@@ -875,3 +875,17 @@ Se preparó CI con lint, typecheck, 212 pruebas y smoke de imagen real; pasó en
 ### Salida
 
 Se integró QR y CI/CD a main mediante 13d74cb. El run 41482765021 completó publicación de imagen y despliegue SSH en saul-tilcai-lor. Pasaron lint, typecheck, 212 tests y smoke de contenedor. Redis, relayer y API están saludables. El smoke remoto confirmó Baneco real principal, PNG, idempotencia, estado y cancelación; el estado persistió tras reiniciar API. Se verificó también generación real con configuración mainnet en base temporal. Se corrigió el cuerpo de cancelación del smoke, se reforzó salud y se limitaron tiempos de CI/SSH. Operación y evidencia en deploy/server/README.md. El host permanece en blockchain testnet, con QR bancario real y API en loopback; no se verificaron depósitos ni callbacks públicos. Los documentos exclusivos de rama no están en el árbol main.
+
+## 2026-11-02T17:46:47Z · saulchoque · Codex / gpt-6.1-sol
+
+- **Sesión:** n/d
+- **Rama:** main
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> revisa si se publico codigo de tilcai-core en infratructure siguiendo su mensaje anterior, en caso de que si quita el codigo (de todas formas el codigode tilcai core es meramente ilustrativo y no es funcional)
+
+### Salida
+
+Se confirmó y retiró deploy/vendor/tilcai-core del árbol versionado. CI descarga la dependencia desde su repositorio original con commit fijado y requiere CORE_READ_TOKEN limitado a Contents:read de Core; no se configuró un token amplio. La dependencia externa preexistente se conserva porque infraestructura utiliza IDs, errores y transiciones en runtime. La copia sigue en commits históricos; no se reescribió historia ni se alteró el servicio activo. Se validaron YAML y formato del diff. El merge de PR #48 continúa pendiente.

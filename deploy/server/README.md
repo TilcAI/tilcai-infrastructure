@@ -33,10 +33,14 @@ referencia inmutable y actualizarla deliberadamente al cambiar dependencias.
 
 ## Dependencia privada de Core
 
-La organización deshabilita deploy keys y el GITHUB_TOKEN de infraestructura no puede
-leer Core. `deploy/vendor/tilcai-core` conserva un snapshot de fuentes del commit indicado
-en SOURCE.md. CI lo copia al directorio hermano para respetar la dependencia `file:`.
-Al actualizar Core, renovar ese snapshot y ejecutar las suites; no requiere tokens personales.
+Infraestructura depende de Core para IDs, contratos de errores y transiciones de pagos.
+Sus fuentes se descargan del repositorio original al construir; no se versionan copias aquí.
+CI requiere el secret `CORE_READ_TOKEN`, con permiso Contents:read limitado al repositorio
+TilcAI/tilcai-core. No usar un token personal con acceso general. La referencia está fijada
+a un commit en el workflow y checkout no persiste las credenciales.
+
+Si falta ese acceso, CI se detiene antes de construir o desplegar y conserva la versión activa.
+La eliminación de la copia del árbol actual no borra los commits históricos ni imágenes anteriores.
 
 ## Validación del 2 de noviembre de 2026
 
