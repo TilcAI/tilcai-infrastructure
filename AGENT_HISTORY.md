@@ -817,3 +817,17 @@ El servicio genera el QR desde el payload configurado o el payload propio del QR
 ### Salida
 
 Actualicé el README de este repositorio con su alcance en la entrega, ramas publicadas, enlaces a la documentación y pendientes. Los cambios se publicaron en la rama indicada. Se revisaron el formato del diff y los enlaces locales de los README; no se modificó código ni se ejecutaron pruebas funcionales.
+
+## 2026-11-02T02:49:26Z · saulchoque · Codex / gpt-6.1-terra
+
+- **Sesión:** n/d
+- **Rama:** feat/qr-providers-fallback
+- **Repositorios:** tilcai-infrastructure, tilcai-sdk, tilcai-mcp
+
+### Prompt
+
+> actualiza el agents history en las ramas de mis implementaciones, asi como un resumen de lo que se implemento en la rama y como
+
+### Salida
+
+La rama feat/qr-providers-fallback implementa gateway de cobros QR con proveedores de respaldo; dfb7006 genera el PNG desde el payload configurado o el propio del código. e064378 actualiza la URL de Banco Económico y el bind de Tailscale. Pasaron 15 tests QR Simple; el simulador no acredita abono bancario.
