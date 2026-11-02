@@ -875,3 +875,31 @@ Se preparó CI con lint, typecheck, 212 pruebas y smoke de imagen real; pasó en
 ### Salida
 
 Se integró QR y CI/CD a main mediante 13d74cb. El run 41482765021 completó publicación de imagen y despliegue SSH en saul-tilcai-lor. Pasaron lint, typecheck, 212 tests y smoke de contenedor. Redis, relayer y API están saludables. El smoke remoto confirmó Baneco real principal, PNG, idempotencia, estado y cancelación; el estado persistió tras reiniciar API. Se verificó también generación real con configuración mainnet en base temporal. Se corrigió el cuerpo de cancelación del smoke, se reforzó salud y se limitaron tiempos de CI/SSH. Operación y evidencia en deploy/server/README.md. El host permanece en blockchain testnet, con QR bancario real y API en loopback; no se verificaron depósitos ni callbacks públicos. Los documentos exclusivos de rama no están en el árbol main.
+
+## 2026-11-02T17:00:45Z · JHAMILCALI · Claude Code / claude-sonnet-5-5
+
+- **Sesión:** n/d
+- **Rama:** fix/n-01-atomic-settlement
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> haremos lo que es la siguinte isue "[N-01][P1] Liquidar pago, evento y recibo en una transacción #27" (guía y especificación técnica pegadas: una única transacción para estado final, evento y recibo con control de versión y rollback; prueba de fallo inyectado con SQLite en archivo, segunda conexión y reapertura; reintento con la misma clave; sin migración ni reemisión de burn). realiza lo que es a issue de la mejor manera trabaja en otra rama o la que estamos de la major manera para concluir con esta issue
+
+### Salida
+
+Se creó la rama fix/n-01-atomic-settlement. `CrosschainRepository.settle` guarda estado SETTLED, evento y recibo en una sola transacción con control de versión (`updateRow` compartido con `update`); `insertReceipt` se retiró de la interfaz y `service.settle` arma el recibo a partir de la evidencia ya validada y llama a `move(..., receipt)`. Sin migración ni cambios de CCTP. Pruebas nuevas en crosschain-service.test.ts: trigger SQLite que aborta el INSERT del recibo, comprobación desde una segunda conexión y tras reabrir el archivo, reintento con la misma clave (un recibo, un evento SETTLED, un solo mint) y fallo de proveedor sin estado terminal. crosschain-service pasa 20/20. Suite completa: 138 pasan y 6 archivos fallan igual que antes del cambio (falta `qrcode-generator` localmente), y typecheck muestra solo ese mismo error previo; eslint no está instalado localmente. README documenta la garantía y la consulta SQL de anomalías históricas (conciliación manual). Pendiente: commit/PR y revisión de @SaulChoque y @joseemen11; no se ejecutó ninguna red financiera.
+
+## 2026-11-02T17:20:00Z · JHAMILCALI · Claude Code / claude-sonnet-5-5
+
+- **Sesión:** n/d
+- **Rama:** fix/n-01-atomic-settlement
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> sí, has lo que es 1 y 2
+
+### Salida
+
+Con `npm ci` instalado, typecheck, lint y la suite completa quedaron limpios (214/214). Se comprobó que la prueba de fallo inyectado falla con el código anterior (SETTLED, 1 evento, 0 recibos) y pasa con la transacción única. Se hizo commit en fix/n-01-atomic-settlement, push y PR hacia main sin cerrar la issue #27. Pendientes: revisión de @SaulChoque y @joseemen11 y CI del PR.
