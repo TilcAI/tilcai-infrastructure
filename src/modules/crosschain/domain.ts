@@ -41,6 +41,9 @@ export function canMove(from: CrosschainState, to: CrosschainState): boolean {
   return NEXT[from].includes(to);
 }
 
+/** Final states: nothing about the record may change any more (N-10). */
+export const isTerminal = (s: CrosschainState): boolean => s === "SETTLED" || s === "FAILED";
+
 /** Shared payment state. `uncertain` is sticky until a terminal state (shared graph has no UNCERTAIN → SENT). */
 export function paymentStateOf(state: CrosschainState, uncertain: boolean): PaymentState {
   if (state === "SETTLED") return "SETTLED";

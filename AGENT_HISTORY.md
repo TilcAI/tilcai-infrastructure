@@ -889,3 +889,17 @@ Se integró QR y CI/CD a main mediante 13d74cb. El run 41482765021 completó pub
 ### Salida
 
 Se confirmó y retiró deploy/vendor/tilcai-core del árbol versionado. CI descarga la dependencia desde su repositorio original con commit fijado y requiere CORE_READ_TOKEN limitado a Contents:read de Core; no se configuró un token amplio. La dependencia externa preexistente se conserva porque infraestructura utiliza IDs, errores y transiciones en runtime. La copia sigue en commits históricos; no se reescribió historia ni se alteró el servicio activo. Se validaron YAML y formato del diff. El merge de PR #48 continúa pendiente.
+
+## 2026-11-02T18:00:00Z · JHAMILCALI · Claude Code / claude-sonnet-5-5
+
+- **Sesión:** n/d
+- **Rama:** fix/n-10-terminal-reschedule
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> [N-10][P2] Impedir reprogramación de metadatos terminales #36 (guía y especificación pegadas: un reschedule tardío no debe modificar metadatos, errores ni eventos de un registro ya terminal en Crosschain y Vault; prueba con dos conexiones SQLite y barrera, reapertura, ambos módulos; el retry de estados activos se conserva) — en otra rama esta issue haste pull de main
+
+### Salida
+
+Se hizo pull de main y se creó fix/n-10-terminal-reschedule. `reschedule` de Crosschain y de Vault devuelve el registro sin escribir fila ni evento ni anuncio de incertidumbre cuando el estado recargado ya es terminal (SETTLED/FAILED, CONFIRMED/FAILED); mismo corte en el `catch` de envío tras recargar (`stepAttested`, `submit`), que también reescribía `mintRequestedAt`/`requestedAt`. Nuevo `isTerminal` en crosschain/domain.ts. Sin cambio de esquema. Pruebas en test/unit/terminal-reschedule.test.ts: dos conexiones SQLite a un archivo, barrera (A llama al proveedor, B liquida/confirma, A reprograma), fila y eventos idénticos byte a byte, sin anuncio ni nueva emisión, también con error RPC sintético y tras cerrar/reabrir; el caso activo sigue reprogramando (intentos +1 una vez, un evento de incertidumbre). Sin la guarda, las dos pruebas de barrera fallan. typecheck, lint y 216/216 tests pasan. Pendiente: PR, revisión de @SaulChoque y @OmarQV; integrar después de N-01 #27 y N-03 #29 (Crosschain) y N-02 #28 (Vault). Sin redes financieras.
