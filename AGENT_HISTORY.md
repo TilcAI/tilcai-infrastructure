@@ -721,3 +721,17 @@ Documentación: [resultados y ramas](/home/saul-bms/proyectos/tilcai/documentati
 ### Salida
 
 La rama incorpora las correcciones Vault/Soroban y 60e3199: API keys por tenant, scopes y entorno con caducidad, revocación, rotación atómica e introspección propia; migración SQLite 7, CLI de operador y auditoría sin secretos. Validación previa: 206 tests unitarios y typecheck. La integración de QR y el despliegue requieren coordinación de migraciones.
+
+## 2026-11-02T02:59:28Z · saulchoque · Codex / gpt-6.1-terra
+
+- **Sesión:** n/d
+- **Rama:** feat/third-party-credentials
+- **Repositorios:** tilcai-infrastructure, tilcai-sdk, tilcai-mcp
+
+### Prompt
+
+> genial, crea un documento en todas las ramas asociadas a mis implementaciones explicando que se implemento y como, estos son archivos exclusivos de las ramas y no deben llegar a main
+
+### Salida
+
+Se creó `IMPLEMENTACION_RAMA_CREDENCIALES_BACKEND.md` con alcance, implementación, validación y pendientes de esta rama. El documento indica que debe excluirse del resultado de integración a main.
