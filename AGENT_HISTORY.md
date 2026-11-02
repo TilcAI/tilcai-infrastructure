@@ -717,3 +717,17 @@ Documentación: [resultados y ramas](/home/saul-bms/proyectos/tilcai/documentati
 ### Salida
 
 Se implementaron #28, #35 y #42 en 73805cc: recuperación de payout conserva incertidumbre y reserva si falta evidencia concordante; admisión Vault recalcula reservas dentro de BEGIN IMMEDIATE con aritmética exacta; despliegue Soroban valida entradas y usa manifiesto durable para reconciliar interrupciones. Se documentaron pruebas offline: 201 unitarias, 5 Python y 12 Rust. Las issues requieren revisión; #32 sigue parcial.
+
+## 2026-11-02T02:59:28Z · saulchoque · Codex / gpt-6.1-terra
+
+- **Sesión:** n/d
+- **Rama:** fix/saulchoque-vault-soroban-2026-11-01
+- **Repositorios:** tilcai-infrastructure, tilcai-sdk, tilcai-mcp
+
+### Prompt
+
+> genial, crea un documento en todas las ramas asociadas a mis implementaciones explicando que se implemento y como, estos son archivos exclusivos de las ramas y no deben llegar a main
+
+### Salida
+
+Se creó `IMPLEMENTACION_RAMA_FIX_VAULT_SOROBAN.md` con alcance, implementación, validación y pendientes de esta rama. El documento indica que debe excluirse del resultado de integración a main.
