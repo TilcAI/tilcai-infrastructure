@@ -168,6 +168,16 @@ services:
         max-size: 10m
         max-file: '3'
     pids_limit: 256
+    healthcheck:
+      test:
+      - CMD
+      - node
+      - -e
+      - fetch('http://127.0.0.1:8787/health').then(async r=>{const b=await r.json();process.exit(r.ok&&b.relayer==='up'&&b.qrMock==='off'&&b.qr?.mode==='live'&&b.qr.providers[0]==='baneco'?0:1)},()=>process.exit(1))
+      interval: 10s
+      timeout: 10s
+      start_period: 30s
+      retries: 6
 volumes:
   redis-data: null
   tilcai-data: null

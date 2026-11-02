@@ -59,3 +59,7 @@ configuración del proveedor. No simula depósitos ni envía fondos.
 También se comprobó generación real sin forzar proveedor con configuración mainnet y
 base temporal: Banco Económico respondió primero, QR pendiente de Bs 0,10.
 Esto valida el adaptador QR, no la disponibilidad de los rieles blockchain mainnet en el nuevo host.
+
+El pipeline omite releases por cambios exclusivos de Markdown. Las dependencias iniciales
+se provisionan por administración; los releases actualizan la API por SHA. La salud del stack
+exige relayer disponible, QR real y Banco Económico primero.
