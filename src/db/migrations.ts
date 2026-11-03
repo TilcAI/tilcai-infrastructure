@@ -358,6 +358,42 @@ BEGIN SELECT RAISE(ABORT, 'tenant_id is immutable'); END;
 `,
   },
   {
+    // QR collections: the gateway over Banco Económico, Red Enlace ATC (QR Simple, QR MLD) and the mock.
+    id: 6,
+    sql: `
+CREATE TABLE qr_collections (
+  id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL,
+  reference TEXT,
+  provider TEXT NOT NULL,
+  provider_ref TEXT NOT NULL,
+  provider_reference TEXT NOT NULL,
+  amount_cents INTEGER NOT NULL,
+  currency TEXT NOT NULL,
+  description TEXT NOT NULL,
+  single_use INTEGER NOT NULL,
+  modify_amount INTEGER NOT NULL,
+  status TEXT NOT NULL,
+  status_message TEXT,
+  expires_at TEXT NOT NULL,
+  image_base64 TEXT NOT NULL,
+  attempts_json TEXT NOT NULL,
+  paid_amount_cents INTEGER,
+  paid_at TEXT,
+  payer_name TEXT,
+  payer_bank TEXT,
+  payer_account TEXT,
+  bank_reference TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL,
+  checked_at TEXT,
+  UNIQUE (provider, provider_ref)
+);
+CREATE UNIQUE INDEX ux_qr_collections_reference ON qr_collections(tenant_id, reference) WHERE reference IS NOT NULL;
+CREATE INDEX ix_qr_collections_due ON qr_collections(status, checked_at);
+`,
+  },
+  {
     // 8, not 6 or 7: feat/qr-providers-fallback takes 6 (qr_collections) and feat/third-party-credentials takes 7
     // (tenant key expiry and events). Two migrations with one id would leave the second one never applied on a
     // database that ran the first. The runner applies whatever id is missing, so the branches can reach main in any order.

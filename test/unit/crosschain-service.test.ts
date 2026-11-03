@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { canTransition } from "tilcai-core/src/contracts.ts";
+import { canTransition } from "tilcai-core/contracts";
 import { DomainError } from "../../src/shared/errors.ts";
 import type { Hex } from "../../src/shared/hex.ts";
 import { paymentStateOf } from "../../src/modules/crosschain/domain.ts";

@@ -8,15 +8,10 @@ export const WEB_SINK = "web";
 const BATCH = 100;
 const MAX_BACKOFF_MS = 5 * 60_000;
 
-export interface MonitorDelivery {
-  schema: typeof MONITOR_SCHEMA;
-  deliveryId: string;
-  sentAt: string;
-  /** Which TilcAI is talking (several can report to one dashboard). */
-  origin: { env: string; instance: string };
-  /** Newest position in TilcAI's log: tells the receiver how far behind it is. */
-  head: number;
-  events: MonitorEvent[];
+import type { MonitorDelivery as CoreMonitorDelivery } from "tilcai-core/monitor";
+
+/** tilcai-core's delivery plus `gap` (N-11), until Core carries it: see MONITOR_EVENT_TYPES in domain.ts. */
+export interface MonitorDelivery extends CoreMonitorDelivery {
   /**
    * Positions this receiver will never get: they waited longer than MONITOR_PENDING_MAX_DAYS and were
    * pruned. Present until a delivery that carries it is acknowledged. A `monitor.gap` event says the same in the log.

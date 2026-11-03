@@ -1,5 +1,5 @@
 // Phase 2 · owner: Jhamil. Signed quotes, orders and the business adapter (report §10, §16, §21.3).
-import type { BusinessId, OrderId, QuoteId, ServiceId, CommerceState } from "tilcai-core/src/contracts.ts";
+import type { BusinessId, OrderId, QuoteId, ServiceId, CommerceState } from "tilcai-core/contracts";
 
 export interface SignedQuote {
   schema: "tilcai-quote-v1";

@@ -12,7 +12,7 @@
 #   REGISTRY           image prefix (default: tilcai, i.e. local only)
 #   TAG                image tag (default: local)
 #   PUSH               1 = docker push after building
-#   TILCAI_CORE_DIR    path to tilcai-core (default: ../tilcai-core, next to this repo)
+#   NPMRC_FILE         authenticated npmrc file for BuildKit (required for API)
 #   RELAYER_SOURCE     where the relayer fork lives: a local clone or a git URL
 #                      (default: https://github.com/SaulChoque/openzeppelin-relayer.git)
 #   RELAYER_REF        immutable 40-hex commit of the fork (required when building the relayer)
@@ -23,7 +23,6 @@ set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(dirname "$here")"
-core="${TILCAI_CORE_DIR:-$(dirname "$repo")/tilcai-core}"
 
 REGISTRY="${REGISTRY:-tilcai}"
 TAG="${TAG:-local}"
@@ -37,18 +36,13 @@ ctx=""
 trap '[ -z "$ctx" ] || rm -rf "$ctx"' EXIT
 
 build_tilcai() {
-  [ -f "$core/src/contracts.ts" ] || {
-    echo "tilcai-core not found at $core (set TILCAI_CORE_DIR)" >&2
-    exit 1
-  }
-  # The app links tilcai-core as file:../tilcai-core, so the context needs both side by side.
+  [ -f "${NPMRC_FILE:-}" ] || { echo 'Set NPMRC_FILE to an authenticated npmrc file' >&2; exit 1; }
   ctx="$(mktemp -d)"
-  mkdir -p "$ctx/tilcai-core" "$ctx/tilcai-infrastructure/deploy"
-  cp -r "$core/package.json" "$core/src" "$ctx/tilcai-core/"
+  mkdir -p "$ctx/tilcai-infrastructure/deploy"
   cp -r "$repo/package.json" "$repo/package-lock.json" "$repo/tsconfig.json" "$repo/src" \
     "$ctx/tilcai-infrastructure/"
   cp "$here/entrypoint.sh" "$ctx/tilcai-infrastructure/deploy/"
-  docker build -f "$here/Dockerfile" -t "$REGISTRY/tilcai:$TAG" "$ctx"
+  docker build --secret "id=npmrc,src=$NPMRC_FILE" -f "$here/Dockerfile" -t "$REGISTRY/tilcai:$TAG" "$ctx"
   built+=("$REGISTRY/tilcai:$TAG")
 }
 

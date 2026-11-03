@@ -1,5 +1,5 @@
 // Phase 1 (crosschain CCTP rail, implemented in ../crosschain) · Phase 2 (x402 Stellar exact rail) · owner: Saul.
-import type { PaymentAttemptId, PaymentState } from "tilcai-core/src/contracts.ts";
+import type { PaymentAttemptId, PaymentState } from "tilcai-core/contracts";
 
 /**
  * One interface for every way TilcAI can pay a quote:
