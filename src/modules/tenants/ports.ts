@@ -2,7 +2,8 @@
 // issue and sponsor accounts and to move payments. Replaces the flat TILCAI_API_KEYS list.
 export type TenantId = string & { readonly __brand: "tenant" };
 
-export type TenantScope = "payments" | "accounts:read" | "accounts:write";
+import type { TenantScope } from "tilcai-core/api";
+export type { TenantScope } from "tilcai-core/api";
 export const TENANT_SCOPES: readonly TenantScope[] = ["payments", "accounts:read", "accounts:write"];
 
 /** What TilcAI's relayers will pay for a tenant per UTC day. */

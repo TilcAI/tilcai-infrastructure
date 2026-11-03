@@ -36,9 +36,8 @@ export const MONAD_TESTNET = {
   entryPoint: "0x433709009B8330FDa32311DF1C2AFA402eD8D009" as const,
 };
 
-export type EvmNetworkId = "eip155:43113" | "eip155:43114" | "eip155:10143";
-export type StellarNetworkId = "stellar:testnet" | "stellar:pubnet";
-export type NetworkId = EvmNetworkId | StellarNetworkId;
+import type { EvmNetworkId, StellarNetworkId, NetworkId } from "tilcai-core/networks";
+export type { EvmNetworkId, StellarNetworkId, NetworkId } from "tilcai-core/networks";
 
 export interface EvmNetwork {
   id: EvmNetworkId;

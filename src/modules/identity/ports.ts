@@ -1,5 +1,5 @@
 // Phase 2 (trust root) · Phase 4 (ERC-8004) · owner: Omar + Jhamil (report §15).
-import type { BusinessId } from "tilcai-core/src/contracts.ts";
+import type { BusinessId } from "tilcai-core/contracts";
 
 export interface IdentityResolver {
   /** Key trusted by an independent root (onboarding/registry), never the key embedded in the offer. */

@@ -1,0 +1,3 @@
+#!/bin/sh
+# This wrapper is the only command allowed by the CI SSH key.
+exec sudo -n /usr/local/sbin/tilcai-deploy "${SSH_ORIGINAL_COMMAND:-}"
