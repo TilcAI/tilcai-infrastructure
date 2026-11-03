@@ -978,3 +978,32 @@ Migrados infraestructura, SDK, MCP y web al alias npm:@tilcai/core@0.1.0 con loc
 ### Salida
 
 Preparación e integración mediante PR de contratos Core y consumo privado en main; web excluido. Documentos exclusivos de ramas SDK/MCP excluidos del merge. Validación mediante checks CI de cada PR y seguimiento de despliegue infraestructura.
+
+## 2026-11-03T15:14:59Z · SaulChoque · Codex
+
+- **Sesión:** n/d
+- **Rama:** fix/relayer-monad-server
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> el relayer local de saul-bms tiene soporte para monad, realiza commits de estos cambios en tilcai y actualiza la version del servidor con esta
+
+### Salida
+
+El servidor estaba fijado a una imagen de configuración anterior a Monad; el repositorio ya define monad-testnet-relayer y su red/plugin. Se incorpora trazabilidad OCI al build del relayer y un smoke de solo lectura que exige Fuji, Monad testnet y Stellar saludables, autenticación y soporte Monad en x402. La actualización de la imagen del servidor se fija por digest en un commit posterior, tras el ensayo con Redis aislado. No se transfieren fondos ni se habilitan rieles mainnet.
+
+Completado: publicada y desplegada la imagen `ghcr.io/tilcai/tilcai-relayer@sha256:6597cecc21a0b6eea2337b3d5bbc652468abe14dbcb8d60ce8b40574f572841e`, construida desde 2aa49fd. Ensayo con Redis separado y smoke en servidor pasan: readiness, 401 sin clave, Fuji/Monad/Stellar habilitados, saldos RPC y x402 con Monad. Actualización con backup SQLite/Redis/Compose y rollback preparado; solo se recreó el relayer. El vault Monad pasó de HTTP 500 a 200: 56.28 USDC testnet, operador coincide, sin pausa, cero pendientes; RPC chainId 10143. Relayer conserva dirección y 8.694399100868288403 MON testnet. No se transfirieron fondos. Segundo commit fija el digest y documenta la operación; se publica la rama y main para activar el pipeline existente.
+
+### Salida final
+
+Actualizado en `saul-tilcai-lor`. Los commits `2aa49fd` y `98a80e1` están publicados en `main`, y el [CI/CD terminó correctamente](https://github.com/TilcAI/tilcai-infrastructure/actions/runs/41662701112).
+
+**Monad testnet ya funciona**:
+
+- Relayer: `0xcc0bbfaffb786c8bb1212c3555b8c6d0b195d6f5` — **8,6944 MON**.
+- Vault: `0xaa9e6460b6ba396c0b84029f347ff71255130c89` — **56,28 USDC**.
+
+El vault ahora responde HTTP 200. Fuji, Stellar, Redis y TilcAI están saludables. Conservé las claves y direcciones; no envié transacciones de prueba.
+
+El despliegue de Optipagos sigue pendiente de `WHATSAPP_APP_SECRET`.
