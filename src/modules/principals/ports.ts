@@ -1,5 +1,5 @@
 // Phase 2 · owner: Omar. Root of authority: person or organization (report §5, §16.1).
-import type { PrincipalId } from "tilcai-core/src/contracts.ts";
+import type { PrincipalId } from "tilcai-core/contracts";
 
 export interface Principal {
   id: PrincipalId;

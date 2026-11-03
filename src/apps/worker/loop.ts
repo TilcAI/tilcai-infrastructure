@@ -18,6 +18,7 @@ export function startWorker(ctx: AppContext): { stop(): Promise<void> } {
   let lastPruneAt = Date.now();
   const housekeeping = loop(ctx, "housekeeping", 1000, [
     () => ctx.qrMock?.deliverDueCallbacks(),
+    () => ctx.qrCollect?.processDue(),
     async () => void ctx.qrMock?.expireDue(),
     () => ctx.forwarder?.tick(),
     async () => {

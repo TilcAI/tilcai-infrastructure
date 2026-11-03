@@ -12,8 +12,8 @@ import {
   type QrPayment,
   type VendisPayment,
 } from "./domain.ts";
-import { qrMatrix, renderQrPng } from "./image.ts";
 import type { QrMockRepository } from "./repository.ts";
+import { qrMatrix, renderQrPng } from "./image.ts";
 
 export interface QrMockConfig {
   email: string;
@@ -206,7 +206,8 @@ export class QrSimpleMock {
   }
 
   private png(code: QrCode): Buffer {
-    return renderQrPng(qrMatrix(this.d.config.payload || code.payload));
+    const payload = this.d.config.payload || code.payload;
+    return renderQrPng(qrMatrix(payload));
   }
 
   /** The PNG behind a `qr_url`, or null when the name does not match a QR. */
