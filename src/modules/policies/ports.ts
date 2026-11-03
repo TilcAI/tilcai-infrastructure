@@ -1,6 +1,6 @@
 // Phase 2 · owner: Omar. Deterministic evaluation; ALLOW is never authorization to transfer (report §13).
-import type { DecisionOutcome, ErrorCode } from "tilcai-core/src/contracts.ts";
-import type { Intent, Mandate } from "tilcai-core/src/authority.ts";
+import type { DecisionOutcome, ErrorCode } from "tilcai-core/contracts";
+import type { Intent, Mandate } from "tilcai-core/experimental/authority";
 
 export interface PolicyDecision {
   outcome: DecisionOutcome;

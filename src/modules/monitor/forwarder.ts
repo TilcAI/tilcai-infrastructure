@@ -8,16 +8,8 @@ export const WEB_SINK = "web";
 const BATCH = 100;
 const MAX_BACKOFF_MS = 5 * 60_000;
 
-export interface MonitorDelivery {
-  schema: typeof MONITOR_SCHEMA;
-  deliveryId: string;
-  sentAt: string;
-  /** Which TilcAI is talking (several can report to one dashboard). */
-  origin: { env: string; instance: string };
-  /** Newest position in TilcAI's log: tells the receiver how far behind it is. */
-  head: number;
-  events: MonitorEvent[];
-}
+import type { MonitorDelivery } from "tilcai-core/monitor";
+export type { MonitorDelivery } from "tilcai-core/monitor";
 
 /** `v1=<hex>`: HMAC-SHA256 of "<unix seconds>.<body>" with the shared secret. */
 export function signDelivery(secret: string, timestamp: string, body: string): string {
