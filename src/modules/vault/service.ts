@@ -214,6 +214,7 @@ export class VaultDisbursementService {
       return this.move(cur, "SUBMITTED", "disburse submitted via relayer", { submissionId: sub.submissionId, lastError: null });
     } catch (e) {
       cur = this.d.repo.get(cur.id) ?? cur;
+      if (isTerminal(cur.state)) return cur; // another worker finished it while we were calling out
       if (e instanceof SubmissionRejected) return this.retryLater(this.patch(cur, { requestedAt: null }), `DISBURSE_SUBMIT_REJECTED:${errText(e)}`);
       // No answer (timeout, 5xx): the relayer may hold a transaction TilcAI never saw.
       return this.reschedule(cur, { error: `DISBURSE_SUBMIT_FAILED:${errText(e)}`, uncertain: true, backoff: true, countAttempt: true });
@@ -358,6 +359,8 @@ export class VaultDisbursementService {
 
   private reschedule(d: VaultDisbursement, o: { error?: string | null; uncertain?: boolean; backoff?: boolean; countAttempt?: boolean }): VaultDisbursement {
     const fresh = this.d.repo.get(d.id) ?? d;
+    // A late reschedule must not touch a payout another actor already finished: no row write, no uncertainty event.
+    if (isTerminal(fresh.state)) return fresh;
     const attempts = o.countAttempt ? fresh.attempts + 1 : fresh.attempts;
     const delay = o.backoff ? this.backoffMs(Math.max(attempts, 1)) : this.d.options.pollMs;
     const becameUncertain = Boolean(o.uncertain) && !fresh.uncertain;

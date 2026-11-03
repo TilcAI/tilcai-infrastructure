@@ -18,6 +18,7 @@ import {
   assertSharedTransition,
   canMove,
   isGaslessMode,
+  isTerminal,
   isSponsoredMode,
   paymentStateOf,
   type CrosschainPayment,
@@ -557,6 +558,7 @@ export class CrosschainPaymentService {
       });
     } catch (e) {
       cur = this.d.repo.getPayment(cur.id) ?? cur;
+      if (isTerminal(cur.state)) return cur; // another worker finished it while we were calling out
       // Ambiguous failures (timeouts, 5xx) keep mintRequestedAt so the guard waits for a possible landing.
       if (e instanceof SubmissionRejected) cur = this.patch(cur, { mintRequestedAt: null });
       return this.reschedule(cur, { error: `MINT_SUBMIT_FAILED:${errText(e)}`, backoff: true, countAttempt: true });
@@ -775,6 +777,8 @@ export class CrosschainPaymentService {
     o: { error?: string | null; uncertain?: boolean; backoff?: boolean; countAttempt?: boolean },
   ): CrosschainPayment {
     const fresh = this.d.repo.getPayment(p.id) ?? p;
+    // A late reschedule must not touch a payment another actor already finished: no row write, no uncertainty event.
+    if (isTerminal(fresh.state)) return fresh;
     const attempts = o.countAttempt ? fresh.attempts + 1 : fresh.attempts;
     const delay = o.backoff ? this.backoffMs(Math.max(attempts, 1)) : this.d.options.pollMs;
     const becameUncertain = Boolean(o.uncertain) && !fresh.uncertain;
