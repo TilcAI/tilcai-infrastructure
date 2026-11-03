@@ -393,4 +393,21 @@ CREATE UNIQUE INDEX ux_qr_collections_reference ON qr_collections(tenant_id, ref
 CREATE INDEX ix_qr_collections_due ON qr_collections(status, checked_at);
 `,
   },
+  {
+    // N-14: the sponsored-operation quota is reserved per payment right before the Relayer sends the burn.
+    // The ordinal is provisional: coordinate with N-09 (also touches this file) before merging. Rollback: DROP TABLE sponsored_holds
+    // (the counters in tenant_usage keep whatever the holds had counted; they reset with the UTC day).
+    id: 7,
+    sql: `
+CREATE TABLE sponsored_holds (
+  payment_id TEXT PRIMARY KEY REFERENCES crosschain_payments(id),
+  tenant_id TEXT NOT NULL REFERENCES tenants(id),
+  day TEXT NOT NULL,
+  state TEXT NOT NULL CHECK (state IN ('HELD','CONSUMED','RELEASED')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX ix_sponsored_holds_tenant_day ON sponsored_holds(tenant_id, day, state);
+`,
+  },
 ];

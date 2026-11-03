@@ -889,3 +889,17 @@ Se integró QR y CI/CD a main mediante 13d74cb. El run 41482765021 completó pub
 ### Salida
 
 Se confirmó y retiró deploy/vendor/tilcai-core del árbol versionado. CI descarga la dependencia desde su repositorio original con commit fijado y requiere CORE_READ_TOKEN limitado a Contents:read de Core; no se configuró un token amplio. La dependencia externa preexistente se conserva porque infraestructura utiliza IDs, errores y transiciones en runtime. La copia sigue en commits históricos; no se reescribió historia ni se alteró el servicio activo. Se validaron YAML y formato del diff. El merge de PR #48 continúa pendiente.
+
+## 2026-11-02T19:00:00Z · JHAMILCALI · Claude Code / claude-sonnet-5-5
+
+- **Sesión:** n/d
+- **Rama:** feat/n-14-sponsored-quota
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> "[N-14][P2] Aplicar cuota al efecto patrocinado con idempotencia #40" relicemos lo que es esta isssue (guía y especificación técnica pegadas: reservar la cuota de operaciones patrocinadas antes del efecto, ligada a la clave de idempotencia y con persistencia transaccional; external no consume; fallo cierto libera, envío ambiguo conserva el hold; pruebas con cuota 1, dos conexiones, replay, reinicio y aislamiento de tenants) en otra rama para hace lo que es esta issue
+
+### Salida
+
+Rama feat/n-14-sponsored-quota desde main. Política propuesta (D-03, pendiente de aprobación; docs/sponsored-quota.md): 1 unidad por pago en modos gasless, dev_gasless y account, reservada justo antes de que el Relayer envíe el burn; external y dev_signer no consumen; el mint de Stellar no cuenta. Migración 7 `sponsored_holds` (ordinal provisional, coordinar con N-09; rollback DROP TABLE). `CrosschainRepository.reserveSponsored/consumeSponsored/releaseSponsored` cuentan la unidad (`consumeQuotaSql`) y escriben el hold en una transacción; replays y reintentos reutilizan el hold. Se libera ante rechazo 4xx (≠408) o autorización vencida sin uso; 408, timeout y 5xx conservan el hold. `SubmissionRejected` lleva el status HTTP. Con cuota agotada no se llama al Relayer: el pago queda AWAITING_BURN con SPONSORED_QUOTA_EXHAUSTED y el worker reintenta. 7 pruebas nuevas en sponsored-quota.test.ts (carrera con cuota 1 en dos conexiones, replay, external=0, rechazo, ambiguo+reinicio, vencimiento, aislamiento A/B). typecheck, lint y 219/219 tests pasan. Pendiente: aprobación D-03, revisión de @SaulChoque y @OmarQV, integrar después de N-01, N-03 y N-10, y fijar el ordinal de migración con N-09. Sin redes financieras.
