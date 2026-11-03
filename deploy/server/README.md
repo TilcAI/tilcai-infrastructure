@@ -117,3 +117,8 @@ inmutable y `REGISTRY`/`TAG` explícitos; el script añade la revisión Git como
 etiqueta OCI. Publicar la imagen, comprobarla y actualizar su digest en este
 Compose requiere instalación administrativa. El pipeline de API conserva el
 relayer fijado: no lo reconstruye automáticamente con cada release de la API.
+
+El [run de CI/CD 41662701112](https://github.com/TilcAI/tilcai-infrastructure/actions/runs/41662701112)
+completó verify y deploy. La API activa quedó en `98a80e15e96562067a927804c9ed7f96da29a0a9`;
+el relayer conserva el digest anterior verificado con Monad. Tras el release completo,
+los tres contenedores quedaron healthy y el vault Monad volvió a responder HTTP 200.
