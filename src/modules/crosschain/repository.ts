@@ -12,6 +12,14 @@ export class ConcurrentUpdateError extends Error {
   }
 }
 
+export interface PaymentReceiptInput {
+  id: string;
+  paymentId: PaymentAttemptId;
+  orderId: string | null;
+  evidence: unknown;
+  createdAt: string;
+}
+
 export interface CrosschainRepository {
   insertQuote(q: RouteQuote): void;
   getQuote(id: RouteQuoteId): RouteQuote | undefined;
@@ -24,7 +32,11 @@ export interface CrosschainRepository {
   update(p: CrosschainPayment, expectedVersion: number, ev?: PaymentEvent): CrosschainPayment;
   listDue(nowIso: string, limit: number): CrosschainPayment[];
   events(id: PaymentAttemptId): PaymentEvent[];
-  insertReceipt(r: { id: string; paymentId: PaymentAttemptId; orderId: string | null; evidence: unknown; createdAt: string }): void;
+  /**
+   * Final state, its event and the receipt in ONE transaction, guarded by `expectedVersion` like `update`.
+   * Any failure rolls all three back: a payment is never SETTLED without its receipt (N-01).
+   */
+  settle(p: CrosschainPayment, expectedVersion: number, ev: PaymentEvent, receipt: PaymentReceiptInput): CrosschainPayment;
   getReceipt(paymentId: PaymentAttemptId): { id: string; evidence: unknown; createdAt: string } | undefined;
 }
 
@@ -119,8 +131,23 @@ export class SqliteCrosschainRepository implements CrosschainRepository {
   }
 
   update(p: CrosschainPayment, expectedVersion: number, ev?: PaymentEvent): CrosschainPayment {
+    return tx(this.db, () => this.updateRow(p, expectedVersion, ev));
+  }
+
+  settle(p: CrosschainPayment, expectedVersion: number, ev: PaymentEvent, receipt: PaymentReceiptInput): CrosschainPayment {
+    return tx(this.db, () => {
+      const saved = this.updateRow(p, expectedVersion, ev);
+      this.db
+        .prepare("INSERT OR IGNORE INTO payment_receipts (id, payment_id, order_id, evidence_json, created_at) VALUES (?,?,?,?,?)")
+        .run(receipt.id, receipt.paymentId, receipt.orderId, json(receipt.evidence), receipt.createdAt);
+      return saved;
+    });
+  }
+
+  /** Version-guarded UPDATE plus its event. Runs inside the caller's transaction. */
+  private updateRow(p: CrosschainPayment, expectedVersion: number, ev?: PaymentEvent): CrosschainPayment {
     const next = { ...p, version: expectedVersion + 1 };
-    tx(this.db, () => {
+    {
       const res = this.db
         .prepare(
           `UPDATE crosschain_payments SET state=?, uncertain=?, payer=?, burn_submission_id=?, burn_auth_json=?, burn_requested_at=?, burn_tx_hash=?, burn_block=?, cctp_nonce=?,
@@ -137,7 +164,7 @@ export class SqliteCrosschainRepository implements CrosschainRepository {
         );
       if (Number(res.changes) !== 1) throw new ConcurrentUpdateError();
       if (ev) this.appendEvent(ev);
-    });
+    }
     return next;
   }
 
@@ -163,12 +190,6 @@ export class SqliteCrosschainRepository implements CrosschainRepository {
       ...(r.data_json ? { data: JSON.parse(r.data_json) } : {}),
       at: r.at,
     }));
-  }
-
-  insertReceipt(r: { id: string; paymentId: PaymentAttemptId; orderId: string | null; evidence: unknown; createdAt: string }): void {
-    this.db
-      .prepare("INSERT OR IGNORE INTO payment_receipts (id, payment_id, order_id, evidence_json, created_at) VALUES (?,?,?,?,?)")
-      .run(r.id, r.paymentId, r.orderId, json(r.evidence), r.createdAt);
   }
 
   getReceipt(paymentId: PaymentAttemptId) {
