@@ -931,3 +931,17 @@ Core 0.1.0 compila contratos compartidos con entradas ESM/CJS y tipos; los consu
 ### Salida
 
 Migrados infraestructura, SDK, MCP y web al alias npm:@tilcai/core@0.1.0 con locks de integridad y autenticación por entorno. CI usa GITHUB_TOKEN; Docker recibe npmrc como secreto BuildKit y elimina el checkout privado de Core. README, guías y documentación central actualizados. Pasan 212/86/7/108 tests, typechecks, builds y smoke SDK ESM/CJS; imagen Docker compilada e import comprobado sin archivos de credenciales. Queda verificar/conceder Read por repositorio en Manage Actions access, sin API pública disponible para automatizarlo. Sin push, merge ni despliegue.
+
+## 2026-11-03T04:34:32.643245+00:00 · saulchoque · Codex
+
+- **Sesión:** n/d
+- **Rama:** merge/shared-core-to-main
+- **Repositorios:** Core, infraestructura, SDK, MCP, documentación
+
+### Prompt
+
+> genial, ahora realiza merges a main de los repos modificados (menos web)
+
+### Salida
+
+Preparación e integración mediante PR de contratos Core y consumo privado en main; web excluido. Documentos exclusivos de ramas SDK/MCP excluidos del merge. Validación mediante checks CI de cada PR y seguimiento de despliegue infraestructura.
