@@ -945,3 +945,17 @@ Migrados infraestructura, SDK, MCP y web al alias npm:@tilcai/core@0.1.0 con loc
 ### Salida
 
 Preparación e integración mediante PR de contratos Core y consumo privado en main; web excluido. Documentos exclusivos de ramas SDK/MCP excluidos del merge. Validación mediante checks CI de cada PR y seguimiento de despliegue infraestructura.
+
+## 2026-11-03T15:14:59Z · SaulChoque · Codex
+
+- **Sesión:** n/d
+- **Rama:** fix/relayer-monad-server
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> el relayer local de saul-bms tiene soporte para monad, realiza commits de estos cambios en tilcai y actualiza la version del servidor con esta
+
+### Salida
+
+El servidor estaba fijado a una imagen de configuración anterior a Monad; el repositorio ya define monad-testnet-relayer y su red/plugin. Se incorpora trazabilidad OCI al build del relayer y un smoke de solo lectura que exige Fuji, Monad testnet y Stellar saludables, autenticación y soporte Monad en x402. La actualización de la imagen del servidor se fija por digest en un commit posterior, tras el ensayo con Redis aislado. No se transfieren fondos ni se habilitan rieles mainnet.
