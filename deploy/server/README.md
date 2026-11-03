@@ -80,3 +80,40 @@ La API se publica en loopback; no se configuró un dominio HTTPS nuevo ni se pro
 callbacks bancarios públicos o abonos reales. El host ejecuta blockchain testnet y QR
 bancario real. La generación con configuración mainnet se probó separadamente en base
 temporal; no se habilitaron pagos blockchain mainnet en este host.
+
+## Relayer con Monad — actualización del 3 de noviembre de 2026
+
+El Compose fija `ghcr.io/tilcai/tilcai-relayer` por digest. La imagen anterior del
+servidor contenía solo Fuji y Stellar, aunque `deploy/relayer/config/config.json`
+ya definía Monad testnet. La nueva capa incluye esa configuración, la red 10143
+y su activo x402, sobre el mismo binario OpenZeppelin Relayer 1.8.0. La etiqueta
+OCI revision identifica el commit de construcción `2aa49fd4fc5121526af8fd24e1131dfa9586ac98`.
+No se habilitan relayers mainnet ni se reutiliza el firmante testnet para mainnet.
+
+Antes del cambio se comprobó la candidata con Redis independiente, sin procesar
+las colas de producción. Se respaldaron SQLite, Redis y Compose. Al instalar el
+Compose versionado se recreó únicamente `relayer`, con lock de despliegue y
+rollback al Compose anterior en caso de fallo de salud o del smoke autenticado.
+El API y Redis conservaron sus contenedores y volúmenes.
+
+Verificación reproducible de solo lectura:
+
+```sh
+ssh saul-tilcai-lor 'docker exec -i tilcai-tilcai-1 node --input-type=module -' < scripts/smoke-relayer.mjs
+```
+
+Exige readiness de Redis/colas/plugins, rechazo 401 sin clave, Fuji/Monad/Stellar
+habilitados, balance/estado RPC consultables y Monad anunciado en x402. La consulta
+`GET /v1/vault?network=eip155:10143` respondió 200, `operatorIsRelayer=true`,
+`paused=false`, 56.28 USDC testnet y cero pendientes; el RPC devolvió chainId 10143.
+No se enviaron transacciones en estas pruebas.
+
+Relayer Monad testnet: `0xcc0bbfaffb786c8bb1212c3555b8c6d0b195d6f5`.
+Vault Monad testnet: `0xaa9e6460b6ba396c0b84029f347ff71255130c89`.
+Los saldos son observaciones del momento de la comprobación, no valores fijos.
+
+Para posteriores builds, usar `deploy/build.sh relayer` con `RELAYER_BASE`
+inmutable y `REGISTRY`/`TAG` explícitos; el script añade la revisión Git como
+etiqueta OCI. Publicar la imagen, comprobarla y actualizar su digest en este
+Compose requiere instalación administrativa. El pipeline de API conserva el
+relayer fijado: no lo reconstruye automáticamente con cada release de la API.
