@@ -1,4 +1,4 @@
-import { canTransition, type PaymentAttemptId, type PaymentState } from "tilcai-core/src/contracts.ts";
+import { canTransition, type PaymentAttemptId, type PaymentState } from "tilcai-core/contracts";
 import type { Hex } from "../../shared/hex.ts";
 import type { RouteQuoteId } from "../../shared/ids.ts";
 import type { TenantId } from "../tenants/ports.ts";

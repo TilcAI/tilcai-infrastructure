@@ -1,6 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { canTransition } from "tilcai-core/src/contracts.ts";
+import { canTransition } from "tilcai-core/contracts";
+import { join } from "node:path";
+import { openDatabase } from "../../src/db/sqlite.ts";
+import { SqliteCrosschainRepository } from "../../src/modules/crosschain/repository.ts";
+import { tempDir } from "../support/sca.ts";
 import { DomainError } from "../../src/shared/errors.ts";
 import type { Hex } from "../../src/shared/hex.ts";
 import { paymentStateOf } from "../../src/modules/crosschain/domain.ts";
@@ -384,4 +388,71 @@ test("dashboard: every state change of a payment is announced, and an uncertain 
   await h.drive(reverted.payment.id);
   const failed = h.events.filter((e) => e.subject === reverted.payment.id).at(-1)!;
   assert.deepEqual([failed.severity, failed.data?.to, failed.data?.failureCode], ["error", "FAILED", "BURN_REVERTED"]);
+});
+
+// ── N-01: state, event and receipt are one transaction ───────────────────────────────────────────────
+
+test("N-01: a failure between the SETTLED write and the receipt leaves nothing behind; reopen + retry settles once", async () => {
+  const { dir, cleanup } = tempDir();
+  const path = join(dir, "tilcai.sqlite");
+  const db1 = openDatabase(path);
+  try {
+    const h = harness(db1);
+    const q = await h.svc.quote(quoteInput);
+    const r = await h.svc.createPayment({ quoteId: q.id, mode: "dev_signer", idempotencyKey: "key-n01-retry", orderId: "order_n01" });
+    h.attest(r.payment.burnTxHash!, NONCE);
+    const id = r.payment.id;
+    // The fault: the receipt INSERT aborts after the payment row and its event were already written in the same transaction.
+    db1.exec("CREATE TRIGGER inject_receipt_fault BEFORE INSERT ON payment_receipts BEGIN SELECT RAISE(ABORT, 'injected receipt fault'); END");
+    await assert.rejects(h.drive(id), /injected receipt fault/);
+
+    const counts = (db: ReturnType<typeof openDatabase>) => ({
+      state: (db.prepare("SELECT state FROM crosschain_payments WHERE id = ?").get(id) as any).state,
+      settledEvents: (db.prepare("SELECT count(*) n FROM payment_events WHERE payment_id = ? AND to_state = 'SETTLED'").get(id) as any).n,
+      receipts: (db.prepare("SELECT count(*) n FROM payment_receipts WHERE payment_id = ?").get(id) as any).n,
+    });
+    const before = { state: "MINT_SUBMITTED", settledEvents: 0, receipts: 0 };
+    assert.deepEqual(counts(db1), before, "rolled back on the writing connection");
+    const db2 = openDatabase(path);
+    assert.deepEqual(counts(db2), before, "and invisible from a second connection");
+    db2.close();
+    assert.equal(h.submitter.submits.length, 1);
+
+    // Restart: close, reopen the file, rebuild the service over the same (fake) chain.
+    db1.close();
+    const db3 = openDatabase(path);
+    db3.exec("DROP TRIGGER inject_receipt_fault");
+    const svc = h.build(new SqliteCrosschainRepository(db3));
+    const retry = await svc.createPayment({ quoteId: q.id, mode: "dev_signer", idempotencyKey: "key-n01-retry", orderId: "order_n01" });
+    assert.equal(retry.replayed, true, "same idempotency key after restart finds the same payment");
+    h.clock.advance(5_000);
+    for (let i = 0; i < 3 && svc.mustGet(id).state !== "SETTLED"; i++) await svc.step(svc.mustGet(id));
+    assert.deepEqual(counts(db3), { state: "SETTLED", settledEvents: 1, receipts: 1 });
+    const receipt = svc.view(id).receipt!.evidence as any;
+    assert.equal(receipt.destination.payTo, MERCHANT);
+    assert.equal(receipt.destination.receivedAtomic, "12500000");
+    assert.equal(h.submitter.submits.length, 1, "no second mint was sent");
+
+    // A further tick on the terminal payment adds nothing.
+    h.clock.advance(5_000);
+    assert.equal((await svc.step(svc.mustGet(id))).state, "SETTLED");
+    assert.deepEqual(counts(db3), { state: "SETTLED", settledEvents: 1, receipts: 1 });
+    db3.close();
+  } finally {
+    cleanup();
+  }
+});
+
+test("N-01: a provider failure before the settlement proof writes no terminal state", async () => {
+  const h = harness();
+  const q = await h.svc.quote(quoteInput);
+  const r = await h.svc.createPayment({ quoteId: q.id, mode: "dev_signer", idempotencyKey: "key-n01-prov" });
+  h.attest(r.payment.burnTxHash!, NONCE);
+  h.stellar.transactionStatus = async () => {
+    throw new Error("rpc down");
+  };
+  const p = await h.drive(r.payment.id, 8).catch(() => h.svc.mustGet(r.payment.id));
+  assert.notEqual(p.state, "SETTLED");
+  assert.equal(h.svc.view(p.id).receipt, null);
+  assert.ok(!h.repo.events(p.id).some((e) => e.to === "SETTLED"));
 });

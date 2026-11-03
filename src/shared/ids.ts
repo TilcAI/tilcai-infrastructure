@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { ID_PREFIXES, parseId, type EntityId, type IdKind } from "tilcai-core/src/contracts.ts";
+import { ID_PREFIXES, parseId, type EntityId, type IdKind } from "tilcai-core/contracts";
 import type { DelegationId, SmartAccountId } from "../modules/accounts/ports.ts";
 import type { TenantId } from "../modules/tenants/ports.ts";
 

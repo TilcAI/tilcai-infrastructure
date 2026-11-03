@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { domainSeparator, hashStruct, hashTypedData, parseSignature, recoverTypedDataAddress } from "viem";
-import type { PaymentAttemptId } from "tilcai-core/src/contracts.ts";
+import type { PaymentAttemptId } from "tilcai-core/contracts";
 import type { EvmNetwork, StellarNetwork } from "../../config/networks.ts";
 import { atomicToDecimal, decimalToAtomic, maxFeeForBps } from "../../shared/amount.ts";
 import { iso, type Clock } from "../../shared/clock.ts";
@@ -28,7 +28,7 @@ import {
 import { typedDataChallenge, wrapTypedDataSignature, type TypedContents } from "../accounts/evm/passkey.ts";
 import { SubmissionRejected, type AccountPayerPort, type EvmCctpPort, type EvmTxSubmitter, type MintSubmitter, type StellarCctpPort, type UnsignedEvmCall } from "./ports.ts";
 import { authorizationNonce, authorizationTypedData, encodeRouterCall, encodeRouterV2Call, paymentIdBytes32, RECEIVE_AUTHORIZATION_TYPE, routeOf, type SignedAuthorization } from "./router.ts";
-import { ConcurrentUpdateError, type CrosschainRepository } from "./repository.ts";
+import { ConcurrentUpdateError, type CrosschainRepository, type PaymentReceiptInput } from "./repository.ts";
 import { checkAttestedMessage, checkDepositForBurn, checkRouterPayment } from "./verify.ts";
 
 /** One EVM network a payment can start on, with the adapters that act on it. */
@@ -604,9 +604,10 @@ export class CrosschainPaymentService {
   private settle(p: CrosschainPayment, mintTxHash: string | null, note: string): CrosschainPayment {
     const q = this.quoteOf(p);
     const now = iso(this.d.clock.now());
-    const settled = this.move(p, "SETTLED", note, { mintTxHash: mintTxHash ?? p.mintTxHash, lastError: null });
-    const fee = settled.feeExecutedAtomic ?? 0n;
-    this.d.repo.insertReceipt({
+    const patch = { mintTxHash: mintTxHash ?? p.mintTxHash, lastError: null };
+    const fee = p.feeExecutedAtomic ?? 0n;
+    // State, event and receipt are written by ONE repository transaction: no SETTLED without its receipt.
+    return this.move(p, "SETTLED", note, patch, {
       id: newId("paymentReceipt"),
       paymentId: p.id,
       orderId: p.orderId,
@@ -618,16 +619,16 @@ export class CrosschainPaymentService {
         orderId: p.orderId,
         source: {
           network: q.sourceNetwork,
-          txHash: settled.burnTxHash,
-          block: settled.burnBlock,
-          payer: settled.payer,
+          txHash: p.burnTxHash,
+          block: p.burnBlock,
+          payer: p.payer,
           burnedAtomic: q.burnAmountAtomic,
           asset: q.burnToken,
         },
-        cctp: { version: 2, nonce: settled.cctpNonce, sourceDomain: q.sourceDomain, destinationDomain: q.destinationDomain, feeExecutedAtomic: fee },
+        cctp: { version: 2, nonce: p.cctpNonce, sourceDomain: q.sourceDomain, destinationDomain: q.destinationDomain, feeExecutedAtomic: fee },
         destination: {
           network: q.destinationNetwork,
-          txHash: settled.mintTxHash,
+          txHash: patch.mintTxHash,
           payTo: q.payTo,
           asset: this.d.destination.usdc.sac,
           receivedAtomic: (q.burnAmountAtomic - fee) * 10n,
@@ -637,7 +638,6 @@ export class CrosschainPaymentService {
         note: "Payment evidence only; fulfillment is reported separately by the business.",
       },
     });
-    return settled;
   }
 
   // ── Views ─────────────────────────────────────────────────────────────────
@@ -703,7 +703,13 @@ export class CrosschainPaymentService {
     return q;
   }
 
-  private move(p: CrosschainPayment, to: CrosschainState, note: string, patch: Partial<CrosschainPayment> = {}): CrosschainPayment {
+  private move(
+    p: CrosschainPayment,
+    to: CrosschainState,
+    note: string,
+    patch: Partial<CrosschainPayment> = {},
+    receipt?: PaymentReceiptInput,
+  ): CrosschainPayment {
     if (!canMove(p.state, to)) throw new DomainError("INVALID_STATE_TRANSITION", `${p.state} → ${to}`);
     const uncertain = to === "SETTLED" || to === "FAILED" ? false : (patch.uncertain ?? p.uncertain);
     assertSharedTransition(paymentStateOf(p.state, p.uncertain), paymentStateOf(to, uncertain));
@@ -716,14 +722,15 @@ export class CrosschainPaymentService {
       uncertain,
       updatedAt: now,
     };
-    const saved = this.d.repo.update(next, p.version, {
+    const event = {
       paymentId: p.id,
       from: p.state,
       to,
       note,
       ...(patch.failureCode || patch.lastError ? { data: { failureCode: patch.failureCode, error: patch.lastError } } : {}),
       at: now,
-    });
+    };
+    const saved = receipt ? this.d.repo.settle(next, p.version, event, receipt) : this.d.repo.update(next, p.version, event);
     if (p.state === "AWAITING_BURN" && isSponsoredMode(p.mode)) {
       // The burn went out: the unit is spent. The authorization expired unused: nothing can be sent any more, give it back.
       if (to === "BURN_SUBMITTED") this.d.repo.consumeSponsored(p.id, now);
