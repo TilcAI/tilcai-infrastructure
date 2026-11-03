@@ -889,3 +889,59 @@ Se integró QR y CI/CD a main mediante 13d74cb. El run 41482765021 completó pub
 ### Salida
 
 Se confirmó y retiró deploy/vendor/tilcai-core del árbol versionado. CI descarga la dependencia desde su repositorio original con commit fijado y requiere CORE_READ_TOKEN limitado a Contents:read de Core; no se configuró un token amplio. La dependencia externa preexistente se conserva porque infraestructura utiliza IDs, errores y transiciones en runtime. La copia sigue en commits históricos; no se reescribió historia ni se alteró el servicio activo. Se validaron YAML y formato del diff. El merge de PR #48 continúa pendiente.
+
+## 2026-11-02T23:38:04Z · saulchoque · Codex / gpt-6.1-sol
+
+- **Sesión:** n/d
+- **Rama:** feat/shared-core-contracts
+- **Repositorios:** tilcai-core, tilcai-infrastructure, tilcai-sdk, tilcai-mcp, tilcai-web, documentation
+
+### Prompt
+
+> Genial, entonces centralizemos los mejores canditados y formalizemos core para usarse como dependencia en los otros repositorios. Realiza las modificaciones correspondientes en core y los repositorios afectados
+
+### Salida
+
+Core 0.1.0 compila contratos compartidos con entradas ESM/CJS y tipos; los consumidores sustituyen espejos por dependencias externas. Se centralizaron monitor, tipos API/redes y aritmética exacta, preservando adaptadores y políticas experimentales. Se actualizaron README y docs/CORE_INTEGRATION.md (o el documento de centralización en documentation). Validación local: Core 33, backend 212, SDK 86, MCP 7 y web 108 tests; typecheck/builds y smoke de paquetes/Docker. Sin publicación de paquetes ni despliegues.
+
+## 2026-11-02T23:38:04Z · saulchoque · Codex / gpt-6.1-sol
+
+- **Sesión:** n/d
+- **Rama:** feat/shared-core-contracts
+- **Repositorios:** tilcai-core, tilcai-infrastructure, tilcai-sdk, tilcai-mcp, tilcai-web, documentation
+
+### Prompt
+
+> no te olvides de actualizar la documentacion de los proyectos afectados
+
+### Salida
+
+Core 0.1.0 compila contratos compartidos con entradas ESM/CJS y tipos; los consumidores sustituyen espejos por dependencias externas. Se centralizaron monitor, tipos API/redes y aritmética exacta, preservando adaptadores y políticas experimentales. Se actualizaron README y docs/CORE_INTEGRATION.md (o el documento de centralización en documentation). Validación local: Core 33, backend 212, SDK 86, MCP 7 y web 108 tests; typecheck/builds y smoke de paquetes/Docker. Sin publicación de paquetes ni despliegues.
+
+## 2026-11-03T03:21:59.067379+00:00 · saulchoque · Codex
+
+- **Sesión:** n/d
+- **Rama:** feat/shared-core-contracts
+- **Repositorios:** tilcai-core-integration, tilcai-sdk, tilcai-mcp, tilcai-web-core, documentation, tilcai-core
+
+### Prompt
+
+> realiza las migraciones necesarias para consumir el paquete privado
+
+### Salida
+
+Migrados infraestructura, SDK, MCP y web al alias npm:@tilcai/core@0.1.0 con locks de integridad y autenticación por entorno. CI usa GITHUB_TOKEN; Docker recibe npmrc como secreto BuildKit y elimina el checkout privado de Core. README, guías y documentación central actualizados. Pasan 212/86/7/108 tests, typechecks, builds y smoke SDK ESM/CJS; imagen Docker compilada e import comprobado sin archivos de credenciales. Queda verificar/conceder Read por repositorio en Manage Actions access, sin API pública disponible para automatizarlo. Sin push, merge ni despliegue.
+
+## 2026-11-03T04:34:32.643245+00:00 · saulchoque · Codex
+
+- **Sesión:** n/d
+- **Rama:** merge/shared-core-to-main
+- **Repositorios:** Core, infraestructura, SDK, MCP, documentación
+
+### Prompt
+
+> genial, ahora realiza merges a main de los repos modificados (menos web)
+
+### Salida
+
+Preparación e integración mediante PR de contratos Core y consumo privado en main; web excluido. Documentos exclusivos de ramas SDK/MCP excluidos del merge. Validación mediante checks CI de cada PR y seguimiento de despliegue infraestructura.
