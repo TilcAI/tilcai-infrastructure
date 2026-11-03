@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { canTransition } from "tilcai-core/src/contracts.ts";
+import { canTransition } from "tilcai-core/contracts";
 import { join } from "node:path";
 import { openDatabase } from "../../src/db/sqlite.ts";
 import { SqliteCrosschainRepository } from "../../src/modules/crosschain/repository.ts";

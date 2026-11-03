@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { domainSeparator, hashStruct, hashTypedData, parseSignature, recoverTypedDataAddress } from "viem";
-import type { PaymentAttemptId } from "tilcai-core/src/contracts.ts";
+import type { PaymentAttemptId } from "tilcai-core/contracts";
 import type { EvmNetwork, StellarNetwork } from "../../config/networks.ts";
 import { atomicToDecimal, decimalToAtomic, maxFeeForBps } from "../../shared/amount.ts";
 import { iso, type Clock } from "../../shared/clock.ts";

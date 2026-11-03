@@ -12,22 +12,32 @@ concurrency:
   cancel-in-progress: false
 jobs:
   verify:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     timeout-minutes: 20
     runs-on: ubuntu-latest
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
         with:
           path: tilcai-infrastructure
-      - run: cp -a tilcai-infrastructure/deploy/vendor/tilcai-core tilcai-core
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+          registry-url: https://npm.pkg.github.com
+          scope: "@tilcai"
       - run: npm ci
         working-directory: tilcai-infrastructure
       - run: npm run lint && npm run typecheck && npm test && git diff --check
         working-directory: tilcai-infrastructure
       - name: Build API image
-        run: docker build --build-arg VCS_REF=$GITHUB_SHA -f tilcai-infrastructure/deploy/Dockerfile -t tilcai-ci .
+        run: |
+          set -euo pipefail
+          npmrc=$(mktemp)
+          trap 'rm -f "$npmrc"' EXIT
+          chmod 600 "$npmrc"
+          printf '@tilcai:registry=https://npm.pkg.github.com\n//npm.pkg.github.com/:_authToken=%s\n' "$NODE_AUTH_TOKEN" > "$npmrc"
+          docker build --secret id=npmrc,src="$npmrc" --build-arg VCS_REF=$GITHUB_SHA -f tilcai-infrastructure/deploy/Dockerfile -t tilcai-ci .
       - name: Test real container
         run: |
           docker run -d --name tilcai-ci -e TILCAI_API_KEYS=ci-test-key -p 127.0.0.1:8787:8787 tilcai-ci
