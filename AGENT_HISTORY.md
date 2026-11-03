@@ -917,3 +917,17 @@ Core 0.1.0 compila contratos compartidos con entradas ESM/CJS y tipos; los consu
 ### Salida
 
 Core 0.1.0 compila contratos compartidos con entradas ESM/CJS y tipos; los consumidores sustituyen espejos por dependencias externas. Se centralizaron monitor, tipos API/redes y aritmética exacta, preservando adaptadores y políticas experimentales. Se actualizaron README y docs/CORE_INTEGRATION.md (o el documento de centralización en documentation). Validación local: Core 33, backend 212, SDK 86, MCP 7 y web 108 tests; typecheck/builds y smoke de paquetes/Docker. Sin publicación de paquetes ni despliegues.
+
+## 2026-11-03T03:21:59.067379+00:00 · saulchoque · Codex
+
+- **Sesión:** n/d
+- **Rama:** feat/shared-core-contracts
+- **Repositorios:** tilcai-core-integration, tilcai-sdk, tilcai-mcp, tilcai-web-core, documentation, tilcai-core
+
+### Prompt
+
+> realiza las migraciones necesarias para consumir el paquete privado
+
+### Salida
+
+Migrados infraestructura, SDK, MCP y web al alias npm:@tilcai/core@0.1.0 con locks de integridad y autenticación por entorno. CI usa GITHUB_TOKEN; Docker recibe npmrc como secreto BuildKit y elimina el checkout privado de Core. README, guías y documentación central actualizados. Pasan 212/86/7/108 tests, typechecks, builds y smoke SDK ESM/CJS; imagen Docker compilada e import comprobado sin archivos de credenciales. Queda verificar/conceder Read por repositorio en Manage Actions access, sin API pública disponible para automatizarlo. Sin push, merge ni despliegue.

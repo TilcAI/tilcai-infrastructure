@@ -1,8 +1,6 @@
 # Integración con tilcai-core 0.1.0
 
-Rama de revisión: feat/shared-core-contracts. Cambios locales; no es una publicación de
-paquetes ni un despliegue. Core conserva private:true hasta acordar registro y visibilidad.
-No se copian sus fuentes en los repositorios consumidores ni se incorporan al bundle SDK.
+Rama de integración: feat/shared-core-contracts. Core se consume desde su registro privado.
 
 ## Superficie del paquete
 
@@ -19,24 +17,17 @@ La raíz estable excluye los módulos experimentales y no importa node:crypto. C
 ESM, CommonJS y declaraciones; sus exports no permiten importar src/*.ts. Los consumidores
 usan subpaths compilados. El SDK mantiene sus entradas anteriores como reexports externos.
 
-## Desarrollo y compilación
+## Instalación del paquete privado
 
-Los repositorios conservan la disposición de directorios hermanos y la dependencia local
-file:../tilcai-core. Esto permite revisar la integración sin publicar código privado:
+Core 0.1.0 está publicado como `@tilcai/core` en GitHub Packages con visibilidad privada. Este consumidor fija `tilcai-core: npm:@tilcai/core@0.1.0`: el alias conserva los imports existentes y el lock verifica la integridad del paquete. No necesita un clon hermano de Core.
 
-```sh
-cd ../tilcai-core
-npm ci
-npm run typecheck
-npm test
-# Desde el consumidor npm: npm ci, npm run typecheck y npm test.
-# Web conserva pnpm y sus versiones del lockfile: pnpm install --frozen-lockfile.
-```
+El archivo .npmrc contiene únicamente el registro y la referencia `${NODE_AUTH_TOKEN}`. Para desarrollo, suministrar un PAT classic con read:packages y acceso al paquete mediante el gestor de secretos o el entorno; no guardar la credencial en Git. Ejecutar `npm ci`; web usa `pnpm install --frozen-lockfile`.
 
-La imagen backend compila Core en una etapa de construcción; en runtime copia únicamente
-su package.json y dist. El contexto se crea desde el repositorio original, no desde una
-copia vendorizada. CI aún necesita CORE_READ_TOKEN de lectura limitada y la revisión Core
-compatible fijada en su workflow. No configurar un token amplio para resolver ese acceso.
+En GitHub Packages → core → Package settings → Manage Actions access, conceder **Read** al repositorio consumidor. Los workflows usan `GITHUB_TOKEN` con packages:read (infraestructura conserva packages:write para publicar su imagen). Esta concesión de acceso debe comprobarse en GitHub; editar el workflow no la concede. Los jobs de PR externos se omiten para proteger el código privado.
+
+Para Docker backend, suministrar un archivo npmrc autenticado mediante `NPMRC_FILE=/ruta/segura/npmrc ./deploy/build.sh tilcai`. BuildKit lo monta como secreto; no se copia al contexto ni a la imagen. Si contiene `${NODE_AUTH_TOKEN}`, exportar esa variable en el entorno del comando no basta para expandirla dentro del build: preparar el archivo temporal autenticado desde un gestor de secretos, protegerlo con chmod 600 y eliminarlo al terminar. CI usa el npmrc temporal de setup-node.
+
+SDK y MCP necesitan acceso privado a Core también en el entorno de quien los instala, incluso si se distribuyen públicamente. No son instalables anónimamente con esta dependencia. No se han publicado nuevas versiones de esos consumidores.
 
 ## Compatibilidad
 
@@ -50,20 +41,12 @@ compatible fijada en su workflow. No configurar un token amplio para resolver es
 - La ejecución de pagos, reservas SQLite, RPC, bancos, secretos, transporte y UI continúan
   en sus respectivos consumidores. Una evaluación de política no firma ni paga.
 
-## Distribución posterior
-
-Antes de publicar consumidores fuera de este entorno, acordar acceso al paquete Core y
-registro, publicar una versión autorizada de Core y sustituir file:../tilcai-core por una
-versión exacta. Verificar empaquetado y compatibilidad de todos los consumidores primero.
-No publicar el SDK con una dependencia file a un directorio que el instalador no tendrá.
-No activar npm publish ni publicar fuentes privadas como solución provisional.
-
 ## Cambios específicos de este proyecto
 
-Backend imports compiled subpaths, keeps provider clients and transactions local, and builds Core before npm ci. Runtime image contains only Core dist/package.json. CORE_READ_TOKEN remains required for the existing private checkout.
+Backend imports compiled subpaths, keeps provider clients and transactions local, and installs the versioned Core package with npm ci. BuildKit mounts credentials as a secret; runtime contains Core inside node_modules.
 
 `tilcai-core/legacy-sdk` conserva la superficie anterior del SDK, incluida la parte experimental. No es la raíz estable recomendada para integraciones nuevas.
 
 ## Verificación local de la integración
 
-Core: 33 tests; backend: 212; SDK: 86; MCP: 7; web: 108. Typecheck pasa en los cinco proyectos de código. Builds Core/SDK/MCP/web y smoke SDK ESM/CJS pasan. La imagen backend arrancó con Core compilado y sin fuentes Core en runtime. No se ejecutaron pagos, operaciones bancarias ni despliegues en servidor. El acceso privado de CI y la distribución por registro requieren configuración autorizada antes de publicar/integrar.
+Core: 33 tests; backend: 212; SDK: 86; MCP: 7; web: 108. Typecheck pasa en los cinco proyectos de código. Builds Core/SDK/MCP/web y smoke SDK ESM/CJS pasan. La imagen backend arrancó con Core compilado y sin fuentes Core en runtime. No se ejecutaron pagos, operaciones bancarias ni despliegues en servidor. El acceso de cada repositorio en Manage Actions access requiere verificación administrativa.

@@ -2,19 +2,8 @@
 
 # TilcAI (API + reconciliation worker) as a container.
 #
-# Build context is the PARENT directory holding both repos, because the app depends on
-# `tilcai-core` through `file:../tilcai-core`:
-#
-#   tilcai/
-#     tilcai-core/
-#     tilcai-infrastructure/   ← this repo
-#
-#   docker build -f tilcai-infrastructure/deploy/Dockerfile -t tilcai .     (from tilcai/)
-#   ./deploy/build.sh                                                        (does it for you)
-#
-# The image runs anywhere a container runs (Cloud Run, ECS/Fargate, Azure Container Apps,
-# a VM with docker compose). State lives in a SQLite file under /data: mount a volume
-# there, or set LITESTREAM_REPLICA_URL to keep it in object storage (see deploy/README.md).
+# Build context: parent directory containing tilcai-infrastructure.
+# Private package credentials are supplied only as a BuildKit npmrc secret.
 
 ARG NODE_VERSION=24
 ARG LITESTREAM_VERSION=0.3.13
@@ -23,13 +12,9 @@ FROM litestream/litestream:${LITESTREAM_VERSION} AS litestream
 
 # ── Dependencies ─────────────────────────────────────────────────────────────
 FROM node:${NODE_VERSION}-bookworm-slim AS deps
-# Same layout as on disk, so the `file:../tilcai-core` link resolves.
-COPY tilcai-core /srv/tilcai-core
-RUN cd /srv/tilcai-core && npm ci && npm run build && rm -rf node_modules
 WORKDIR /srv/tilcai-infrastructure
 COPY tilcai-infrastructure/package.json tilcai-infrastructure/package-lock.json ./
-# tsx (a devDependency) is the runtime: the app runs its TypeScript sources directly.
-RUN --mount=type=cache,target=/root/.npm npm ci
+RUN --mount=type=secret,id=npmrc,target=/root/.npmrc,required=true npm ci
 
 # ── Runtime ──────────────────────────────────────────────────────────────────
 FROM node:${NODE_VERSION}-bookworm-slim AS runtime
@@ -47,8 +32,6 @@ ENV TILCAI_ENV=testnet \
     NO_COLOR=1
 
 COPY --from=litestream /usr/local/bin/litestream /usr/local/bin/litestream
-COPY --from=deps --chown=node:node /srv/tilcai-core/dist /srv/tilcai-core/dist
-COPY --from=deps --chown=node:node /srv/tilcai-core/package.json /srv/tilcai-core/package.json
 WORKDIR /srv/tilcai-infrastructure
 COPY --from=deps --chown=node:node /srv/tilcai-infrastructure/node_modules ./node_modules
 COPY --chown=node:node tilcai-infrastructure/package.json tilcai-infrastructure/tsconfig.json ./
