@@ -40,7 +40,10 @@ or unknown tenant is a refusal. `usage(id)` reads today's counters without count
 - Creating an account: use `SmartAccountRepository.insert(…, { chargeQuota: true })`. It stores the account and counts
   the quota **in the same transaction**: no quota → nothing stored; an idempotent replay or a conflict → nothing
   counted. Check the idempotency key first (`getByIdempotencyKey`) and answer a replay without inserting.
-- Any other sponsored action (a delegation, a UserOperation, a burn): call `consumeQuota(id, "operation")` right
+- Crosschain payments in `gasless`, `dev_gasless` and `account` mode: one unit per payment, reserved by the service right before the
+  Relayer sends the burn (`CrosschainRepository.reserveSponsored`); `external` costs nothing. Rules, states and release policy:
+  [`docs/sponsored-quota.md`](../../../docs/sponsored-quota.md).
+- Any other sponsored action (a delegation, a UserOperation): call `consumeQuota(id, "operation")` right
   before asking the relayer.
 
 ## Isolation, for whoever writes the API

@@ -1,6 +1,6 @@
 // Phase 2 (per-purchase approval) · Phase 3 (delegated mandates) · owner: Jose + Omar (report §12.4–12.6, §16.4).
-import type { ApprovalBinding, Intent } from "tilcai-core/src/authority.ts";
-import type { IntentId, MandateId } from "tilcai-core/src/contracts.ts";
+import type { ApprovalBinding, Intent } from "tilcai-core/experimental/authority";
+import type { IntentId, MandateId } from "tilcai-core/contracts";
 
 export interface AuthorizationProvider {
   /** Creates a PENDING approval request bound to the intent commitment and exact financial action hash. */

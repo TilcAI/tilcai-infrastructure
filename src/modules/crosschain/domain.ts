@@ -1,4 +1,4 @@
-import { canTransition, type PaymentAttemptId, type PaymentState } from "tilcai-core/src/contracts.ts";
+import { canTransition, type PaymentAttemptId, type PaymentState } from "tilcai-core/contracts";
 import type { Hex } from "../../shared/hex.ts";
 import type { RouteQuoteId } from "../../shared/ids.ts";
 import type { TenantId } from "../tenants/ports.ts";
@@ -69,6 +69,11 @@ export function assertSharedTransition(from: PaymentState, to: PaymentState): vo
 export type PaymentMode = "external" | "dev_signer" | "gasless" | "dev_gasless" | "account";
 export const PAYMENT_MODES = ["external", "dev_signer", "gasless", "dev_gasless", "account"] as const satisfies readonly PaymentMode[];
 export const isGaslessMode = (m: PaymentMode): boolean => m === "gasless" || m === "dev_gasless" || m === "account";
+/**
+ * Modes whose source burn is sent (and paid) by TilcAI's Relayer, so each payment takes one unit of the tenant's sponsored-operation
+ * quota. `external` is paid by the user's own wallet and `dev_signer` is a testnet-only developer key: neither counts (N-14, D-03 proposal).
+ */
+export const isSponsoredMode = (m: PaymentMode): boolean => isGaslessMode(m);
 export type Finality = 1000 | 2000;
 
 export interface Preflight {

@@ -16,8 +16,8 @@ const run = promisify(execFile);
 /** The migration under test: third parties, quotas, accounts and delegations (SCA phase M1). */
 const SCA_MIGRATION = 5;
 const BEFORE = Array.from({ length: SCA_MIGRATION - 1 }, (_, i) => i + 1);
-/** Migrations added after the SCA one (6: QR collections). They only add tables; every assertion here is about 5. */
-const LATER = [6];
+/** Migrations added after the SCA one (6: QR collections, 7: sponsored holds). They only add tables; every assertion here is about 5. */
+const LATER = [6, 7];
 const AFTER = [...BEFORE, SCA_MIGRATION, ...LATER];
 
 /**

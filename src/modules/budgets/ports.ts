@@ -1,5 +1,5 @@
 // Phase 2–3 · owner: Jhamil. Atomic holds on a shared root budget (report §13.3–13.5).
-import type { BudgetReservationId, BudgetState, OrderId } from "tilcai-core/src/contracts.ts";
+import type { BudgetReservationId, BudgetState, OrderId } from "tilcai-core/contracts";
 
 export interface BudgetStore {
   /** Atomic: fails if limit − (consumed + held) < amount. Never based on a stale read. */
