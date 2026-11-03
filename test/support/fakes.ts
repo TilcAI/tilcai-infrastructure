@@ -144,14 +144,17 @@ export class FakeEvmSubmitter implements EvmTxSubmitter {
   readonly name = "relayer";
   submits: Array<{ to: Hex; data: Hex }> = [];
   statuses = new Map<string, EvmSubmissionStatus>();
-  failNextSubmit: false | "ambiguous" | "rejected" = false;
+  /** rejected: a 400, nothing sent. timeout408: a 408 (may have landed). ambiguous: no answer. */
+  failNextSubmit: false | "ambiguous" | "rejected" | "timeout408" = false;
   autoConfirm = true;
   constructor(private readonly evm: FakeEvm) {}
   async submit(to: Hex, data: Hex) {
     if (this.failNextSubmit) {
       const k = this.failNextSubmit;
       this.failNextSubmit = false;
-      throw k === "rejected" ? new SubmissionRejected("relayer 400") : new Error("relayer timeout");
+      if (k === "rejected") throw new SubmissionRejected("relayer 400", 400);
+      if (k === "timeout408") throw new SubmissionRejected("relayer 408", 408);
+      throw new Error("relayer timeout");
     }
     this.submits.push({ to, data });
     const id = `evm-${this.submits.length}`;

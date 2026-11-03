@@ -10,6 +10,7 @@ import { newId, newRouteQuoteId, parseRouteQuoteId } from "../../shared/ids.ts";
 import type { Logger } from "../../shared/log.ts";
 import type { EventSink } from "../monitor/domain.ts";
 import { LEGACY_TENANT_ID, type TenantId } from "../tenants/ports.ts";
+import { utcDay } from "../tenants/quota.ts";
 import { isValidStellarRecipient, stellarMintTarget } from "./cctp/encoding.ts";
 import type { IrisPort } from "./cctp/iris.ts";
 import { decodeMessageV2 } from "./cctp/message.ts";
@@ -17,6 +18,7 @@ import {
   assertSharedTransition,
   canMove,
   isGaslessMode,
+  isSponsoredMode,
   paymentStateOf,
   type CrosschainPayment,
   type CrosschainState,
@@ -381,6 +383,12 @@ export class CrosschainPaymentService {
       p.mode === "account"
         ? encodeRouterV2Call(paymentIdBytes32(p.id), p.payer!, q.burnAmountAtomic, route, { validAfter: signed.validAfter, validBefore: signed.validBefore, signature: a.signature! })
         : encodeRouterCall(paymentIdBytes32(p.id), p.payer!, q.burnAmountAtomic, route, signed);
+    // The tenant's sponsored-operation quota is taken BEFORE the Relayer is called, once per payment (replays and retries reuse the hold).
+    const now = this.d.clock.now();
+    if (isSponsoredMode(p.mode) && !this.d.repo.reserveSponsored(p, utcDay(now), iso(now))) {
+      this.d.log.warn("sponsored quota exhausted; burn not sent", { paymentId: p.id, tenantId: p.tenantId });
+      return this.reschedule(p, { error: "SPONSORED_QUOTA_EXHAUSTED", backoff: true });
+    }
     // Recorded before the call: a crash leaves evidence that a submission may be in flight.
     let cur = this.patch(p, { burnRequestedAt: iso(this.d.clock.now()) });
     try {
@@ -389,7 +397,11 @@ export class CrosschainPaymentService {
       return this.patch(cur, { burnSubmissionId: sub.submissionId, lastError: null, nextCheckAt: iso(this.d.clock.now()) });
     } catch (e) {
       cur = this.d.repo.getPayment(cur.id) ?? cur;
-      if (e instanceof SubmissionRejected) cur = this.patch(cur, { burnRequestedAt: null });
+      // A refusal proves nothing was sent, so the quota unit goes back. A 408 or any answer-less failure may have landed: keep the hold.
+      if (e instanceof SubmissionRejected && e.status !== 408) {
+        cur = this.patch(cur, { burnRequestedAt: null });
+        this.d.repo.releaseSponsored(cur.id, iso(this.d.clock.now()));
+      }
       return this.reschedule(cur, { error: `BURN_SUBMIT_FAILED:${errText(e)}`, backoff: true, countAttempt: true });
     }
   }
@@ -719,6 +731,11 @@ export class CrosschainPaymentService {
       at: now,
     };
     const saved = receipt ? this.d.repo.settle(next, p.version, event, receipt) : this.d.repo.update(next, p.version, event);
+    if (p.state === "AWAITING_BURN" && isSponsoredMode(p.mode)) {
+      // The burn went out: the unit is spent. The authorization expired unused: nothing can be sent any more, give it back.
+      if (to === "BURN_SUBMITTED") this.d.repo.consumeSponsored(p.id, now);
+      else if (to === "FAILED") this.d.repo.releaseSponsored(p.id, now);
+    }
     this.d.log.info("payment transition", { paymentId: p.id, from: p.state, to, note });
     this.announce(saved, p.state, note);
     return saved;
