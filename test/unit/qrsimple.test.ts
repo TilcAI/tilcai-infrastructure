@@ -89,6 +89,7 @@ test("generate: returns the image, its URL and a 9-digit id, and the QR starts a
   assert.deepEqual(h.mock.status(qr.qr_id), { status: "Pendiente", payments: [] });
   assert.deepEqual(h.mock.status(String(qr.qr_id)), { status: "Pendiente", payments: [] });
   const stored = h.repo.code(qr.qr_id)!;
+  assert.equal(qr.qr_image, renderQrPng(qrMatrix(stored.payload)).toString("base64"));
   assert.equal(stored.description, "SN0017 Pago QR OP-3F2A91C0");
   assert.equal(stored.amountCents, 11920);
   // Same shape as a real QR Simple: 256 bytes in base64, a bar and an identifier.

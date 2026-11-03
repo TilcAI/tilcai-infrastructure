@@ -38,11 +38,10 @@ Archivos de esta carpeta:
 ## Construir
 
 ```sh
-./deploy/build.sh                      # tilcai/tilcai:local y tilcai/relayer:local
+NPMRC_FILE=/ruta/segura/npmrc ./deploy/build.sh  # tilcai/tilcai:local y tilcai/relayer:local
 ```
 
-TilcAI se construye con `tilcai-core` al lado de este repositorio (`../tilcai-core`, o
-`TILCAI_CORE_DIR`). El relayer se compila desde el fork (`RELAYER_SOURCE`, `RELAYER_REF`): la
+TilcAI instala `@tilcai/core@0.1.0` desde GitHub Packages. `NPMRC_FILE` debe apuntar a un archivo autenticado, chmod 600, que BuildKit monta como secreto. No requiere clonar Core. Consulta [acceso privado](../docs/CORE_INTEGRATION.md). El relayer se compila desde el fork (`RELAYER_SOURCE`, `RELAYER_REF`): la
 referencia es obligatoriamente un commit inmutable de 40 hexadecimales; las ramas como `main`
 son rechazadas. La
 primera vez tarda varios minutos porque compila Rust. `RELAYER_BASE=<imagen>` reutiliza una
