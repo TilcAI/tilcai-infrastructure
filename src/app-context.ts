@@ -107,7 +107,7 @@ export function createAppContext(name: string, env: Env = loadEnv()): AppContext
   // The keys of TILCAI_API_KEYS belong to the legacy tenant (scope `payments`): Optipagos and optus-agentBE keep working.
   // A failed sync rolls back as a whole, revocations included: going on would serve keys the operator removed,
   // so no context is built and the process stops before it listens (fail closed).
-  const tenants = new SqliteTenantRegistry(db, systemClock);
+  const tenants = new SqliteTenantRegistry(db, systemClock, env.TILCAI_ENV);
   try {
     log.info("legacy tenant keys synced", tenants.syncLegacyKeysSync(runtime.apiKeys));
   } catch (e) {

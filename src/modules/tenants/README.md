@@ -40,7 +40,10 @@ or unknown tenant is a refusal. `usage(id)` reads today's counters without count
 - Creating an account: use `SmartAccountRepository.insert(…, { chargeQuota: true })`. It stores the account and counts
   the quota **in the same transaction**: no quota → nothing stored; an idempotent replay or a conflict → nothing
   counted. Check the idempotency key first (`getByIdempotencyKey`) and answer a replay without inserting.
-- Any other sponsored action (a delegation, a UserOperation, a burn): call `consumeQuota(id, "operation")` right
+- Crosschain payments in `gasless`, `dev_gasless` and `account` mode: one unit per payment, reserved by the service right before the
+  Relayer sends the burn (`CrosschainRepository.reserveSponsored`); `external` costs nothing. Rules, states and release policy:
+  [`docs/sponsored-quota.md`](../../../docs/sponsored-quota.md).
+- Any other sponsored action (a delegation, a UserOperation): call `consumeQuota(id, "operation")` right
   before asking the relayer.
 
 ## Isolation, for whoever writes the API
@@ -77,3 +80,43 @@ Add `--json` for machine output. Defaults for a new tenant: 20 accounts and 200 
 interfaces: phase 2 runs the same suite against Postgres (ADR-04). `migration-3.test.ts` migrates a phase-1 database,
 including two processes starting at once. `crosschain-tenancy.test.ts`, `tenant-cli.test.ts` and
 `app-context-tenants.test.ts` cover the rest.
+
+## Credential lifecycle (2026-11-01)
+
+REST partners use one tenant per organization and one key per backend/environment. New
+issued keys expire after 90 days by default, at most 365 days; testnet uses `tilc_test_`,
+mainnet `tilc_live_`. Only hashes are stored. Operator commands run against the configured
+DATABASE_PATH and TILCAI_ENV; API key delivery belongs in a secret manager.
+
+```sh
+npm run tenant -- create --name Fexpo
+npm run tenant -- key --tenant tenant_ID --label backend --scopes payments --json
+npm run tenant -- rotate-key --key tenant_key_ID --overlap-seconds 3600 --json
+npm run tenant -- revoke-key --key tenant_key_ID
+```
+
+Use the actual IDs returned by the preceding command. Issue with `--expires-at` for a shorter
+canonical UTC expiry (`YYYY-MM-DDTHH:mm:ss.sssZ`). Rotation inherits permissions, tenant and
+environment. With zero overlap, the previous key stops immediately; with overlap (maximum 24h)
+it expires at the earlier of its previous expiry and the new deadline. Validate the new key
+before revoking the old one. Lost output cannot be recovered: issue another key and revoke
+unusable credentials. No HTTP or MCP route can issue keys.
+
+`GET /v1/auth/context` accepts any authenticated key, including accounts:read only, and returns
+its own tenant, scopes, environment and safe credential metadata with Cache-Control: no-store.
+It never returns the full key or hash. No new scope grants operator Vault/monitor access.
+Explicit invalid Authorization never falls back to the unauthenticated loopback dev operator.
+
+Migration 7 adds environment/expiry/last-use columns and append-only lifecycle events.
+Existing issued keys retain no expiry until rotated, remain testnet credentials, and must be
+reissued explicitly for mainnet. TILCAI_API_KEYS legacy keys stay bound to their configured
+instance and remain an operator compatibility bridge; don't share them with partners. Removing
+an env key from that configuration is required for durable revocation across restarts.
+
+The authentication branch starts from fixes 73805cc. The unrelated QR development branch already
+uses migration 6; this branch reserves that ID and uses 7. Reconcile the ordered migration list before merging both branches;
+never edit an already applied migration in an existing installation. Export applied migration
+IDs and schema from the target database before deployment.
+
+See [decision and plan](../../../docs/third-party-auth-plan.md) and
+[runbook](../../../docs/third-party-credentials.md) for the OAuth boundary and integration.

@@ -4,7 +4,8 @@ import { TENANT_SCOPES, type TenantAdmin, type TenantId, type TenantScope } from
 
 const USAGE = `usage:
   tenant create --name <name> [--accounts-per-day <n>] [--ops-per-day <n>] [--json]
-  tenant key --tenant <tenantId> --label <label> --scopes <${TENANT_SCOPES.join(",")}> [--json]
+  tenant key --tenant <tenantId> --label <label> --scopes <${TENANT_SCOPES.join(",")}> [--expires-at <UTC ISO timestamp>] [--json]
+  tenant rotate-key --key <keyId> [--overlap-seconds <0..86400>] [--json]
   tenant list [--json]
   tenant revoke-key --key <keyId>
   tenant suspend --tenant <tenantId>
@@ -28,6 +29,8 @@ export async function runTenantCli(admin: TenantAdmin, argv: string[], out: (lin
         label: { type: "string" },
         scopes: { type: "string" },
         key: { type: "string" },
+        "expires-at": { type: "string" },
+        "overlap-seconds": { type: "string" },
         "accounts-per-day": { type: "string" },
         "ops-per-day": { type: "string" },
         json: { type: "boolean", default: false },
@@ -64,7 +67,7 @@ export async function runTenantCli(admin: TenantAdmin, argv: string[], out: (lin
       }
       case "key": {
         const scopes = need(v.scopes, "scopes").split(",").map((s) => s.trim()).filter(Boolean) as TenantScope[];
-        const { info, key } = await admin.issueKey(need(v.tenant, "tenant") as TenantId, { label: need(v.label, "label"), scopes });
+        const { info, key } = await admin.issueKey(need(v.tenant, "tenant") as TenantId, { label: need(v.label, "label"), scopes, ...(v["expires-at"] ? { expiresAt: v["expires-at"] } : {}) });
         emit(
           [
             `key issued for ${info.tenantId}  scopes: ${info.scopes.join(", ")}`,
@@ -72,7 +75,7 @@ export async function runTenantCli(admin: TenantAdmin, argv: string[], out: (lin
             `  API key: ${key}`,
             "Copy the API key now. It is not stored and cannot be shown again.",
           ].join("\n"),
-          { keyId: info.id, tenantId: info.tenantId, scopes: info.scopes, key },
+          { keyId: info.id, tenantId: info.tenantId, scopes: info.scopes, environment: info.environment, expiresAt: info.expiresAt, key },
         );
         return 0;
       }
@@ -87,11 +90,16 @@ export async function runTenantCli(admin: TenantAdmin, argv: string[], out: (lin
                 `${t.id}  ${t.status.padEnd(9)} ${t.name}  quota/day ${t.quota.accountsPerDay}/${t.quota.sponsoredOpsPerDay}\n` +
                 (t.keys.length === 0
                   ? "    (no keys)"
-                  : t.keys.map((k) => `    ${k.id}  ${k.hint}…  ${k.label}  [${k.scopes.join(",")}]  ${k.source}${k.revokedAt ? `  REVOKED ${k.revokedAt}` : ""}`).join("\n")),
+                  : t.keys.map((k) => `    ${k.id}  ${k.hint}…  ${k.label}  [${k.scopes.join(",")}]  ${k.source}  ${k.environment ?? "legacy"}  expires=${k.expiresAt ?? "none"}${k.revokedAt ? `  REVOKED ${k.revokedAt}` : ""}`).join("\n")),
             )
             .join("\n") || "(no tenants)",
           rows,
         );
+        return 0;
+      }
+      case "rotate-key": {
+        const { info, key } = await admin.rotateKey(need(v.key, "key"), int(v["overlap-seconds"], "overlap-seconds") ?? 0);
+        emit(`key rotated: ${info.id}\n  API key: ${key}\nCopy now; this secret cannot be shown again.`, { keyId: info.id, tenantId: info.tenantId, scopes: info.scopes, environment: info.environment, expiresAt: info.expiresAt, key });
         return 0;
       }
       case "revoke-key":
