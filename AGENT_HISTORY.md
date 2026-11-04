@@ -3970,3 +3970,281 @@ Auditada autoría y equivalencia con main; retiradas ocho ramas remotas incluida
 ### Salida
 
 Merge de main (c2f57a9, con credenciales #53 y vault #48). `src/app-context.ts`: se conserva la sincronización síncrona que detiene el arranque si falla (N-04) y se pasa `env.TILCAI_ENV` al registro, como hace #53. Typecheck limpio y 255/255 tests en local.
+
+## 2026-11-04T17:38:33Z · joseemen11 · Codex (GPT-6)
+
+- **Sesión:** n/d
+- **Rama:** fix/n03-iris-timeout-fees
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> Investiga el único fallo de la suite unitaria en `fix/n03-iris-timeout-fees`.
+>
+> Fallaron 1 de 264 pruebas. `npm run lint` y `npm run typecheck` pasaron; las regresiones H-13 y H-24 están verdes.
+>
+> La prueba fallida es `test/unit/repository-sqlite.test.ts`, caso "the limit holds across separate processes", con `NaN+NaN+NaN+NaN` en lugar de 40.
+>
+> **Solo diagnóstico inicialmente.**
+>
+> 1. Reproduce la prueba de forma aislada.
+> 2. Inspecciona los valores reales de stdout y stderr de los cuatro procesos, sin ocultar errores.
+> 3. Determina si la causa es salida adicional, incompatibilidad de Node/tsx, configuración del entorno, una carrera SQLite o un defecto funcional.
+> 4. Compara el código responsable contra `origin/main` y establece si el fallo ya existía antes de N-03.
+> 5. No modifiques las reglas de cuotas ni debilites la aserción para hacer pasar el test.
+> 6. Si identificas una corrección mínima, descríbela primero y señala si corresponde a N-03 o a una tarea separada.
+> 7. Respeta `AGENTS.md` y conserva los cambios locales de la rama.
+>
+> No hagas commit, push ni PR. No ejecutes operaciones financieras ni pruebas externas.
+>
+> Entrega causa reproducida, evidencia, solución propuesta y dictamen sobre si este fallo debe bloquear el PR de N-03.
+
+### Salida
+
+**Resultado:** el caso aislado pasa fuera del sandbox (1/1, Node 24.21.0 y tsx 4.23.15). Dentro del sandbox reproduje un fallo distinto, `0+0+0+0`: allí un proceso hijo que solo ejecuta `console.log(42)` también termina con código 0 y stdout vacío. Es una anomalía del entorno de ejecución, no de SQLite.
+
+**Captura de los cuatro hijos fuera del sandbox:** stdout `"0\n"`, `"0\n"`, `"25\n"`, `"15\n"`; stderr `""` en los cuatro; código de salida 0 en los cuatro. La suma y el contador SQLite fueron 40.
+
+El `NaN` comunicado implica stdout no numérico en los cuatro hijos originales: `Number("")` habría dado 0 y el worker solo imprime un entero. El test descarta stdout y stderr crudos cuando falla, así que no es posible identificar qué texto produjo ese `NaN` a partir del resultado disponible. Node/tsx funciona en esta reproducción; no hay evidencia de carrera SQLite ni defecto funcional. No pude ejecutar el Node de Windows en este entorno (`Exec format error`), por lo que su comportamiento queda sin verificar.
+
+**Comparación:** `HEAD` y `origin/main` son `467b74b`; el test, el worker, SQLite y las reglas de cuota no tienen diferencias frente a `origin/main`. La fragilidad diagnóstica del test precede a N-03; no hay prueba de que el `NaN` concreto ocurriera antes.
+
+**Corrección propuesta, en tarea separada:** validar estrictamente el stdout numérico de cada hijo e incluir stdout y stderr literales en el error, conservando la aserción de suma 40. Con esa captura, corregir en el entorno de origen cualquier texto adicional que aparezca en stdout. No modificar las cuotas ni N-03.
+
+**Dictamen:** este fallo local aislado no debe bloquear el PR de N-03. Si se repite en un CI o runtime admitido, sí debe resolverse allí antes de fusionar. No hice commit, push, PR ni pruebas externas; preservé los cambios locales.
+
+## 2026-11-04T18:56:32Z · joseemen11 · Codex (GPT-6)
+
+- **Sesión:** n/d
+- **Rama:** fix/n03-iris-timeout-fees
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> Continuemos con el diagnóstico del fallo de SQLite antes de preparar el PR de N-03.
+>
+> Hay una discrepancia importante: informaste que la prueba aislada pasó fuera del sandbox, pero en mi WSL real la ejecuté dos veces y ambas fallaron con `NaN+NaN+NaN+NaN`.
+>
+> No consideres este fallo resuelto ni atribuyas todavía su causa al entorno.
+>
+> **Objetivo:** identificar exactamente qué imprimen los procesos hijos en mi ejecución local.
+>
+> 1. Verifica el estado actual de `fix/n03-iris-timeout-fees`. No modifiques los cambios ya implementados de Iris.
+> 2. En `test/unit/repository-sqlite.test.ts`, agrega temporalmente una instrumentación mínima inmediatamente después de `Promise.all` en el caso `the limit holds across separate processes`.
+> 3. La instrumentación debe imprimir con `console.error` el `stdout` y `stderr` de cada uno de los cuatro procesos, utilizando `JSON.stringify` para conservar saltos de línea y caracteres especiales. No cambies todavía la conversión numérica ni la aserción de 40.
+> 4. Indícame exactamente el comando que debo ejecutar en mi terminal WSL para reproducir el fallo con esa instrumentación. No consideres suficiente una ejecución dentro de tu sandbox.
+> 5. Cuando te entregue el resultado, analiza la causa y propón una corrección mínima. Distingue un fallo ambiental de un defecto de la prueba o de producción.
+> 6. Después del diagnóstico, elimina la instrumentación temporal. Si se justifica una mejora permanente del test, debe conservar su aserción estricta y facilitar el diagnóstico sin modificar las reglas de cuotas.
+>
+> **Restricciones:**
+>
+> - No alterar código financiero, SQLite ni contratos.
+> - No cambiar dependencias.
+> - No hacer commit, push, PR ni merge.
+> - Conservar `dev.md` y los cambios de N-03.
+> - Respetar `AGENTS.md` y su historial.
+> - No ejecutar pruebas con proveedores externos.
+>
+> Necesito una causa demostrada con evidencia de mi entorno, no una hipótesis basada únicamente en que funciona en otro proceso.
+
+### Salida
+
+Añadí una línea temporal en [repository-sqlite.test.ts](/mnt/e/propioJOSE/stellar/tilcai-audit/tilcai-infrastructure/test/unit/repository-sqlite.test.ts:117) que imprime con `console.error` el `stdout` y `stderr` de cada hijo mediante `JSON.stringify`. La conversión numérica y la aserción de 40 siguen intactas. No cambié Iris, SQLite, cuotas, contratos, dependencias ni `dev.md`.
+
+Ejecuta **desde la raíz del repositorio en tu terminal WSL**:
+
+```bash
+./node_modules/.bin/tsx --test --test-reporter=tap --test-name-pattern='the limit holds across separate processes' test/unit/repository-sqlite.test.ts
+```
+
+Pega la salida completa, incluidas las cuatro líneas `[sqlite quota child ...]` y el resultado final. Mi ejecución de ese comando pasó con salidas numéricas; no explica tus dos fallos, así que la causa sigue abierta. Con tu captura analizaré el origen del `NaN`, propondré la corrección mínima y retiraré la instrumentación temporal. No hice commit, push, PR, merge ni pruebas externas.
+
+## 2026-11-04T19:03:22Z · joseemen11 · Codex (GPT-6)
+
+- **Sesión:** n/d
+- **Rama:** fix/n03-iris-timeout-fees
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> [REDACTADO]$ node --import tsx --test \
+>   --test-name-pattern="the limit holds across separate processes" \
+>   test/unit/repository-sqlite.test.ts
+> [sqlite quota child 1] stdout="\u001b[33m15\u001b[39m\n" stderr=""
+> [sqlite quota child 2] stdout="\u001b[33m25\u001b[39m\n" stderr=""
+> [sqlite quota child 3] stdout="\u001b[33m0\u001b[39m\n" stderr=""
+> [sqlite quota child 4] stdout="\u001b[33m0\u001b[39m\n" stderr=""
+> ✖ [sqlite] the limit holds across separate processes, as with the API and the worker (716.50993ms)
+> ℹ tests 1
+> ℹ suites 0
+> ℹ pass 0
+> ℹ fail 1
+> ℹ cancelled 0
+> ℹ skipped 0
+> ℹ todo 0
+> ℹ duration_ms 1112.145205
+>
+> ✖ failing tests:
+>
+> test at test/unit/repository-sqlite.test.ts:5:1829
+> ✖ [sqlite] the limit holds across separate processes, as with the API and the worker (716.50993ms)
+>   AssertionError [ERR_ASSERTION]: processes got NaN+NaN+NaN+NaN
+>
+>   NaN !== 40
+>
+>       at TestContext.<anonymous> ([REDACTADO]/test/unit/repository-sqlite.test.ts:119:12)
+>       at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+>       at async Test.run (node:internal/test_runner/test:1409:7)
+>       at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+>     generatedMessage: false,
+>     code: 'ERR_ASSERTION',
+>     actual: NaN,
+>     expected: 40,
+>     operator: 'strictEqual',
+>     diff: 'simple'
+>   }
+> [REDACTADO]$
+
+### Salida
+
+**Causa demostrada en tu WSL:** los cuatro hijos imprimieron `15`, `25`, `0` y `0`, cada número rodeado por códigos ANSI de color (`\u001b[33m` y `\u001b[39m`); `stderr` estaba vacío. Suman 40, pero `Number(stdout.trim())` devuelve `NaN` al encontrar esos códigos. Reproduje exactamente el formato con `FORCE_COLOR=1`; no he comprobado qué ajuste concreto activó el color en tu terminal. Es una fragilidad del test ante la configuración de color, sin indicios de carrera SQLite ni defecto de cuotas.
+
+**Corrección aplicada, separada de N-03:** [quota-worker.ts](/mnt/e/propioJOSE/stellar/tilcai-audit/tilcai-infrastructure/test/support/quota-worker.ts:13) escribe el entero como texto sin formato con `process.stdout.write`. [repository-sqlite.test.ts](/mnt/e/propioJOSE/stellar/tilcai-audit/tilcai-infrastructure/test/unit/repository-sqlite.test.ts:117) exige un stdout numérico y muestra stdout y stderr literales si vuelve a fallar. Conservé la conversión y la aserción de 40; retiré el `console.error` temporal. No cambié Iris, SQLite, cuotas, contratos, dependencias ni `dev.md`.
+
+**Verificación:** el caso aislado pasó 1/1 con el mismo comando `node --import tsx --test` y `FORCE_COLOR=1`; `git diff --check` pasó. Falta reejecutarlo en tu WSL tras esta corrección. El defecto del test ya estaba en `origin/main`; no corresponde al código de N-03. No hice commit, push, PR, merge ni pruebas externas.
+
+## 2026-11-04T19:40:17Z · joseemen11 · Codex (GPT-6)
+
+- **Sesión:** n/d
+- **Rama:** fix/sqlite-quota-worker-output
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> # TilcAI — Preparación segura de commits y PR para N-03
+>
+> Trabajamos en `fix/n03-iris-timeout-fees`, basada en `467b74b`.
+>
+> La implementación de N-03 está completa y sus pruebas han pasado: 264/264, lint, typecheck y `git diff --check`.
+>
+> La revisión final detectó dos problemas de preparación:
+>
+> 1. Hay una corrección independiente de salida ANSI en `test/support/quota-worker.ts` y `test/unit/repository-sqlite.test.ts`.
+> 2. `AGENT_HISTORY.md` tiene entradas locales que no cumplen estrictamente el criterio append-only y contiene un `+##` literal.
+>
+> Quiero preparar ambos trabajos correctamente, sin perder nada.
+>
+> ## 1. Verificación y respaldo
+>
+> Inspecciona la rama, HEAD, cambios locales y archivos sin seguimiento.
+>
+> Verifica que existen los respaldos locales creados en el directorio padre. Si necesitas crear respaldos adicionales, guárdalos fuera del repositorio.
+>
+> Preserva especialmente `dev.md`, `test/unit/iris.test.ts` y todas las entradas nuevas de `AGENT_HISTORY.md`.
+>
+> No ejecutes `git reset --hard`, `git clean`, force push ni operaciones destructivas.
+>
+> ## 2. Separar la corrección SQLite
+>
+> Usa preferentemente un Git worktree independiente basado en `origin/main` para preparar la rama `fix/sqlite-quota-worker-output`.
+>
+> Traslada exclusivamente la corrección de estos archivos:
+>
+> - `test/support/quota-worker.ts`
+> - `test/unit/repository-sqlite.test.ts`
+>
+> Conserva la aserción original de 40 y la validación estricta del stdout.
+>
+> Registra en `AGENT_HISTORY.md` únicamente las entradas que correspondan a esa rama, respetando las instrucciones del repositorio.
+>
+> No mezcles implementaciones de N-03.
+>
+> No elimines los cambios originales hasta comprobar que la copia independiente es idéntica y recuperable.
+>
+> ## 3. Integridad del historial
+>
+> En la rama N-03, compara el contenido actual de `AGENT_HISTORY.md` con el archivo versionado en HEAD.
+>
+> La versión comprometida debe permanecer intacta, byte por byte, como prefijo del nuevo contenido.
+>
+> Puedes reorganizar las entradas que todavía son exclusivamente locales, sin commit, para colocarlas al final y en su orden cronológico relativo.
+>
+> Corrige el encabezado literal `+##` únicamente si pertenece a una entrada nueva no comprometida.
+>
+> Conserva todas las entradas legítimas de prompts N-03.
+>
+> No alteres las 137 marcas repetidas ni ningún contenido histórico ya presente en `origin/main`. No modifiques ni suprimas entradas de otros usuarios.
+>
+> Si las reglas de orden cronológico y append-only entran en conflicto debido a entradas ya publicadas, prioriza preservar el historial publicado y explica la limitación.
+>
+> Comprueba que ninguna entrada nueva incluya secretos, tokens o credenciales.
+>
+> ## 4. Preparar N-03
+>
+> Determina cómo retirar de la rama N-03 únicamente las modificaciones auxiliares de SQLite una vez aseguradas en la rama independiente.
+>
+> La rama N-03 debe contener solamente estos cambios funcionales:
+>
+> - `.env.example`
+> - `deploy/README.md`
+> - `src/app-context.ts`
+> - `src/config/env.ts`
+> - `src/modules/crosschain/cctp/iris.ts`
+> - `test/unit/config-networks.test.ts`
+> - `test/unit/iris.test.ts`
+> - Entradas correspondientes en `AGENT_HISTORY.md`
+>
+> `dev.md` debe permanecer fuera de los commits.
+>
+> No modificar el comportamiento de Iris salvo que encuentres un defecto nuevo demostrado.
+>
+> ## 5. Verificaciones y resultado
+>
+> Comprobar ambos árboles de trabajo y sus diferencias contra `origin/main`.
+>
+> Ejecutar las pruebas pertinentes donde las dependencias estén disponibles; distinguir cualquier bloqueo de pruebas de un fallo funcional.
+>
+> No ejecutar transacciones, Circle, blockchain, relayers ni despliegues.
+>
+> Al finalizar, informar en español:
+>
+> 1. Ramas y directorios preparados.
+> 2. Archivos exactos en cada rama.
+> 3. Cómo quedó garantizada la integridad append-only.
+> 4. Resultados reales de las verificaciones.
+> 5. Comandos de `git add` y `git commit` que debo ejecutar manualmente en cada rama.
+> 6. Qué secuencia de integración recomiendas.
+> 7. Qué cambios continúan pendientes y por qué.
+>
+> **No realizar commit, push, PR ni merge.** Detenerse si alguna operación puede perder cambios locales o modificar trabajo de otros integrantes.
+
+### Salida
+
+**Preparación terminada.** Ambas ramas parten de `467b74b` (`origin/main`). No hice commit, push, PR ni merge.
+
+### Árboles y archivos para cada commit
+
+- `fix/sqlite-quota-worker-output` en `/tmp/tilcai-infrastructure-sqlite-quota-worker-output`: `AGENT_HISTORY.md`, `test/support/quota-worker.ts`, `test/unit/repository-sqlite.test.ts`. La aserción de 40 y la validación estricta de stdout siguen intactas.
+- `fix/n03-iris-timeout-fees` en el directorio actual: `.env.example`, `AGENT_HISTORY.md`, `deploy/README.md`, `src/app-context.ts`, `src/config/env.ts`, `src/modules/crosschain/cctp/iris.ts`, `test/unit/config-networks.test.ts`, `test/unit/iris.test.ts`. `dev.md` permanece sin seguimiento y fuera de ambos commits.
+
+No encontré respaldos preexistentes en el directorio padre. Creé y verifiqué `../tilcai-n03-prep-20261104T194017Z-workspace-files.tgz`, con los 11 archivos locales originales, incluidos `dev.md`, `iris.test.ts`, el historial y los dos archivos SQLite. Comparé los archivos SQLite copiados byte por byte antes de restaurarlos en N-03; los archivos de Iris y `dev.md` siguen idénticos al respaldo.
+
+### Historial y verificaciones
+
+Los **313 534 bytes versionados** de `AGENT_HISTORY.md` son el prefijo exacto en ambos árboles. Redistribuí las seis entradas locales anteriores: tres de N-03 y tres del diagnóstico SQLite; este prompt queda registrado en ambos. Solo corregí `+##` en la entrada local de N-03. Las 137 marcas repetidas del historial publicado permanecen intactas. La entrada local de las 13:33 queda después de una entrada publicada de las 13:44: es la inversión cronológica necesaria para preservar el prefijo publicado. La búsqueda de patrones de credenciales en las entradas nuevas dio cero resultados.
+
+- N-03: pruebas focalizadas de Iris y configuración, PASS; lint y typecheck, PASS.
+- SQLite: archivo unitario completo, **37/37 PASS**; caso aislado con `FORCE_COLOR=1`, **1/1 PASS**, fuera del sandbox. Dentro del sandbox ese archivo dio un fallo genérico antes de la aserción.
+- `git diff --check`, PASS en ambos árboles. La suite 264/264 que reportaste corresponde al árbol anterior a la separación; no la repetí sobre N-03 aislada, donde el fallo ANSI puede reaparecer en WSL hasta integrar la rama SQLite.
+
+### Comandos manuales
+
+```bash
+git -C /tmp/tilcai-infrastructure-sqlite-quota-worker-output add -- AGENT_HISTORY.md test/support/quota-worker.ts test/unit/repository-sqlite.test.ts
+git -C /tmp/tilcai-infrastructure-sqlite-quota-worker-output commit -m "test(sqlite): keep quota worker stdout numeric"
+
+git add -- .env.example AGENT_HISTORY.md deploy/README.md src/app-context.ts src/config/env.ts src/modules/crosschain/cctp/iris.ts test/unit/config-networks.test.ts test/unit/iris.test.ts
+git commit -m "fix(cctp): bound Iris requests and validate fees"
+```
+
+Integra primero la corrección SQLite mediante su propio PR; después actualiza N-03 sobre `main`, comprueba otra vez el prefijo del historial y ejecuta la suite completa en tu WSL antes del PR N-03. Quedan pendientes esos commits y PR manuales, la suite completa tras la integración y las revisiones funcionales de Saúl/Jhamil. El worktree SQLite está en `/tmp`, por lo que conviene completar su commit antes de una limpieza de temporales; el respaldo durable está en el directorio padre.

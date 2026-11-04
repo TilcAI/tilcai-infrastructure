@@ -114,6 +114,9 @@ test("[sqlite] the limit holds across separate processes, as with the API and th
     const outs = await Promise.all(
       Array.from({ length: 4 }, () => run(process.execPath, ["--import", "tsx", "--no-warnings", worker, path, t.id, "25"], { encoding: "utf8" })),
     );
+    outs.forEach((o, i) => {
+      assert.match(o.stdout, /^(?:0|[1-9]\d*)\r?\n$/, `child ${i + 1}: stdout=${JSON.stringify(o.stdout)} stderr=${JSON.stringify(o.stderr)}`);
+    });
     const got = outs.map((o) => Number(o.stdout.trim()));
     assert.equal(got.reduce((a, b) => a + b, 0), 40, `processes got ${got.join("+")}`);
     // The children count on the real UTC day, so the check reads it with the real clock too.
