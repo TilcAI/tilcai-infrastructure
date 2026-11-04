@@ -67,6 +67,21 @@ mainnet `DEV_EVM_PAYER_PRIVATE_KEY`, `STELLAR_OPERATOR_SECRET` y `QR_MOCK_ENABLE
 `MAINNET_TRANSACTIONS_ENABLED=false` deja la instancia en solo lectura (cotiza y consulta; no crea
 pagos). Con `true` mueve fondos reales.
 
+Antes de pasarla a `true`, con la instancia todavía en solo lectura:
+
+```bash
+curl -s http://127.0.0.1:18787/ready?mode=transactional
+```
+
+Tiene que responder 200. Comprueba, sin enviar nada, que el relayer al que apunta
+`RELAYER_URL_MAINNET` acepta la clave y que `RELAYER_AVALANCHE_MAINNET_ID` y
+`RELAYER_STELLAR_MAINNET_ID` existen en él, en `avalanche-c-chain` y `mainnet`, sin pausar y con
+firmante. Un 503 dice qué falla. Un caso típico: el relayer compartido de testnet no tiene esos
+ids, o los tiene en una red de testnet. Los relayers de `config.mainnet.json` nacen pausados, así
+que fallan hasta que se despausan a propósito. `/ready` no comprueba roles on-chain, como que el
+firmante sea el operador del vault: eso queda en el preflight y en el acta. Con la instancia ya en
+`true`, `/ready` hace estas mismas comprobaciones sin `?mode`.
+
 ### El relayer
 
 Un mismo OpenZeppelin Relayer puede atender los dos entornos: lo que los separa es el id de
@@ -277,7 +292,7 @@ fondos, mantener deshabilitadas esas capacidades y sus relayers específicos dur
 
 1. Ejecutar preflight hasta resolver `FAIL`; documentar cada `PENDING` y su aprobador.
 2. Revisar el stack aislado de mainnet y sus variables sin despausar relayers adicionales.
-3. Validar `/health`, `/v1/routes`, autenticación, aislamiento de base, webhooks firmados y
+3. Validar `/health`, `/ready?mode=transactional`, `/v1/routes`, autenticación, aislamiento de base, webhooks firmados y
    monitorización. No llamar a pagos, cuentas, vault, `/settle` ni endpoints de transacciones.
 4. Comparar direcciones/bytecode/WASM y roles con el acta de despliegue.
 5. Ejecutar pruebas de recuperación con datos sintéticos y sin secretos productivos.

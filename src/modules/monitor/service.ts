@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { iso, type Clock } from "../../shared/clock.ts";
 import type { Logger } from "../../shared/log.ts";
-import type { EventSink, MonitorAlert, MonitorEvent, MonitorEventType, NewMonitorEvent } from "./domain.ts";
+import type { EventSink, MonitorAlert, MonitorEvent, MonitorEventType, NewMonitorEvent, RetentionPolicy } from "./domain.ts";
 import type { EventQuery, MonitorRepository } from "./repository.ts";
 
 /** Nothing bigger than this goes into an event: the dashboard gets facts, not payloads. */
@@ -90,8 +90,26 @@ export class MonitorService implements EventSink {
     }
   }
 
-  prune(retentionDays: number): number {
-    return this.repo.prune(iso(new Date(this.clock.now().getTime() - retentionDays * 86_400_000)));
+  /** Applies the retention policy and turns every loss into a `monitor.gap` event. Returns how many events went. */
+  prune(p: RetentionPolicy): number {
+    const now = this.clock.now();
+    const before = (days: number) => iso(new Date(now.getTime() - days * 86_400_000));
+    const { removed, gaps } = this.repo.prune(
+      { deliveredBefore: before(p.retentionDays), pendingBefore: before(Math.max(p.pendingMaxDays, p.retentionDays)), sinks: p.sinks },
+      iso(now),
+    );
+    for (const g of gaps) {
+      this.log.error("monitor events pruned before a receiver got them", { sink: g.sink, fromSeq: g.fromSeq, toSeq: g.toSeq, count: g.count });
+      // In the log itself, so the receiver hears of it in order with the rest when it comes back.
+      this.emit({
+        type: "monitor.gap",
+        severity: "error",
+        subject: g.sink,
+        summary: `«${g.sink}» no recibió ${g.count} evento(s) (posiciones ${g.fromSeq}–${g.toSeq}): pasaron ${p.pendingMaxDays} días sin entregarse y se borraron`,
+        data: { sink: g.sink, fromSeq: g.fromSeq, toSeq: g.toSeq, count: g.count, pendingMaxDays: p.pendingMaxDays },
+      });
+    }
+    return removed;
   }
 }
 
