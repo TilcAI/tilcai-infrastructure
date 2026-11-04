@@ -14,6 +14,34 @@ Plan y arquitectura completos: [`documentation/TILCAI_PLAN_ARQUITECTURA_BACKEND_
 > instancia en solo lectura. Estado, operación y pendientes en
 > [`deploy/MAINNET_DEPLOYMENT.md`](deploy/MAINNET_DEPLOYMENT.md).
 
+## Check-in · 1 de noviembre de 2026
+
+Contexto para el equipo de lo que se hizo hoy sobre los issues asignados a OmarQV (con Claude Code). Detalle en cada PR y en `AGENT_HISTORY.md`.
+
+**Entorno**
+- [x] Node.js local en **24.22.1**, la misma versión mayor que la imagen (`deploy/Dockerfile`, `NODE_VERSION=24`). Con Node 22.16 fallaban 17 tests de `node:sqlite` (`column index out of range`). Con Node 24 `main` pasa 193/193, y cada PR, su suite completa.
+
+**PRs abiertos** (todos con `npm test` y `npm run typecheck` en verde con Node 24)
+
+| PR | Issue | Qué cambia | Tests | Ojo |
+| --- | --- | --- | --- | --- |
+| [#43](https://github.com/TilcAI/tilcai-infrastructure/pull/43) | N-04 [#30](https://github.com/TilcAI/tilcai-infrastructure/issues/30) | Si `TILCAI_API_KEYS` no se sincroniza, el proceso no arranca; antes seguía y la clave retirada quedaba activa. Sin claves en los logs. | 195/195 | — |
+| [#44](https://github.com/TilcAI/tilcai-infrastructure/pull/44) | N-12 [#38](https://github.com/TilcAI/tilcai-infrastructure/issues/38) | `/health` como liveness; `/ready` como readiness por modo (relayer autenticado, red y tipo, sin pausa, firmante, submitter, worker); `?mode=transactional` antes de activar mainnet. | 208/208 | Apilado sobre #43: primero el merge de #43, después cambiar la base a `main`. |
+| [#45](https://github.com/TilcAI/tilcai-infrastructure/pull/45) | N-11 [#37](https://github.com/TilcAI/tilcai-infrastructure/issues/37) | Retención del monitor: lo pendiente se conserva hasta `MONITOR_PENDING_MAX_DAYS` (90) con alerta; pasado eso, `monitor.gap` y la alerta `MONITOR_SINK_GAP`. Nunca una pérdida silenciosa. | 201/201 | Migración **8** (la 6 es de `feat/qr-providers-fallback` y la 7 de `feat/third-party-credentials`). En `migration-5.test.ts` quedarse con la versión que lee `MIGRATIONS`. |
+| [#46](https://github.com/TilcAI/tilcai-infrastructure/pull/46) | N-07 [#33](https://github.com/TilcAI/tilcai-infrastructure/issues/33) | Análisis de escritor único en Cloud Run (`deploy/CLOUD_RUN_SINGLE_WRITER.md`), protocolo E0–E5 y herramienta `deploy/staging/n07-writer.mjs`. | 193/193 | **No cierra #33:** falta un staging autorizado. |
+
+**Ya en vigor, aunque falten los merges**
+- [x] No etiquetar revisiones de `tilcai` en Cloud Run: una revisión etiquetada queda encendida como segundo escritor. Está en `deploy/README.md`.
+- [x] Publicar en Cloud Run sin pagos ni desembolsos en curso.
+
+**Fuera de este repo**
+- [x] tilcai-web (`feat/monitor-gap-til07`, 20 commits): el tablero entiende `monitor.gap` y la retención; TIL-07 deja solo Fuji como verificada; el portal documenta `/ready`, la retención, las claves y Cloud Run.
+
+**Pendiente**
+- [ ] Revisiones: joseemen11 y JHAMILCALI (#43, #45, #46), SaulChoque y joseemen11 (#44).
+- [ ] N-07: proyecto de staging sin fondos autorizado por operación; correr E1–E5 con el script y adjuntar la evidencia en #33; decidir la topología y el RPO (D-06).
+- [ ] Mitigación propuesta en N-07: no arrancar con la base vacía si hay réplica configurada (H5). Necesita su propio issue.
+
 ## Estado
 
 | Capacidad | Estado |
@@ -60,6 +88,8 @@ payer (Fuji)                TilcAI API + worker                          Circle 
 - Un burn respalda como máximo un pago, y un nonce CCTP una sola liquidación (índices únicos).
 - El mint es idempotente por el nonce de CCTP: se reintenta sin riesgo. Nunca se crea un segundo burn para un pago existente.
 - Un burn no encontrado o una atestación que no coincide pasan a `UNCERTAIN` y no se mintean. Nunca se marcan `FAILED` sin evidencia.
+- **Liquidación atómica (N-01):** `SETTLED`, su evento y el recibo se guardan en una sola transacción SQLite (`CrosschainRepository.settle`, con control de versión). Si cualquier escritura falla, el pago sigue en `MINT_SUBMITTED` y el worker lo reintenta; no hay esquema ni migración nueva.
+  - *Anomalías históricas:* los pagos liquidados antes de este cambio podrían carecer de recibo si el proceso se interrumpió entre ambas escrituras. El worker no los vuelve a seleccionar y no se reparan automáticamente; se detectan con `SELECT p.id FROM crosschain_payments p LEFT JOIN payment_receipts r ON r.payment_id = p.id WHERE p.state = 'SETTLED' AND r.id IS NULL;` y requieren conciliación manual revisada por finanzas (contrastar `mint_tx_hash` en Stellar antes de emitir el recibo).
 
 ## Uso
 
@@ -88,11 +118,14 @@ npm run xpay -- --payment payment_attempt_… --burn 0x…HASH
 
 ### API (v1)
 
-Todas las rutas salvo `/health` exigen `Authorization: Bearer <clave>`. Cada clave pertenece a un
+Todas las rutas salvo `/health` y `/ready` exigen `Authorization: Bearer <clave>`. Cada clave pertenece a un
 tercero (*tenant*) y lleva permisos:
 
 - Las claves de `TILCAI_API_KEYS` son las del operador: permiso `payments` y acceso a lo que es de
   TilcAI (`/v1/vault`, `/v1/monitor`, `/v1/relayer`). Optipagos y optus-agentBE siguen igual.
+  Cada arranque las sincroniza: quitar una de la lista la revoca. Si la sincronización falla (por
+  ejemplo, un valor que ya es la clave emitida de un tercero), el proceso no arranca, porque
+  seguir dejaría activa la clave retirada. Se corrige la lista con un valor nuevo y se reinicia.
 - Las claves emitidas con `npm run tenant -- key` pertenecen a un tercero y solo ven lo suyo:
   `payments` para cotizar y pagar, `accounts:read` y `accounts:write` para sus cuentas. Nunca
   alcanzan el vault, el registro de eventos ni el relayer (403).
@@ -100,7 +133,8 @@ tercero (*tenant*) y lleva permisos:
 
 | Método | Ruta | Descripción |
 | --- | --- | --- |
-| GET | `/health` | Estado y Relayer arriba/abajo |
+| GET | `/health` | Liveness: 200 mientras el proceso vive, con el estado y el Relayer arriba/abajo como información |
+| GET | `/ready` | Readiness: 200 si puede hacer lo que promete su modo, 503 si no, con cada comprobación. `?mode=transactional` hace las de pagos activos en una instancia de solo lectura |
 | GET | `/v1/routes` | Rutas crosschain habilitadas |
 | POST | `/v1/crosschain/quotes` | `{sourceNetwork:"eip155:43113", destinationNetwork:"stellar:testnet", amount:"1.25", payTo:"G…"}` |
 | GET | `/v1/crosschain/quotes/:id` | Cotización |
@@ -353,11 +387,20 @@ foto de recursos cada 30 s ────┘        └── GET /v1/monitor/even
   estado de cada cola; saldo de gas y estado de cada relayer; saldo, límites y pausa de cada vault
   (Fuji y Stellar; las alertas del segundo llevan la red: `VAULT_EMPTY:stellar:testnet`).
 - **Alertas**: lo que está mal ahora (`VAULT_EMPTY`, `VAULT_LOW`, `RELAYER_DOWN`,
-  `RELAYER_LOW_GAS:<id>`, `MONITOR_SINK_FAILING:web`…). Un evento cuando aparece y otro cuando
-  se resuelve, no uno por cada foto.
+  `RELAYER_LOW_GAS:<id>`, `MONITOR_SINK_FAILING:web`, `MONITOR_BACKLOG_RETAINED:web`,
+  `MONITOR_SINK_GAP:web`…). Un evento cuando aparece y otro cuando se resuelve, no uno por cada foto.
 - **Envío a tilcai-web**: por lotes, en orden y al menos una vez. El cursor solo avanza con un
-  `2xx`, así que un tablero caído recibe después todo lo que se perdió. Cada envío va firmado:
+  `2xx`, así que un tablero caído recibe después todo lo que se perdió, si vuelve dentro de
+  `MONITOR_PENDING_MAX_DAYS` (90 días). Cada envío va firmado:
   `X-Tilcai-Signature: v1=HMAC-SHA256(secreto, "<X-Tilcai-Timestamp>.<cuerpo>")`.
+- **Retención**: lo que todos los receptores configurados ya recibieron se borra a los
+  `MONITOR_RETENTION_DAYS` (14). Lo que alguno todavía no recibió se conserva, y desde el día 14
+  se levanta `MONITOR_BACKLOG_RETAINED:<receptor>`. Pasados `MONITOR_PENDING_MAX_DAYS` también se
+  borra, pero la pérdida nunca es silenciosa: queda un evento `monitor.gap` con las posiciones y la
+  cantidad, la alerta `MONITOR_SINK_GAP:<receptor>`, y el siguiente envío lleva
+  `gap: {fromSeq, toSeq, count, prunedAt}` hasta que el receptor lo acepta. Un receptor que ya no
+  está configurado (sin `MONITOR_WEB_URL`) no retiene nada. Estos eventos son del tablero; no son
+  recibos financieros.
 - **Avisos del relayer**: se guardan una vez (por su `id`) y, si la transacción la envió
   TilcAI, enlazan con su pago o su desembolso. Sirven para ver, no para decidir: un pago solo
   se liquida cuando TilcAI comprobó la cadena.
@@ -424,10 +467,8 @@ deploy/              imágenes Docker de TilcAI y del relayer, compose del stack
 | `fix/saulchoque-vault-soroban-2026-11-01` | `73805cc` implementa evidencia de payout (#28), reservas concurrentes (#35) y validaciones/manifiesto Soroban (#42); documentación en `f2cf032` |
 | `feat/third-party-credentials` | `60e3199` añade caducidad, entorno, permisos, rotación/revocación por CLI e introspección propia; `b47165e` incorpora la rama de correcciones |
 
-Las ramas de correcciones y credenciales están publicadas por separado de esta rama QR.
-Usar el código de la rama correspondiente antes de consumir `GET /v1/auth/context` desde SDK/MCP.
-Migración 6 corresponde a QR y 7 a credenciales: verificar el orden al integrar, sin modificar migraciones aplicadas.
-Las issues #28/#35/#42 siguen abiertas para revisión; #32 requiere archivo/restauración real y decisión D-05.
+Las correcciones Vault/Soroban están integradas por #48. La integración de credenciales añade `GET /v1/auth/context`, caducidad y rotación. Migraciones: 6 QR, 7 cuotas patrocinadas, 8 credenciales; no se modifican migraciones aplicadas.
+Las issues #28/#35/#42 conservan pendiente la revisión independiente; #32 tiene evidencia de archivo/restauración local y mantiene pendiente la decisión D-05.
 
 QR Simple genera la imagen desde el payload configurado no vacío o, si falta, el propio del
 código, tanto en desarrollo como en producción. `bank-qr.png` está versionado pero ya no se
@@ -452,8 +493,12 @@ permanecen fuera de Git. Operación, rollback y smoke bancario en
 
 Esta rama consume entradas compiladas de Core y conserva separados los módulos experimentales.
 Consultar [integración, compatibilidad y distribución](docs/CORE_INTEGRATION.md).
-La dependencia file es para desarrollo con repositorios hermanos; requiere compilar Core primero.
+Core se descarga desde GitHub Packages con autenticación; no requiere un clon hermano.
 
 ### Dependencia privada Core
 
 Core se instala desde GitHub Packages, versión exacta `@tilcai/core@0.1.0`, usando el alias `tilcai-core`. Se requiere `NODE_AUTH_TOKEN` con acceso de lectura; no hace falta clonar Core. Consulta [configuración local, CI y Docker](docs/CORE_INTEGRATION.md).
+
+## Credenciales de terceros
+
+[Guía de operación y actualización](docs/third-party-credentials.md) · [Decisión API keys/OAuth](docs/third-party-auth-plan.md). Las claves emitidas tienen entorno y vencimiento; la rotación es atómica y la introspección solo muestra la credencial propia.

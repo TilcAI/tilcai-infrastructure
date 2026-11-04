@@ -12,6 +12,6 @@ import { SqliteTenantRegistry } from "../../modules/tenants/registry.ts";
 
 const env = loadEnv();
 const db = openDatabase(activeConfig(env).databasePath);
-const code = await runTenantCli(new SqliteTenantRegistry(db), process.argv.slice(2), (line) => console.log(line));
+const code = await runTenantCli(new SqliteTenantRegistry(db, undefined, env.TILCAI_ENV), process.argv.slice(2), (line) => console.log(line));
 db.close();
 process.exit(code);

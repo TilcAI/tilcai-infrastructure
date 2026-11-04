@@ -85,7 +85,8 @@ test("event log: subscribers hear what this process emits, and old events are pr
   off();
   h.monitor.emit({ type: "system.started", summary: "3" });
   assert.deepEqual(heard, [1, 2]);
-  assert.equal(h.monitor.prune(7), 1);
+  // No receiver configured: nothing is pending, so the retention alone decides.
+  assert.equal(h.monitor.prune({ retentionDays: 7, pendingMaxDays: 90, sinks: [] }), 1);
   assert.deepEqual(h.monitor.list({}).map((e) => e.seq), [2, 3]);
 });
 
@@ -286,7 +287,7 @@ function snapshot(over: Partial<ResourceSnapshot> = {}): ResourceSnapshot {
       ],
     },
     vault: { address: "0x841d", paused: false, operatorIsRelayer: true, balance: "250", pending: "0", maxPerDisbursement: "100", dailyLimit: "1000", availableToday: "1000" },
-    monitor: { head: 0, sinks: [] },
+    monitor: { head: 0, sinks: [], retentionDays: 14, pendingMaxDays: 90 },
     alerts: [],
     ...over,
   };
@@ -317,9 +318,26 @@ test("alerts of a snapshot: relayer down, out of gas or disabled, and a dashboar
     codes(snapshot({ relayer: { up: true, authenticated: true, relayers: [{ ...relayers[0]!, balance: "0.01" }, { ...relayers[1]!, paused: true, systemDisabled: true, balance: "2" }] } })),
     ["warning:RELAYER_LOW_GAS:avalanche-fuji-relayer", "error:RELAYER_PAUSED:stellar-example", "error:RELAYER_DISABLED:stellar-example", "warning:RELAYER_LOW_GAS:stellar-example"],
   );
-  const sink = { name: "web", lastSeq: 10, attempts: 3, nextAttemptAt: "t", lastError: "HTTP 503", lastDeliveredAt: null, lag: 40 };
-  assert.deepEqual(codes(snapshot({ monitor: { head: 50, sinks: [sink] } })), ["warning:MONITOR_SINK_FAILING:web"]);
-  assert.deepEqual(codes(snapshot({ monitor: { head: 50, sinks: [{ ...sink, attempts: 2 }] } })), []);
+  const sink = { name: "web", lastSeq: 10, attempts: 3, nextAttemptAt: "t", lastError: "HTTP 503", lastDeliveredAt: null, gap: null, lag: 40, configured: true, oldestPendingAt: "2026-10-09T06:00:00.000Z" };
+  const monitor = { head: 50, retentionDays: 14, pendingMaxDays: 90 };
+  assert.deepEqual(codes(snapshot({ monitor: { ...monitor, sinks: [sink] } })), ["warning:MONITOR_SINK_FAILING:web"]);
+  assert.deepEqual(codes(snapshot({ monitor: { ...monitor, sinks: [{ ...sink, attempts: 2 }] } })), []);
+});
+
+test("alerts of a snapshot: a receiver kept waiting past the retention, and one that lost events past the limit", () => {
+  const codes = (s: ResourceSnapshot) => alertsOf(s, true).map((a) => `${a.severity}:${a.code}`);
+  const sink = { name: "web", lastSeq: 10, attempts: 0, nextAttemptAt: "t", lastError: null, lastDeliveredAt: null, gap: null, lag: 40, configured: true, oldestPendingAt: "2026-10-09T06:00:00.000Z" };
+  const monitor = { head: 50, retentionDays: 14, pendingMaxDays: 90 };
+  // takenAt is 2026-10-09T07:00: 15 days back is past the 14 of retention.
+  const old = { ...sink, oldestPendingAt: "2026-09-24T06:00:00.000Z" };
+  assert.deepEqual(codes(snapshot({ monitor: { ...monitor, sinks: [old] } })), ["warning:MONITOR_BACKLOG_RETAINED:web"]);
+  assert.match(alertsOf(snapshot({ monitor: { ...monitor, sinks: [old] } }), true)[0]!.message, /hasta 90 días/);
+  const lost = { ...sink, gap: { fromSeq: 3, toSeq: 9, count: 7, prunedAt: "2026-10-09T06:00:00.000Z" } };
+  assert.deepEqual(codes(snapshot({ monitor: { ...monitor, sinks: [lost] } })), ["error:MONITOR_SINK_GAP:web"]);
+  assert.match(alertsOf(snapshot({ monitor: { ...monitor, sinks: [lost] } }), true)[0]!.message, /perdió 7 evento\(s\) \(posiciones 3–9\)/);
+  // A receiver no longer configured keeps no events, so it raises neither.
+  assert.deepEqual(codes(snapshot({ monitor: { ...monitor, sinks: [{ ...old, configured: false }, { ...lost, name: "old", configured: false }] } })), []);
+  assert.deepEqual(codes(snapshot({ monitor: { ...monitor, sinks: [sink] } })), []);
 });
 
 test("alerts of a snapshot: the vault of another network raises the same alerts, told apart by its network", () => {

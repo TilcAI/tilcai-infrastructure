@@ -5,8 +5,8 @@ import { announceStart, announceStop } from "./lifecycle.ts";
 import { startWorker } from "./worker/loop.ts";
 
 const ctx = createAppContext("tilcai");
-const app = buildServer(ctx);
 const worker = startWorker(ctx);
+const app = buildServer(ctx, { worker: worker.state });
 await app.listen({ host: ctx.env.API_HOST, port: ctx.env.API_PORT });
 announceStart(ctx);
 for (const sig of ["SIGINT", "SIGTERM"] as const) {

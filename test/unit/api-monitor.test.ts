@@ -85,6 +85,19 @@ test("monitor API: the stream sends what is in the log and what arrives while it
   await t.close();
 });
 
+test("monitor API: closing the server ends an open stream instead of waiting for the client", async () => {
+  const t = api();
+  await t.app.listen({ host: "127.0.0.1", port: 0 });
+  const port = (t.app.server.address() as AddressInfo).port;
+  const res = await fetch(`http://127.0.0.1:${port}/v1/monitor/stream`, { headers: t.auth });
+  const reader = res.body!.getReader();
+  await reader.read(); // retry: 3000
+  const started = Date.now();
+  await t.close(); // the client is still reading: nothing but the server can end it
+  assert.ok(Date.now() - started < 5000, `close took ${Date.now() - started} ms`);
+  for (let r = await reader.read(); !r.done; r = await reader.read());
+});
+
 test("monitor API: a failing dependency is announced once a minute, not once per request", async () => {
   const t = api();
   // No vault configured: every call answers 503.

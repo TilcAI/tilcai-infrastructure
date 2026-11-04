@@ -69,6 +69,7 @@ build_relayer_base() {
 build_relayer() {
   [ -n "${RELAYER_BASE:-}" ] || build_relayer_base
   docker build --build-arg "RELAYER_BASE=$RELAYER_BASE" \
+    --build-arg "VCS_REF=$(git -C "$repo" rev-parse HEAD)" \
     -t "$REGISTRY/relayer:$TAG" "$here/relayer"
   built+=("$REGISTRY/relayer:$TAG")
 }

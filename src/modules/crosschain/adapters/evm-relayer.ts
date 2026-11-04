@@ -23,7 +23,7 @@ export class RelayerEvmSubmitter implements EvmTxSubmitter {
 
   async submit(to: Hex, data: Hex) {
     const tx = await this.client.sendEvmTransaction(this.relayerId, { to, data }).catch((e: unknown) => {
-      if (e instanceof RelayerHttpError && e.status >= 400 && e.status < 500) throw new SubmissionRejected(`relayer ${e.status}: ${e.body}`);
+      if (e instanceof RelayerHttpError && e.status >= 400 && e.status < 500) throw new SubmissionRejected(`relayer ${e.status}: ${e.body}`, e.status);
       throw e;
     });
     return { submissionId: tx.id };
