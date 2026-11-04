@@ -29,7 +29,7 @@ services:
         max-file: '3'
     pids_limit: 256
   relayer:
-    image: ghcr.io/tilcai/tilcai-infrastructure@sha256:3aaf843b4c887bbb8680b790999bb2a27c1777fa13f1b3eb339647cba4e531e0
+    image: ghcr.io/tilcai/tilcai-relayer@sha256:6597cecc21a0b6eea2337b3d5bbc652468abe14dbcb8d60ce8b40574f572841e
     environment:
       API_KEY: ${RELAYER_API_KEY:?set RELAYER_API_KEY in deploy/.env}
       KEYSTORE_PASSPHRASE: ${KEYSTORE_PASSPHRASE:?set KEYSTORE_PASSPHRASE in deploy/.env}

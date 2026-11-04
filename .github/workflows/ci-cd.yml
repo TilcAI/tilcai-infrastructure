@@ -30,6 +30,9 @@ jobs:
         working-directory: tilcai-infrastructure
       - run: npm run lint && npm run typecheck && npm test && git diff --check
         working-directory: tilcai-infrastructure
+      - name: Check Soroban preflight and archived evidence offline
+        working-directory: tilcai-infrastructure
+        run: python3 test/unit/deploy-testnet.test.py && node --test test/local/soroban-ttl/evidence.test.mjs
       - name: Build API image
         run: |
           set -euo pipefail

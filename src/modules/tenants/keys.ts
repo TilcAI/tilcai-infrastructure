@@ -4,9 +4,9 @@ export const API_KEY_PREFIX = "tilc_test_";
 /** Longest key we are willing to hash. Anything longer cannot be one of ours. */
 export const MAX_API_KEY_LENGTH = 512;
 
-/** 256 bits of randomness. Testnet only, hence the prefix. */
-export function generateApiKey(): string {
-  return `${API_KEY_PREFIX}${randomBytes(32).toString("base64url")}`;
+/** 256 random bits; the prefix identifies the intended environment. */
+export function generateApiKey(environment: "testnet" | "mainnet" = "testnet"): string {
+  return `${environment === "mainnet" ? "tilc_live_" : API_KEY_PREFIX}${randomBytes(32).toString("base64url")}`;
 }
 
 /**

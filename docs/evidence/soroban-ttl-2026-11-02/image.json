@@ -1,0 +1,80 @@
+{
+  "tag": "latest",
+  "events": [
+    "pull_request",
+    "push"
+  ],
+  "config": {
+    "protocol_version_default": 25
+  },
+  "deps": [
+    {
+      "name": "xdr",
+      "repo": "stellar/rs-stellar-xdr",
+      "ref": "v27.0.0",
+      "sha": "5262803470be965e42f80023d12fba12808c774a",
+      "id": "4d7f820e4f69d44e998468525e3e344912b7da327adbf0ce8b1829b4fc83bd9f"
+    },
+    {
+      "name": "core",
+      "repo": "stellar/stellar-core",
+      "ref": "v26.1.0",
+      "options": {
+        "configure_flags": "--disable-tests"
+      },
+      "sha": "427aa39784d731daf86dea822f17af45c3875b15",
+      "id": "cc54374a3b9990466f0ab2fce45f9ecc774ad7d75942b5a4d0eb1d58366c65b8"
+    },
+    {
+      "name": "rpc",
+      "repo": "stellar/stellar-rpc",
+      "ref": "v26.0.0",
+      "sha": "f583fa46118d721cf703a1f0416b876f14a07957",
+      "id": "21d19c1521d85405cdd31d3f5b13c5d9f5282929eab23b9ad65128ca726d8275"
+    },
+    {
+      "name": "horizon",
+      "repo": "stellar/stellar-horizon",
+      "ref": "v26.0.0",
+      "options": {
+        "pkg": "github.com/stellar/stellar-horizon"
+      },
+      "sha": "212fe2e6fde54fec88ba8de30381ff4eaf9b5c19",
+      "id": "4d7d63f084523899abc199ef8ebdb8715705407871ce0da4cdf92e964f8adc59"
+    },
+    {
+      "name": "friendbot",
+      "repo": "stellar/friendbot",
+      "ref": "4a6a1715d5b81c640dd9f887dd37b26499e95e72",
+      "options": {
+        "pkg": "github.com/stellar/friendbot"
+      },
+      "sha": "4a6a1715d5b81c640dd9f887dd37b26499e95e72",
+      "id": "914f404194c8b515830b79919d59c1886d273c9ca5bad3013d7beed79450eb9e"
+    },
+    {
+      "name": "lab",
+      "repo": "stellar/laboratory",
+      "ref": "main",
+      "sha": "ac9d388e107b98518313ddbe45fc1fcc30cb7a27",
+      "id": "3819cab4f0c186c1b779793bf601672b33cb7ee37a0681e8fa66b4d6d996ecde"
+    },
+    {
+      "name": "galexie",
+      "repo": "stellar/stellar-galexie",
+      "ref": "galexie-v26.1.0",
+      "sha": "f5e4899f352378d9c65b2d099421e1d53b9dc1b0",
+      "id": "a10a5b03ed52030fc183adf9fd8028c7161a7349e5091056a60c87207cfef002"
+    }
+  ],
+  "tests": {
+    "continue-on-error": false,
+    "additional-tests": [
+      {
+        "arch": "amd64",
+        "network": "pubnet",
+        "enable": "core,rpc,horizon"
+      }
+    ]
+  }
+}

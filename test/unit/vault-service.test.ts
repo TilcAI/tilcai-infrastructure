@@ -210,15 +210,19 @@ test("a mined transaction without the expected event is never reported as paid",
   assert.equal(d.lastError, "DISBURSED_EVENT_MISMATCH");
 });
 
-test("paid on-chain but the event is out of reach: confirmed without a hash", async () => {
+test("paid on-chain without evidence stays uncertain until evidence returns", async () => {
   const h = vaultHarness();
   h.submitter.failNextSubmit = "lost";
   h.vault.eventsVisible = false;
   const r = await h.svc.create(request);
   const d = await h.drive(r.disbursement.id);
-  assert.equal(d.state, "CONFIRMED");
-  assert.equal(d.txHash, null);
-  assert.equal(h.svc.view(d.id).links.tx, null);
+  assert.equal(d.state, "REQUESTED");
+  assert.equal(d.uncertain, true);
+  assert.equal(d.lastError, "DISBURSED_EVIDENCE_MISSING");
+  assert.equal(h.submitter.submits.length, 1);
+  h.vault.eventsVisible = true;
+  assert.equal((await h.drive(d.id)).state, "CONFIRMED");
+  assert.equal(h.submitter.submits.length, 1);
 });
 
 test("worker pass advances what is due and leaves settled payouts alone", async () => {
