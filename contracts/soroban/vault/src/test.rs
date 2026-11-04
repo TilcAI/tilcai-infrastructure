@@ -185,3 +185,36 @@ fn operations_need_the_right_authorization() {
     assert!(vault.try_pause().is_err());
     assert!(vault.try_set_operator(&buyer).is_err());
 }
+
+// N-06 SDK experiments; Core archival and RestoreFootprint need separate integration.
+#[test]
+fn payout_reads_do_not_renew_its_ttl() {
+    use soroban_sdk::testutils::storage::Persistent as _;
+    let f = fixture();
+    let payout_id = id(&f.e, 61);
+    f.vault.disburse(&payout_id, &f.buyer, &1_0000000);
+    let key = crate::DataKey::Payout(payout_id.clone());
+    let before = f.e.as_contract(&f.vault.address, || f.e.storage().persistent().get_ttl(&key));
+    f.e.ledger().set_sequence_number(f.e.ledger().sequence() + 1);
+    assert!(f.vault.payout(&payout_id).is_some());
+    let after = f.e.as_contract(&f.vault.address, || f.e.storage().persistent().get_ttl(&key));
+    assert_eq!(after, before - 1);
+    assert_eq!(err(f.vault.try_disburse(&payout_id, &f.buyer, &1_0000000)), code(VaultError::AlreadyDisbursed));
+}
+
+#[test]
+fn payout_is_present_on_its_last_live_ledger() {
+    use soroban_sdk::testutils::storage::Persistent as _;
+    let f = fixture();
+    let payout_id = id(&f.e, 62);
+    f.vault.disburse(&payout_id, &f.buyer, &1_0000000);
+    let key = crate::DataKey::Payout(payout_id.clone());
+    let ttl = f.e.as_contract(&f.vault.address, || {
+        let ttl = f.e.storage().persistent().get_ttl(&key);
+        f.e.storage().instance().extend_ttl(ttl, ttl);
+        ttl
+    });
+    f.e.ledger().set_sequence_number(f.e.ledger().sequence() + ttl);
+    assert_eq!(f.e.as_contract(&f.vault.address, || f.e.storage().persistent().get_ttl(&key)), 0);
+    assert_eq!(err(f.vault.try_disburse(&payout_id, &f.buyer, &1_0000000)), code(VaultError::AlreadyDisbursed));
+}

@@ -6,7 +6,7 @@ import { sameHex, type Hex } from "../../shared/hex.ts";
 import { newVaultDisbursementId, parseVaultDisbursementId } from "../../shared/ids.ts";
 import type { Logger } from "../../shared/log.ts";
 import { SubmissionRejected } from "../crosschain/ports.ts";
-import type { EventSink } from "../monitor/domain.ts";
+import type { EventSink, NewMonitorEvent } from "../monitor/domain.ts";
 import { disbursementIdBytes32 } from "./disbursement-id.ts";
 import { canMove, isTerminal, type DisbursementState, type VaultDisbursement } from "./domain.ts";
 import type { VaultNetwork, VaultPort, VaultStatus, VaultSubmitter } from "./ports.ts";
@@ -91,13 +91,28 @@ export class VaultDisbursementService {
 
     // Refuse what the vault could not pay right now, so the caller gets a clear answer
     // instead of a payout that keeps reverting.
-    const [status, head] = await Promise.all([this.status(), this.d.vault.blockNumber()]).catch((e: unknown) => {
+    // Capture before external reads: a subsequent local release invalidates this snapshot.
+    const capacityRevision = this.d.repo.capacityRevision(this.d.network.id, this.d.vault.address());
+    const observedAt = this.d.clock.now().getTime();
+    let snapshot;
+    try {
+      snapshot = await Promise.all([this.status(), this.d.vault.blockNumber()]);
+    } catch (e) {
+      // A concurrent admission remains replayable even if this caller's RPC fails.
+      const admitted = this.d.repo.getByIdempotencyKey(input.idempotencyKey);
+      if (admitted) {
+        if (admitted.requestHash !== requestHash) throw new DomainError("IDEMPOTENCY_CONFLICT");
+        return { disbursement: admitted, replayed: true };
+      }
       throw new DomainError("SERVICE_UNAVAILABLE", `vault or relayer unreachable: ${errText(e)}`);
-    });
-    // A payout the vault cannot take is announced: nobody finds out from a caller that keeps retrying.
+    }
+    const [status, head] = snapshot;
+    // Publish only after the admission transaction rolls back, so a SQLite-backed
+    // monitor keeps the refusal instead of rolling it back with the reservation.
+    let rejection: NewMonitorEvent | undefined;
     const refuse = (code: "SERVICE_UNAVAILABLE" | "PAUSED" | "PAYMENT_LIMIT" | "BUDGET", detail: string): never => {
       const usdc = (atomic: bigint) => atomicToDecimal(atomic, this.d.network.usdc.decimals);
-      this.d.events?.emit({
+      rejection = {
         type: "vault.disbursement.rejected",
         severity: code === "PAYMENT_LIMIT" ? "warning" : "error",
         subject: input.reference ?? null,
@@ -114,16 +129,9 @@ export class VaultDisbursementService {
           availableToday: usdc(status.availableTodayAtomic),
           maxPerDisbursement: usdc(status.maxPerDisbursementAtomic),
         },
-      });
+      };
       throw new DomainError(code, detail);
     };
-    if (!status.operatorIsRelayer) refuse("SERVICE_UNAVAILABLE", "the relayer is not the vault operator");
-    if (status.paused) refuse("PAUSED", "vault is paused");
-    if (amount > status.maxPerDisbursementAtomic) refuse("PAYMENT_LIMIT", "amount above the vault's limit per disbursement");
-    // Payouts already promised count against both the daily limit and the balance.
-    if (amount + status.pendingAtomic > status.availableTodayAtomic) refuse("PAYMENT_LIMIT", "amount above what the vault can still pay today");
-    if (amount + status.pendingAtomic > status.balanceAtomic) refuse("BUDGET", "vault has insufficient USDC");
-
     const now = iso(this.d.clock.now());
     const disbursement: VaultDisbursement = {
       id: newVaultDisbursementId(),
@@ -150,8 +158,28 @@ export class VaultDisbursementService {
       version: 0,
     };
     try {
-      this.d.repo.insert(disbursement, { disbursementId: disbursement.id, from: null, to: "REQUESTED", note: "created", at: now });
+      const existing = this.d.repo.insert(disbursement, { disbursementId: disbursement.id, from: null, to: "REQUESTED", note: "created", at: now }, (pending) => {
+        if (this.d.repo.capacityRevision(this.d.network.id, this.d.vault.address()) !== capacityRevision) {
+          throw new DomainError("SERVICE_UNAVAILABLE", "vault capacity changed during snapshot; retry with fresh capacity");
+        }
+        const admittedAt = this.d.clock.now().getTime();
+        if (admittedAt - observedAt > 30_000 || Math.floor(admittedAt / 86_400_000) !== Math.floor(observedAt / 86_400_000)) {
+          throw new DomainError("SERVICE_UNAVAILABLE", "vault snapshot expired; retry with fresh capacity");
+        }
+        if (!status.operatorIsRelayer) refuse("SERVICE_UNAVAILABLE", "the relayer is not the vault operator");
+        if (status.paused) refuse("PAUSED", "vault is paused");
+        if (amount > status.maxPerDisbursementAtomic) refuse("PAYMENT_LIMIT", "amount above the vault's limit per disbursement");
+        if (amount > status.availableTodayAtomic) refuse("PAYMENT_LIMIT", "amount above what the vault can still pay today");
+        if (amount > status.balanceAtomic) refuse("BUDGET", "vault has insufficient USDC");
+        if (amount + pending > status.availableTodayAtomic) refuse("PAYMENT_LIMIT", "concurrent reservations exhausted daily capacity");
+        if (amount + pending > status.balanceAtomic) refuse("BUDGET", "concurrent reservations exhausted balance");
+      });
+      if (existing) {
+        if (existing.requestHash !== requestHash) throw new DomainError("IDEMPOTENCY_CONFLICT");
+        return { disbursement: existing, replayed: true };
+      }
     } catch (e) {
+      if (rejection) this.d.events?.emit(rejection);
       if (String(e).includes("UNIQUE")) {
         if (this.d.repo.getByIdempotencyKey(input.idempotencyKey)) return this.create(input); // lost a race on the same key → replay path
         throw new DomainError("DUPLICATE", "reference already has a disbursement");
@@ -258,8 +286,14 @@ export class VaultDisbursementService {
 
   /** The vault says the id is paid: take the transaction from its event. */
   private async confirmFromChain(d: VaultDisbursement, note: string): Promise<VaultDisbursement> {
-    const found = await this.d.vault.findDisbursed(disbursementIdBytes32(d.id), d.fromBlock);
-    if (found && (!sameHex(found.to, d.to) || found.amount !== d.amountAtomic)) {
+    let found;
+    try {
+      found = await this.d.vault.findDisbursed(disbursementIdBytes32(d.id), d.fromBlock);
+    } catch {
+      return this.reschedule(d, { error: "DISBURSED_EVIDENCE_UNAVAILABLE", uncertain: true, backoff: true });
+    }
+    if (!found) return this.reschedule(d, { error: "DISBURSED_EVIDENCE_MISSING", uncertain: true, backoff: true });
+    if (!sameHex(found.to, d.to) || found.amount !== d.amountAtomic) {
       return this.reschedule(d, { error: "DISBURSED_EVENT_MISMATCH", uncertain: true, backoff: true });
     }
     return this.move(d, "CONFIRMED", note, {

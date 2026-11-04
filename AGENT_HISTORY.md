@@ -612,6 +612,24 @@ Comprobado en el contenedor: `/health` con `eip155:10143`, `vault` y `vaultStell
 
 - **Sesión:** n/d
 - **Rama:** fix/n11-monitor-prune (desde main)
+## 2026-11-01T18:30:19Z · OmarQV · Claude Code (claude-opus-5-5)
+
+- **Sesión:** n/d
+- **Rama:** main
+- **Repositorios:** tilcai-web, tilcai-infrastructure
+
+### Prompt
+
+> Solo nos vamos a enfocar en el proyecto tilcai, revisa mis issues
+
+### Salida
+
+Revisión, sin cambios de código, de los issues asignados a OmarQV en este repo, contra main 58066a7 (la misma base que auditaron los issues). Los cuatro problemas siguen presentes: N-04 #30, app-context.ts registra el fallo de syncLegacyKeys y continúa; N-12 #38, /health devuelve siempre 200 ok:true y Cloud Run lo usa como startup y liveness; N-11 #37, repository.ts prune borra por fecha sin consultar monitor_sinks.last_seq; N-07 #33, maxScale 1 y litestream restore sin fencing, y falta staging autorizado. No hay PR para ninguno. La rama feat/qr-providers-fallback cambia app-context.ts y server.ts, los mismos archivos que N-04 y N-12. Orden sugerido: N-04, N-12, N-11, N-07.
+
+## 2026-11-01T18:31:00Z · OmarQV · Claude Code (claude-opus-5-5)
+
+- **Sesión:** n/d
+- **Rama:** fix/n04-legacy-sync-fail-closed
 ## 2026-10-15T20:00:21Z · saulchoque · Claude Code (Sonnet 5.5)
 
 - **Sesión:** https://claude.ai/code/session_0185g9fsVV9T5JBDkvrYoGqs
@@ -710,6 +728,8 @@ El mock de QR Simple devuelve ahora siempre un QR real de Banco Unión (`src/mod
 
 - **Sesión:** n/d
 - **Rama:** feat/qr-providers-fallback
+- **Rama:** feat/third-party-credentials
+- **Rama:** fix/saulchoque-vault-soroban-2026-11-01
 - **Repositorios:** TilcAI/documentation, tilcai-infrastructure, tilcai-sdk, tilcai-mcp, tilcai-core, tilcai-web, tilcai-cctp-engine, .github
 
 ### Prompt
@@ -734,6 +754,8 @@ Documentación: [resultados y ramas](/home/saul-bms/proyectos/tilcai/documentati
 
 - **Sesión:** n/d
 - **Rama:** feat/qr-providers-fallback
+- **Rama:** feat/third-party-credentials
+- **Rama:** fix/saulchoque-vault-soroban-2026-11-01
 - **Repositorios:** TilcAI/documentation, tilcai-infrastructure, tilcai-sdk, tilcai-mcp, tilcai-core, tilcai-web, tilcai-cctp-engine, .github
 
 ### Prompt
@@ -758,6 +780,8 @@ Documentación: [resultados y ramas](/home/saul-bms/proyectos/tilcai/documentati
 
 - **Sesión:** n/d
 - **Rama:** feat/qr-providers-fallback
+- **Rama:** feat/third-party-credentials
+- **Rama:** fix/saulchoque-vault-soroban-2026-11-01
 - **Repositorios:** TilcAI/documentation, tilcai-infrastructure, tilcai-sdk, tilcai-mcp, tilcai-core, tilcai-web, tilcai-cctp-engine, .github
 
 ### Prompt
@@ -782,6 +806,8 @@ Documentación: [resultados y ramas](/home/saul-bms/proyectos/tilcai/documentati
 
 - **Sesión:** n/d
 - **Rama:** feat/qr-providers-fallback
+- **Rama:** feat/third-party-credentials
+- **Rama:** fix/saulchoque-vault-soroban-2026-11-01
 - **Repositorios:** TilcAI/documentation, tilcai-infrastructure, tilcai-sdk, tilcai-mcp, tilcai-core, tilcai-web, tilcai-cctp-engine, .github
 
 ### Prompt
@@ -875,6 +901,11 @@ Actualicé el README de este repositorio con su alcance en la entrega, ramas pub
 
 - **Sesión:** n/d
 - **Rama:** feat/qr-providers-fallback
+## 2026-11-02T02:49:26Z · saulchoque · Codex / gpt-6.1-terra
+
+- **Sesión:** n/d
+- **Rama:** feat/third-party-credentials
+- **Rama:** fix/saulchoque-vault-soroban-2026-11-01
 - **Repositorios:** tilcai-infrastructure, tilcai-sdk, tilcai-mcp
 
 ### Prompt
@@ -884,11 +915,15 @@ Actualicé el README de este repositorio con su alcance en la entrega, ramas pub
 ### Salida
 
 La rama feat/qr-providers-fallback implementa gateway de cobros QR con proveedores de respaldo; dfb7006 genera el PNG desde el payload configurado o el propio del código. e064378 actualiza la URL de Banco Económico y el bind de Tailscale. Pasaron 15 tests QR Simple; el simulador no acredita abono bancario.
+La rama incorpora las correcciones Vault/Soroban y 60e3199: API keys por tenant, scopes y entorno con caducidad, revocación, rotación atómica e introspección propia; migración SQLite 7, CLI de operador y auditoría sin secretos. Validación previa: 206 tests unitarios y typecheck. La integración de QR y el despliegue requieren coordinación de migraciones.
+Se implementaron #28, #35 y #42 en 73805cc: recuperación de payout conserva incertidumbre y reserva si falta evidencia concordante; admisión Vault recalcula reservas dentro de BEGIN IMMEDIATE con aritmética exacta; despliegue Soroban valida entradas y usa manifiesto durable para reconciliar interrupciones. Se documentaron pruebas offline: 201 unitarias, 5 Python y 12 Rust. Las issues requieren revisión; #32 sigue parcial.
 
 ## 2026-11-02T02:59:28Z · saulchoque · Codex / gpt-6.1-terra
 
 - **Sesión:** n/d
 - **Rama:** feat/qr-providers-fallback
+- **Rama:** feat/third-party-credentials
+- **Rama:** fix/saulchoque-vault-soroban-2026-11-01
 - **Repositorios:** tilcai-infrastructure, tilcai-sdk, tilcai-mcp
 
 ### Prompt
@@ -903,6 +938,14 @@ Se creó `IMPLEMENTACION_RAMA_QR_PROVIDERS.md` con alcance, implementación, val
 
 - **Sesión:** n/d
 - **Rama:** feat/continuous-deploy-baneco
+Se creó `IMPLEMENTACION_RAMA_CREDENCIALES_BACKEND.md` con alcance, implementación, validación y pendientes de esta rama. El documento indica que debe excluirse del resultado de integración a main.
+Se creó `IMPLEMENTACION_RAMA_FIX_VAULT_SOROBAN.md` con alcance, implementación, validación y pendientes de esta rama. El documento indica que debe excluirse del resultado de integración a main.
+
+
+## 2026-11-02T03:35:46Z · SaulChoque · Codex (GPT-6)
+
+- **Sesión:** n/d
+- **Rama:** fix/saulchoque-vault-soroban-2026-11-01
 - **Repositorios:** tilcai-infrastructure
 
 ### Prompt
@@ -932,6 +975,24 @@ Se preparó CI con lint, typecheck, 212 pruebas y smoke de imagen real; pasó en
 
 - **Sesión:** n/d
 - **Rama:** main
+> # Context from my IDE setup:
+>
+> ## Open tabs:
+> - IMPLEMENTACION_RAMA_FIX_VAULT_SOROBAN.md: IMPLEMENTACION_RAMA_FIX_VAULT_SOROBAN.md
+> - AGENT_HISTORY.md: AGENT_HISTORY.md
+>
+> ## My request:
+> Analiza mis issues asignadas en tilcai (28, 35, 42, 32) y verifica que las implementaciones hechas para resolverlas en esta rama (si no se encuentran aqui revisa las otras ramas) cumplan con lo descrito en las issues (realiza tests y pruebas)
+
+### Salida
+
+Turno interrumpido por el usuario durante la consulta de GitHub. La revisión se retomó con el prompt repetido; no se emitió respuesta final en ese turno.
+
+
+## 2026-11-02T03:37:30Z · SaulChoque · Codex (GPT-6)
+
+- **Sesión:** n/d
+- **Rama:** fix/saulchoque-vault-soroban-2026-11-01
 - **Repositorios:** tilcai-infrastructure
 
 ### Prompt
@@ -951,6 +1012,62 @@ Se integró QR y CI/CD a main mediante 13d74cb. El run 41482765021 completó pub
 
 - **Sesión:** n/d
 - **Rama:** main
+> Si empieza N-04
+
+### Salida
+
+N-04 (#30) implementado como fallo de arranque explícito (fail closed), sin commit. `createAppContext` (src/app-context.ts) ya no sigue cuando falla la sincronización de `TILCAI_API_KEYS`: registra el error sin valores de clave, cierra la DB y lanza `refusing to start`, así que api, worker, all-in-one y xpay salen antes de escuchar. Para eso `SqliteTenantRegistry` tiene `syncLegacyKeysSync`, que lanza en la misma llamada; `syncLegacyKeys` (async, del puerto) la reutiliza. Tests nuevos en test/unit/app-context-tenants.test.ts con SQLite persistente: colisión con una clave emitida y error SQL inyectado con un trigger. Ambos fallaban antes del cambio y pasan después; el control con un valor nuevo arranca, acepta la nueva clave, rechaza la retirada y conserva la del tenant. Comprobado con los procesos reales: api y all-in-one salen con código 1, sin escuchar y sin la clave en la salida; con una clave válida arrancan. Typecheck correcto. Suite unitaria: 178 de 195; los 17 fallos ya estaban en main y se deben a Node v22.16.0 local (el repo pide ≥ 22.20.0). Documentado en README.md y deploy/README.md. Pendiente: commit, PR y revisión de joseemen11 y JHAMILCALI.
+
+## 2026-11-01T18:53:45Z · OmarQV · Claude Code (claude-opus-5-5)
+
+- **Sesión:** n/d
+- **Rama:** fix/n04-legacy-sync-fail-closed
+> continua
+> # Context from my IDE setup:
+>
+> ## Open tabs:
+> - IMPLEMENTACION_RAMA_FIX_VAULT_SOROBAN.md: IMPLEMENTACION_RAMA_FIX_VAULT_SOROBAN.md
+> - AGENT_HISTORY.md: AGENT_HISTORY.md
+>
+> ## My request:
+> Analiza mis issues asignadas en tilcai (28, 35, 42, 32) y verifica que las implementaciones hechas para resolverlas en esta rama (si no se encuentran aqui revisa las otras ramas) cumplan con lo descrito en las issues (realiza tests y pruebas)
+
+### Salida
+
+La revisión encontró **dos defectos pendientes en #35**. #28 y #42 superan las pruebas realizadas; #32 sigue siendo una investigación incompleta. Las cuatro issues están abiertas y asignadas a `SaulChoque`.
+
+La implementación está en esta rama, principalmente en el commit `73805cc`; también aparece en `origin/feat/third-party-credentials`. Revisé HEAD `58b6906`.
+
+| Issue | Resultado |
+|---|---|
+| [#28](https://github.com/TilcAI/tilcai-infrastructure/issues/28) | Corrección central validada, incluyendo reapertura de SQLite. Falta revisión independiente. |
+| [#35](https://github.com/TilcAI/tilcai-infrastructure/issues/35) | Cumplimiento parcial: quedan dos carreras reproducibles. |
+| [#42](https://github.com/TilcAI/tilcai-infrastructure/issues/42) | Preflight, importes exactos y recuperación parcial validados con CLI falsa. Falta revisión independiente. |
+| [#32](https://github.com/TilcAI/tilcai-infrastructure/issues/32) | Faltan archivo/restauración en ledger local y decisión D-05. |
+
+**Los problemas encontrados en #35**
+
+1. **Una confirmación puede dejar obsoleto el saldo usado para admitir otra reserva.** Una petición lee 10 USDC y espera; otra paga esos 10 y confirma, liberando su reserva. La primera continúa, encuentra cero pendientes y acepta otros 10 contra el saldo antiguo. Queda `REQUESTED` por `InsufficientBalance`. Lo reproduje con dos conexiones SQLite. No demuestra sobrepago on-chain.
+2. **La misma clave puede devolver `BUDGET` en vez del resultado existente.** Ambas peticiones pasan la búsqueda inicial; una reserva mientras la otra espera. La segunda rechaza por capacidad antes de alcanzar la resolución de idempotencia del insert.
+
+Ambos afectan a [service.ts](/run/media/nobarasaul/NV3aca/proyectos/tilcai/tilcai-infrastructure/src/modules/vault/service.ts:94). El bloqueo SQL corrige la carrera original, pero no garantiza coherencia entre un saldo antiguo y reservas liberadas posteriormente.
+
+**Qué cambió la implementación para resolver cada problema**
+
+- **#28 — evidencia del pago:** `confirmFromChain` en [service.ts](/run/media/nobarasaul/NV3aca/proyectos/tilcai/tilcai-infrastructure/src/modules/vault/service.ts:266) conserva incertidumbre cuando falta evidencia, falla su consulta o no coinciden receptor e importe. Un mapping positivo ya no basta. El adaptador EVM busca el evento por ID; Soroban puede aportar su registro persistente `Payout(id)` aunque falte el hash. Mis cuatro pruebas adicionales comprobaron persistencia tras cerrar/reabrir SQLite, reserva retenida, ausencia de otro envío y confirmación única al recuperar evidencia.
+- **#35 — reserva atómica:** [repository.ts](/run/media/nobarasaul/NV3aca/proyectos/tilcai/tilcai-infrastructure/src/modules/vault/repository.ts:34) recalcula pendientes por red/vault con `BigInt` dentro de `BEGIN IMMEDIATE`, antes de insertar. Reserva y evento revierten juntos. El servicio rechaza snapshots de más de 30 segundos o que cruzan día UTC. Esto resuelve el intercalado original, pero necesita corregir los dos casos anteriores.
+- **#42 — validación previa:** el shell delega en [deploy_testnet.py](/run/media/nobarasaul/NV3aca/proyectos/tilcai/tilcai-infrastructure/contracts/soroban/deploy_testnet.py:39). Python valida flags, identidad, direcciones, precisión y `max ≤ daily` antes de operaciones de contrato. Convierte importes con enteros, sin interpolarlos como código. El manifiesto registra `UNKNOWN` antes de emitir y `COMPLETED` después; su existencia bloquea repeticiones ciegas. El procedimiento de recuperación está documentado.
+- **#32 — investigación TTL:** se añadieron dos tests SDK en [test.rs](/run/media/nobarasaul/NV3aca/proyectos/tilcai/tilcai-infrastructure/contracts/soroban/vault/src/test.rs:189): leer no renueva TTL y el último ledger vivo rechaza duplicados. No prueban archivo ni restore, y no permiten prometer un horizonte antirreplay.
+
+**Pruebas ejecutadas:** 201 unitarias TypeScript, 5 Python, 12 Rust y typecheck correctos. Añadí 6 sondas: cuatro validan #28 y dos reproducen los defectos de #35. Estas últimas pasan al detectar el defecto; no significan que #35 esté resuelta.
+
+Dejé el análisis, comandos, limitaciones y recomendaciones en el [informe detallado](/run/media/nobarasaul/NV3aca/proyectos/tilcai/tilcai-infrastructure/docs/revision-issues-saulchoque-2026-11-02.md), y las sondas en [vault-issues.test.ts](/run/media/nobarasaul/NV3aca/proyectos/tilcai/tilcai-infrastructure/test/review/vault-issues.test.ts). En esta revisión añadí pruebas y documentación; los cambios de negocio descritos ya existían. No ejecuté operaciones financieras en red ni cerré issues.
+
+
+## 2026-11-02T03:38:00Z · SaulChoque · Codex (GPT-6)
+
+- **Sesión:** n/d
+- **Rama:** fix/saulchoque-vault-soroban-2026-11-01
 - **Repositorios:** tilcai-infrastructure
 
 ### Prompt
@@ -1031,6 +1148,182 @@ Preparación e integración mediante PR de contratos Core y consumo privado en m
 
 Paso 1: los `main` locales se trajeron con fast-forward en .github, documentation, tilcai-mcp y tilcai-sdk. En tilcai-cctp-engine se hizo rebase del commit local no subido. En tilcai-core se guardó aparte el AGENT_HISTORY local y se volvió a aplicar. Los `main` de infra y web se actualizaron sin cambiar de rama.
 Paso 2: el token no tiene `read:packages`, así que los tests se corrieron con el clon local de tilcai-core compilado (0.1.0), sin tocar package.json ni el lockfile; `main` da 212/212. Se combinó `main` en #43 (214/214), #44 (227/227; conflicto en las rutas sin clave: se conservan READY_PATH y los webhooks de QR), #46 y #47 (212/212). CI `verify` pasa en #43, #44 y #46. En esta rama (#45) se aplicó la extensión local que eligió OmarQV: con el Core como fuente del contrato del monitor, domain.ts suma `monitor.gap` a `MONITOR_EVENT_TYPES` del Core, y forwarder.ts extiende su `MonitorDelivery` con `gap`, hasta que el Core los incluya. Migraciones 1–6 y 8. Suite 220/220 y typecheck limpio. Se detectó otro agente (Codex) trabajando a la vez en la carpeta de infra; su entrada de historial sin commit no se tocó.
+> ¿Hago el commit y abro el PR que cierra #30? SI
+
+### Salida
+
+Commit de N-04 en fix/n04-legacy-sync-fail-closed (código, tests, documentación e historial), push a origin y PR contra main que cierra #30, con revisión pedida a joseemen11 y JHAMILCALI.
+
+## 2026-11-01T18:58:00Z · OmarQV · Claude Code (claude-opus-5-5)
+
+- **Sesión:** n/d
+- **Rama:** feat/n12-readiness (sobre fix/n04-legacy-sync-fail-closed)
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> Vamos con el siguiente issue
+
+### Salida
+
+N-12 (#38) implementado, sin commit, con las decisiones que aprobó OmarQV: `/health` queda como liveness y responde 200 aunque el relayer esté caído. El nuevo `/ready` es público y responde 200 o 503 con cada comprobación, sin secretos, y reutiliza cada respuesta 5 s. Si readiness falla solo se informa: los pagos no se bloquean. Los manifiestos no se tocan. En solo lectura `/ready` exige la base y solo informa del relayer. En modo transaccional exige además: que el relayer responda y acepte la clave; que cada relayer de cada red EVM activa y el de Stellar exista con la red y el tipo esperados (`relayerNetwork`, nuevo en src/config/networks.ts), sin pausar y con firmante; el submitter de Stellar; y el worker de all-in-one con una ronda reciente. `?mode=transactional` permite validar mainnet antes de activar transacciones. Cada llamada al relayer tiene un timeout de 5 s. Los roles on-chain no se verifican: quedan como brecha documentada. Archivos: src/modules/readiness/service.ts, src/apps/api/readiness-routes.ts, server.ts, worker/loop.ts (estado del loop), all-in-one.ts, networks.ts, test/unit/readiness.test.ts (13 tests: relayer caído, clave rechazada o ausente, id vacío o inexistente, red y tipo distintos, pausado, sin firmante, submitter local sin clave, solo lectura, compose de testnet aplicado a mainnet, mainnet activo, worker detenido o silencioso, caché, modo inválido, timeout y worker real). Typecheck correcto. Suite: 191 de 208; los mismos 17 fallos que la base, por Node v22.16 local. Comprobado con all-in-one real sin relayer: /health 200, /ready 503 y ninguna clave en los logs. Documentado en README.md, deploy/README.md y deploy/MAINNET_DEPLOYMENT.md.
+
+## 2026-11-01T19:18:36Z · OmarQV · Claude Code (claude-opus-5-5)
+
+- **Sesión:** n/d
+- **Rama:** feat/n12-readiness
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> SI, hazlo
+
+### Salida
+
+Commit de N-12 en feat/n12-readiness (código, tests, documentación e historial), push a origin y PR contra fix/n04-legacy-sync-fail-closed (apilado sobre #43) que cierra #38, con revisión pedida a SaulChoque y joseemen11.
+> revisa si se publico codigo de tilcai-core en infratructure siguiendo su mensaje anterior, en caso de que si quita el codigo (de todas formas el codigode tilcai core es meramente ilustrativo y no es funcional)
+> # Context from my IDE setup:
+>
+> ## Open tabs:
+> - IMPLEMENTACION_RAMA_FIX_VAULT_SOROBAN.md: IMPLEMENTACION_RAMA_FIX_VAULT_SOROBAN.md
+> - AGENT_HISTORY.md: AGENT_HISTORY.md
+>
+> ## My request:
+> luego explica detalladamente en tu salida que se modifico y en que parte del codigo para resolver el problema
+
+### Salida
+
+La revisión encontró **dos defectos pendientes en #35**. #28 y #42 superan las pruebas realizadas; #32 sigue siendo una investigación incompleta. Las cuatro issues están abiertas y asignadas a `SaulChoque`.
+
+La implementación está en esta rama, principalmente en el commit `73805cc`; también aparece en `origin/feat/third-party-credentials`. Revisé HEAD `58b6906`.
+
+| Issue | Resultado |
+|---|---|
+| [#28](https://github.com/TilcAI/tilcai-infrastructure/issues/28) | Corrección central validada, incluyendo reapertura de SQLite. Falta revisión independiente. |
+| [#35](https://github.com/TilcAI/tilcai-infrastructure/issues/35) | Cumplimiento parcial: quedan dos carreras reproducibles. |
+| [#42](https://github.com/TilcAI/tilcai-infrastructure/issues/42) | Preflight, importes exactos y recuperación parcial validados con CLI falsa. Falta revisión independiente. |
+| [#32](https://github.com/TilcAI/tilcai-infrastructure/issues/32) | Faltan archivo/restauración en ledger local y decisión D-05. |
+
+**Los problemas encontrados en #35**
+
+1. **Una confirmación puede dejar obsoleto el saldo usado para admitir otra reserva.** Una petición lee 10 USDC y espera; otra paga esos 10 y confirma, liberando su reserva. La primera continúa, encuentra cero pendientes y acepta otros 10 contra el saldo antiguo. Queda `REQUESTED` por `InsufficientBalance`. Lo reproduje con dos conexiones SQLite. No demuestra sobrepago on-chain.
+2. **La misma clave puede devolver `BUDGET` en vez del resultado existente.** Ambas peticiones pasan la búsqueda inicial; una reserva mientras la otra espera. La segunda rechaza por capacidad antes de alcanzar la resolución de idempotencia del insert.
+
+Ambos afectan a [service.ts](/run/media/nobarasaul/NV3aca/proyectos/tilcai/tilcai-infrastructure/src/modules/vault/service.ts:94). El bloqueo SQL corrige la carrera original, pero no garantiza coherencia entre un saldo antiguo y reservas liberadas posteriormente.
+
+**Qué cambió la implementación para resolver cada problema**
+
+- **#28 — evidencia del pago:** `confirmFromChain` en [service.ts](/run/media/nobarasaul/NV3aca/proyectos/tilcai/tilcai-infrastructure/src/modules/vault/service.ts:266) conserva incertidumbre cuando falta evidencia, falla su consulta o no coinciden receptor e importe. Un mapping positivo ya no basta. El adaptador EVM busca el evento por ID; Soroban puede aportar su registro persistente `Payout(id)` aunque falte el hash. Mis cuatro pruebas adicionales comprobaron persistencia tras cerrar/reabrir SQLite, reserva retenida, ausencia de otro envío y confirmación única al recuperar evidencia.
+- **#35 — reserva atómica:** [repository.ts](/run/media/nobarasaul/NV3aca/proyectos/tilcai/tilcai-infrastructure/src/modules/vault/repository.ts:34) recalcula pendientes por red/vault con `BigInt` dentro de `BEGIN IMMEDIATE`, antes de insertar. Reserva y evento revierten juntos. El servicio rechaza snapshots de más de 30 segundos o que cruzan día UTC. Esto resuelve el intercalado original, pero necesita corregir los dos casos anteriores.
+- **#42 — validación previa:** el shell delega en [deploy_testnet.py](/run/media/nobarasaul/NV3aca/proyectos/tilcai/tilcai-infrastructure/contracts/soroban/deploy_testnet.py:39). Python valida flags, identidad, direcciones, precisión y `max ≤ daily` antes de operaciones de contrato. Convierte importes con enteros, sin interpolarlos como código. El manifiesto registra `UNKNOWN` antes de emitir y `COMPLETED` después; su existencia bloquea repeticiones ciegas. El procedimiento de recuperación está documentado.
+- **#32 — investigación TTL:** se añadieron dos tests SDK en [test.rs](/run/media/nobarasaul/NV3aca/proyectos/tilcai/tilcai-infrastructure/contracts/soroban/vault/src/test.rs:189): leer no renueva TTL y el último ledger vivo rechaza duplicados. No prueban archivo ni restore, y no permiten prometer un horizonte antirreplay.
+
+**Pruebas ejecutadas:** 201 unitarias TypeScript, 5 Python, 12 Rust y typecheck correctos. Añadí 6 sondas: cuatro validan #28 y dos reproducen los defectos de #35. Estas últimas pasan al detectar el defecto; no significan que #35 esté resuelta.
+
+Dejé el análisis, comandos, limitaciones y recomendaciones en el [informe detallado](/run/media/nobarasaul/NV3aca/proyectos/tilcai/tilcai-infrastructure/docs/revision-issues-saulchoque-2026-11-02.md), y las sondas en [vault-issues.test.ts](/run/media/nobarasaul/NV3aca/proyectos/tilcai/tilcai-infrastructure/test/review/vault-issues.test.ts). En esta revisión añadí pruebas y documentación; los cambios de negocio descritos ya existían. No ejecuté operaciones financieras en red ni cerré issues.
+
+
+## 2026-11-02T05:32:54Z · SaulChoque · Codex (GPT-6)
+
+- **Sesión:** n/d
+- **Rama:** fix/saulchoque-vault-soroban-2026-11-01
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> # Context from my IDE setup:
+>
+> ## Active file: src/modules/vault/repository.ts
+>
+> ## Open tabs:
+> - repository.ts: src/modules/vault/repository.ts
+> - service.ts: src/modules/vault/service.ts
+> - deploy-mainnet.sh: contracts/soroban/deploy-mainnet.sh
+> - IMPLEMENTACION_RAMA_FIX_VAULT_SOROBAN.md: IMPLEMENTACION_RAMA_FIX_VAULT_SOROBAN.md
+> - AGENT_HISTORY.md: AGENT_HISTORY.md
+>
+> ## My request:
+> Realiza las modificaciones necesarias a #35, completa la investigacion de #32 y realiza pruebas de todos para verificar el funcionamiento
+
+### Salida
+
+Corregí los dos problemas de **#35** y completé la **parte experimental de #32** en un ledger Stellar local. Las pruebas realizadas pasan.
+
+**Qué modifiqué para #35**
+
+- En [repository.ts](/run/media/nobarasaul/NV3aca/proyectos/tilcai/tilcai-infrastructure/src/modules/vault/repository.ts:37), `insert` resuelve primero la clave idempotente dentro de `BEGIN IMMEDIATE`. Si otra petición ya la admitió, devuelve ese registro antes de comprobar capacidad. El servicio responde con el mismo ID o con `IDEMPOTENCY_CONFLICT` si cambió el contenido.
+- Añadí `capacityRevision`, una revisión durable basada en los eventos de confirmación/fallo de cada red y vault. En [service.ts](/run/media/nobarasaul/NV3aca/proyectos/tilcai/tilcai-infrastructure/src/modules/vault/service.ts:94), se captura antes de consultar RPC y se comprueba nuevamente dentro de la transacción. Si una confirmación liberó reservas mientras se consultaba el saldo, ese snapshot se rechaza con `SERVICE_UNAVAILABLE`, sin reservar ni enviar otro payout.
+- Los controles de capacidad se ejecutan después de resolver idempotencia. También se recupera el resultado existente si falla RPC después de una admisión concurrente.
+- La notificación de rechazo al monitor se emite después del rollback, para que el evento permanezca en SQLite. Conservé las restricciones de antigüedad, día UTC y reservas inciertas. No hizo falta migración.
+
+Las reproducciones anteriores ahora son pruebas de aceptación dentro de `npm test`. Añadí casos de cupo diario, referencia, payload distinto, caída RPC, reapertura de SQLite y persistencia del monitor. Detalles en el [informe de #35](/run/media/nobarasaul/NV3aca/proyectos/tilcai/tilcai-infrastructure/docs/vault-capacity-fix-2026-11-02.md).
+
+**Qué comprobé para #32**
+
+Usé Core 26.1.0 y RPC 26.0.0, una imagen fijada por digest, fondos sintéticos y el WASM del Vault sin modificar.
+
+| Caso | Resultado observado |
+|---|---|
+| Repetir antes del vencimiento | Rechazado |
+| Último ledger vivo: `1054216` | Transacción fallida |
+| Primer ledger vencido: `1054217` | Falló con `entry_archived` |
+| Restaurar `Payout` | Conservó exactamente receptor e importe |
+| Repetir el ID tras restaurarlo | Rechazado; saldo sin cambios |
+| Pagar con un ID nuevo | Pagó exactamente una vez |
+| Renovar TTL | Extendió la vida del registro |
+| Reiniciar Core/RPC y cliente | ID anterior rechazado; ID nuevo pagó correctamente |
+
+**No se reprodujo doble pago tras el TTL**, por lo que no apliqué un parche al contrato Soroban. Guardé versiones, hashes, resultados XDR, saldos y limitaciones en el [informe experimental de #32](/run/media/nobarasaul/NV3aca/proyectos/tilcai/tilcai-infrastructure/docs/soroban-ttl-results-2026-11-02.md).
+
+El avance utilizó saltos controlados de ledger; no reprodujo un millón de cierres consecutivos. El experimento sí se ejecutó. El [arnés consolidado](/run/media/nobarasaul/NV3aca/proyectos/tilcai/tilcai-infrastructure/test/local/soroban-ttl/README.md) quedó comprobado sintácticamente, sin una segunda corrida completa desde cero.
+
+**Verificación final**
+
+| Comprobación | Resultado |
+|---|---:|
+| Unitarias TypeScript, incluidas #28/#35 | 215/215 |
+| Deploy Soroban con CLI falsa, #42 | 5/5 |
+| Rust Vault y TTL | 12/12 |
+| Verificación offline de evidencia #32 | 5/5 |
+| Typecheck y `git diff --check` | Correctos |
+
+El cierre formal de #32 sigue pendiente de revisión independiente y aceptación de D-05 por el equipo. No se operó en redes públicas. Los contenedores de investigación quedaron detenidos; los cambios permanecen sin commit ni push.
+
+
+## 2026-11-02T06:23:32Z · SaulChoque · Codex (GPT-6)
+
+- **Sesión:** n/d
+- **Rama:** fix/saulchoque-vault-soroban-2026-11-01
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> # Context from my IDE setup:
+>
+> ## Open tabs:
+> - repository.ts: src/modules/vault/repository.ts
+> - service.ts: src/modules/vault/service.ts
+> - deploy-mainnet.sh: contracts/soroban/deploy-mainnet.sh
+> - IMPLEMENTACION_RAMA_FIX_VAULT_SOROBAN.md: IMPLEMENTACION_RAMA_FIX_VAULT_SOROBAN.md
+> - AGENT_HISTORY.md: AGENT_HISTORY.md
+>
+> ## My request:
+> genial, crea una PR asignadas a los revisores tecnicos asignados para mergerar a main y especificando que las ramas deben de eliminarse una vez resuelta la PR
+> Detalla toda la informacion de la resolucion de las issues
+
+### Salida
+
+Creé la [PR #48](https://github.com/TilcAI/tilcai-infrastructure/pull/48) hacia `main`, con **JHAMILCALI, OmarQV y joseemen11** como revisores solicitados y asignados.
+
+La descripción detalla las cuatro issues, cambios de código, experimentos, evidencia, limitaciones y rollback. Incluye las pruebas: **215 TypeScript, 5 Python, 12 Rust y 5 de evidencia**, todas correctas, además del typecheck.
+
+También especifica:
+
+- Integrar mediante **Squash and merge** y eliminar la rama de origen después del merge.
+- Excluir el documento exclusivo de la rama del resultado en `main`; su copia local se conserva.
+- Mantener #32 abierta hasta aceptar D-05 y completar las revisiones.
+
+La PR quedó lista para revisión. No realicé el merge.
 # Historial de prompts y salidas de agentes
 
 Registro cronológico, de solo añadir, de los prompts que el equipo da a los agentes de código
@@ -3883,6 +4176,10 @@ Merge de main (88d0211, ya con N-01 y N-14) en la rama de N-10. Único conflicto
 
 - **Sesión:** 326c05ab-c025-4213-8616-d60e79d08efb
 - **Rama:** fix/n11-monitor-prune
+## 2026-11-04T05:29:38.932694+00:00 · saulchoque · Codex
+
+- **Sesión:** n/d
+- **Rama:** fix/saulchoque-vault-soroban-2026-11-01
 - **Repositorios:** tilcai-infrastructure
 
 ### Prompt
@@ -3892,3 +4189,64 @@ Merge de main (88d0211, ya con N-01 y N-14) en la rama de N-10. Único conflicto
 ### Salida
 
 Merge de main (159363a) en la rama de N-11. `src/db/migrations.ts`: queda la 7 de main (`sponsored_holds`, N-14) y después la 8 de N-11 (`monitor_sinks.gap_json`); el comentario de la 8 ya no dice que la 7 es de `feat/third-party-credentials`, que tendrá que pasar a la 9. `test/unit/migration-5.test.ts`: se conserva la lista sacada de `MIGRATIONS` (N-11), que ya incluye la 7. Typecheck limpio y 233/233 tests en local.
+> resuelve los conflictos y mergea la pr 'http://github.com/TilcAI/tilcai-infrastructure/pull/48' a main
+
+### Salida
+
+Actualizada la PR con main mediante merge automático, conservando Core privado y guardas Vault. Validados lint, typecheck, 247 tests TypeScript, 5 Python y 5 de evidencia offline. CI ampliado con preflight/evidencia; integración por squash y seguimiento del despliegue automático. Documento exclusivo de rama excluido; #32 conserva aceptación D-05 pendiente.
+
+## 2026-11-04T05:37:31.732828+00:00 · saulchoque · Codex
+
+- **Sesión:** n/d
+- **Rama:** feat/third-party-credentials
+- **Repositorios:** tilcai-infrastructure, documentation
+
+### Prompt
+
+> posteriormente cierra las issues y prs terminados y analiza las ramas en tilcai-infrastructure, quita las que ya estan incluidas en main, luego usando solo las mias mergea a main las que aun no lo estan, luego actualiza la documentacion en tilcai (en el repo 'documentation' y en el repositorio mismo)
+
+### Salida
+
+Auditada autoría y equivalencia con main; retiradas ocho ramas remotas incluidas y PR48 integrada. Credenciales de SaulChoque se combina con main conservando Vault y reasignando su migración a 8; 253 tests TypeScript y suites offline correctos. Se documentan ramas ajenas conservadas y los requisitos de aceptación que mantienen abiertas #28/#35/#42/#32. CI, PR y documentación acompañan la integración; sin cierre de requisitos humanos pendientes.
+
+## 2026-11-04T13:44:32Z · OmarQV · Claude Code (claude-opus-5-5)
+
+- **Sesión:** 326c05ab-c025-4213-8616-d60e79d08efb
+- **Rama:** fix/n04-legacy-sync-fail-closed
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> Resuelve los conflictos y haz merge de todo
+
+### Salida
+
+Merge de main (c2f57a9, con credenciales #53 y vault #48). `src/app-context.ts`: se conserva la sincronización síncrona que detiene el arranque si falla (N-04) y se pasa `env.TILCAI_ENV` al registro, como hace #53. Typecheck limpio y 255/255 tests en local.
+
+## 2026-11-04T14:10:00Z · OmarQV · Claude Code (claude-opus-5-5)
+
+- **Sesión:** 326c05ab-c025-4213-8616-d60e79d08efb
+- **Rama:** feat/n12-readiness
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> Resuelve los conflictos y haz merge de todo
+
+### Salida
+
+Base cambiada a main tras el merge de #43. Merge de main (467b74b). `src/apps/api/server.ts`: se conservan `registerReadinessRoutes` (N-12) y la ruta `/v1/auth/context` de #53, una después de la otra; `/ready` sigue siendo pública. Aparte: `test/unit/api-monitor.test.ts` fallaba de forma intermitente ("database is not open" después del test del stream), porque `/v1/monitor/stream` limpiaba su polling al cerrarse la petición y no la respuesta; ahora escucha el `close` de la respuesta, que es el que llega cuando el cliente se va.
+
+## 2026-11-04T14:40:00Z · OmarQV · Claude Code (claude-opus-5-5)
+
+- **Sesión:** 326c05ab-c025-4213-8616-d60e79d08efb
+- **Rama:** fix/n11-monitor-prune
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> Resuelve los conflictos y haz merge de todo
+
+### Salida
+
+Merge de main (de0205b, con credenciales #53 en la migración 8). La migración de N-11 (`monitor_sinks.gap_json`) pasa de la 8 a la 9; ninguna base desplegada tenía la 8 de N-11 porque la rama no se había mergeado. `test/unit/migration-5.test.ts` conserva la lista sacada de `MIGRATIONS`. Aparte, `/v1/monitor/stream`: el arreglo de `res.on("close")` de #44 no bastaba, porque Fastify no cierra una respuesta secuestrada y `app.close()` esperaba al cliente mientras el polling leía una base que se cerraba ("database is not open" en `api-monitor.test.ts`). Ahora un hook `preClose` termina los streams abiertos y `flush` no escribe en uno terminado; test de regresión nuevo, que falla sin el arreglo. `readiness.test.ts`: el límite de reloj del probe colgado sube de 2 s a 10 s (el timeout es 50 ms) porque fallaba con la máquina cargada.

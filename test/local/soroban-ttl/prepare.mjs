@@ -1,0 +1,24 @@
+import {S,fs,rpc,root,pass,tx,addr,i128,invoke,raw,sleep} from './common.mjs';
+if(fs.existsSync('scratch/ttl/fixture.json'))throw new Error('Existing fixture; do not deploy twice');
+const network=await rpc.getNetwork();
+if(network.passphrase!==pass||network.protocolVersion!==26)throw new Error('Expected the private protocol-26 network');
+// Drain any Friendbot transaction queued before bootstrap stopped it.
+await sleep(5000);
+await tx(S.Operation.createStellarAssetContract({asset:S.Asset.native()}),'token');
+const token=S.Asset.native().contractId(pass);
+const buyer=S.Keypair.fromRawEd25519Seed(S.hash(Buffer.from('tilcai-ttl-synthetic-buyer'))).publicKey();
+await tx(S.Operation.createAccount({destination:buyer,startingBalance:'100'}),'buyer');
+const wasm=fs.readFileSync('contracts/soroban/target/wasm32v1-none/release/tilcai_vault.wasm');
+await tx(S.Operation.uploadContractWasm({wasm}),'upload');
+const deployed=await tx(S.Operation.createCustomContract({address:new S.Address(root.publicKey()),wasmHash:S.hash(wasm),salt:S.hash(Buffer.from('ttl-experiment-v1')),constructorArgs:[addr(token),addr(root.publicKey()),addr(root.publicKey()),i128(100000000),i128(1000000000)]}),'vault');
+const vault=S.scValToNative(deployed.returnValue);
+fs.writeFileSync('scratch/ttl/fixture.json',JSON.stringify({vault,token,buyer},null,2));
+await tx(invoke(token,'transfer',[addr(root.publicKey()),addr(vault),i128(1000000000)]),'fund');
+const id=S.nativeToScVal(Buffer.alloc(32,1),{type:'bytes'});
+const paid=await tx(invoke(vault,'disburse',[id,addr(buyer),i128(10000000)]),'payout');
+const got=await raw('getTransaction',{hash:paid.txHash});
+fs.writeFileSync('scratch/ttl/original-envelope.txt',got.envelopeXdr);
+const key=S.xdr.ScVal.scvVec([S.xdr.ScVal.scvSymbol('Payout'),id]);
+const data=await rpc.getContractData(vault,key);
+fs.writeFileSync('scratch/ttl/payout.json',JSON.stringify(data,(_,v)=>typeof v==='bigint'?v.toString():v,2));
+console.log('Initial Payout liveUntil',data.liveUntilLedgerSeq);

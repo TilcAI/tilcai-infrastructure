@@ -411,10 +411,28 @@ CREATE INDEX ix_sponsored_holds_tenant_day ON sponsored_holds(tenant_id, day, st
 `,
   },
   {
-    // 8, not 6 or 7: 6 is qr_collections and 7 sponsored_holds (N-14). Two migrations with one id would leave the second
-    // one never applied on a database that ran the first; the runner applies whatever id is missing, in any order.
-    // The pending events a receiver lost to MONITOR_PENDING_MAX_DAYS, until it is told (JSON SinkGap).
     id: 8,
+    sql: `
+ALTER TABLE tenant_api_keys ADD COLUMN environment TEXT NOT NULL DEFAULT 'testnet' CHECK(environment IN ('testnet','mainnet'));
+ALTER TABLE tenant_api_keys ADD COLUMN expires_at TEXT;
+ALTER TABLE tenant_api_keys ADD COLUMN last_used_at TEXT;
+CREATE TABLE tenant_key_events (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT,
+  key_id TEXT NOT NULL REFERENCES tenant_api_keys(id),
+  kind TEXT NOT NULL CHECK(kind IN ('issued','revoked','rotated')),
+  at TEXT NOT NULL
+);
+CREATE TRIGGER trg_key_events_no_update BEFORE UPDATE ON tenant_key_events
+BEGIN SELECT RAISE(ABORT, 'tenant_key_events is insert-only'); END;
+CREATE TRIGGER trg_key_events_no_delete BEFORE DELETE ON tenant_key_events
+BEGIN SELECT RAISE(ABORT, 'tenant_key_events is insert-only'); END;
+`,
+  },
+  {
+    // 9: 6 is qr_collections, 7 sponsored_holds (N-14) and 8 the tenant credentials. Two migrations with one id would
+    // leave the second one never applied on a database that ran the first; the runner applies whatever id is missing.
+    // The pending events a receiver lost to MONITOR_PENDING_MAX_DAYS, until it is told (JSON SinkGap).
+    id: 9,
     sql: `
 ALTER TABLE monitor_sinks ADD COLUMN gap_json TEXT;
 `,
