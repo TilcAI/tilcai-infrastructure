@@ -3,6 +3,7 @@ import { tx } from "../../db/sqlite.ts";
 import type { Hex } from "../../shared/hex.ts";
 import type { RouteQuoteId } from "../../shared/ids.ts";
 import { LEGACY_TENANT_ID, type TenantId } from "../tenants/ports.ts";
+import { consumeQuotaSql } from "../tenants/quota.ts";
 import type { PaymentAttemptId } from "tilcai-core/contracts";
 import type { CrosschainPayment, CrosschainState, PaymentEvent, RouteQuote } from "./domain.ts";
 
@@ -10,6 +11,14 @@ export class ConcurrentUpdateError extends Error {
   constructor() {
     super("Payment was modified concurrently.");
   }
+}
+
+export interface PaymentReceiptInput {
+  id: string;
+  paymentId: PaymentAttemptId;
+  orderId: string | null;
+  evidence: unknown;
+  createdAt: string;
 }
 
 export interface CrosschainRepository {
@@ -24,8 +33,22 @@ export interface CrosschainRepository {
   update(p: CrosschainPayment, expectedVersion: number, ev?: PaymentEvent): CrosschainPayment;
   listDue(nowIso: string, limit: number): CrosschainPayment[];
   events(id: PaymentAttemptId): PaymentEvent[];
-  insertReceipt(r: { id: string; paymentId: PaymentAttemptId; orderId: string | null; evidence: unknown; createdAt: string }): void;
+  /**
+   * Final state, its event and the receipt in ONE transaction, guarded by `expectedVersion` like `update`.
+   * Any failure rolls all three back: a payment is never SETTLED without its receipt (N-01).
+   */
+  settle(p: CrosschainPayment, expectedVersion: number, ev: PaymentEvent, receipt: PaymentReceiptInput): CrosschainPayment;
   getReceipt(paymentId: PaymentAttemptId): { id: string; evidence: unknown; createdAt: string } | undefined;
+  /**
+   * Sponsored-operation quota (N-14). One hold per payment, so a retry or a replay never charges twice.
+   * Takes one unit of the tenant's quota for `day` and records the hold in ONE transaction; false = quota exhausted
+   * (or tenant suspended) and nothing was written. A payment that already holds a unit (HELD or CONSUMED) answers true without charging.
+   */
+  reserveSponsored(p: Pick<CrosschainPayment, "id" | "tenantId">, day: string, nowIso: string): boolean;
+  /** The burn is known to have been sent: the unit stays spent. No-op unless the hold is HELD. */
+  consumeSponsored(paymentId: PaymentAttemptId, nowIso: string): void;
+  /** Nothing was or can ever be sent: gives the unit back to the day it was taken from. No-op unless the hold is HELD. */
+  releaseSponsored(paymentId: PaymentAttemptId, nowIso: string): boolean;
 }
 
 /**
@@ -119,8 +142,23 @@ export class SqliteCrosschainRepository implements CrosschainRepository {
   }
 
   update(p: CrosschainPayment, expectedVersion: number, ev?: PaymentEvent): CrosschainPayment {
+    return tx(this.db, () => this.updateRow(p, expectedVersion, ev));
+  }
+
+  settle(p: CrosschainPayment, expectedVersion: number, ev: PaymentEvent, receipt: PaymentReceiptInput): CrosschainPayment {
+    return tx(this.db, () => {
+      const saved = this.updateRow(p, expectedVersion, ev);
+      this.db
+        .prepare("INSERT OR IGNORE INTO payment_receipts (id, payment_id, order_id, evidence_json, created_at) VALUES (?,?,?,?,?)")
+        .run(receipt.id, receipt.paymentId, receipt.orderId, json(receipt.evidence), receipt.createdAt);
+      return saved;
+    });
+  }
+
+  /** Version-guarded UPDATE plus its event. Runs inside the caller's transaction. */
+  private updateRow(p: CrosschainPayment, expectedVersion: number, ev?: PaymentEvent): CrosschainPayment {
     const next = { ...p, version: expectedVersion + 1 };
-    tx(this.db, () => {
+    {
       const res = this.db
         .prepare(
           `UPDATE crosschain_payments SET state=?, uncertain=?, payer=?, burn_submission_id=?, burn_auth_json=?, burn_requested_at=?, burn_tx_hash=?, burn_block=?, cctp_nonce=?,
@@ -137,7 +175,7 @@ export class SqliteCrosschainRepository implements CrosschainRepository {
         );
       if (Number(res.changes) !== 1) throw new ConcurrentUpdateError();
       if (ev) this.appendEvent(ev);
-    });
+    }
     return next;
   }
 
@@ -165,12 +203,6 @@ export class SqliteCrosschainRepository implements CrosschainRepository {
     }));
   }
 
-  insertReceipt(r: { id: string; paymentId: PaymentAttemptId; orderId: string | null; evidence: unknown; createdAt: string }): void {
-    this.db
-      .prepare("INSERT OR IGNORE INTO payment_receipts (id, payment_id, order_id, evidence_json, created_at) VALUES (?,?,?,?,?)")
-      .run(r.id, r.paymentId, r.orderId, json(r.evidence), r.createdAt);
-  }
-
   getReceipt(paymentId: PaymentAttemptId) {
     const r = this.db.prepare("SELECT * FROM payment_receipts WHERE payment_id = ?").get(paymentId) as Record<string, any> | undefined;
     return r ? { id: r.id as string, evidence: JSON.parse(r.evidence_json), createdAt: r.created_at as string } : undefined;
@@ -180,6 +212,39 @@ export class SqliteCrosschainRepository implements CrosschainRepository {
     this.db
       .prepare("INSERT INTO payment_events (payment_id, from_state, to_state, note, data_json, at) VALUES (?,?,?,?,?,?)")
       .run(ev.paymentId, ev.from, ev.to, ev.note, ev.data ? json(ev.data) : null, ev.at);
+  }
+
+  reserveSponsored(p: Pick<CrosschainPayment, "id" | "tenantId">, day: string, nowIso: string): boolean {
+    return tx(this.db, () => {
+      const hold = this.db.prepare("SELECT state FROM sponsored_holds WHERE payment_id = ?").get(p.id) as { state: string } | undefined;
+      if (hold && hold.state !== "RELEASED") return true;
+      if (!consumeQuotaSql(this.db, p.tenantId, day, "operation")) return false;
+      this.db
+        .prepare(
+          `INSERT INTO sponsored_holds (payment_id, tenant_id, day, state, created_at, updated_at) VALUES (?,?,?,'HELD',?,?)
+           ON CONFLICT (payment_id) DO UPDATE SET state = 'HELD', day = excluded.day, updated_at = excluded.updated_at`,
+        )
+        .run(p.id, p.tenantId, day, nowIso, nowIso);
+      return true;
+    });
+  }
+
+  consumeSponsored(paymentId: PaymentAttemptId, nowIso: string): void {
+    this.db.prepare("UPDATE sponsored_holds SET state = 'CONSUMED', updated_at = ? WHERE payment_id = ? AND state = 'HELD'").run(nowIso, paymentId);
+  }
+
+  releaseSponsored(paymentId: PaymentAttemptId, nowIso: string): boolean {
+    return tx(this.db, () => {
+      const res = this.db.prepare("UPDATE sponsored_holds SET state = 'RELEASED', updated_at = ? WHERE payment_id = ? AND state = 'HELD'").run(nowIso, paymentId);
+      if (Number(res.changes) !== 1) return false;
+      this.db
+        .prepare(
+          `UPDATE tenant_usage SET count = count - 1 WHERE kind = 'operation' AND count > 0
+           AND (tenant_id, day) = (SELECT tenant_id, day FROM sponsored_holds WHERE payment_id = ?)`,
+        )
+        .run(paymentId);
+      return true;
+    });
   }
 
   private toPayment(r: Record<string, any>): CrosschainPayment {

@@ -1,3 +1,4 @@
+import type { DatabaseSync } from "node:sqlite";
 import { decodeFunctionData } from "viem";
 import { loadEnv } from "../../src/config/env.ts";
 import { networks } from "../../src/config/networks.ts";
@@ -138,14 +139,15 @@ export class FakeVaultSubmitter implements VaultSubmitter {
   }
 }
 
-export function vaultHarness(options: { maxAttempts?: number } = {}) {
+export function vaultHarness(options: { maxAttempts?: number } = {}, db: DatabaseSync = openDatabase(":memory:")) {
   const clock = new FakeClock();
-  const repo = new SqliteVaultRepository(openDatabase(":memory:"));
+  const repo = new SqliteVaultRepository(db);
   const vault = new FakeVault();
   const submitter = new FakeVaultSubmitter(vault);
   /** What the service announced for the dashboard, in order. */
   const events: NewMonitorEvent[] = [];
-  const svc = new VaultDisbursementService({
+  /** Builds the service over a repository; tests open a second connection to the same file and rebuild it over the same fakes. */
+  const build = (repo: SqliteVaultRepository) => new VaultDisbursementService({
     repo,
     vault,
     submitter,
@@ -155,6 +157,7 @@ export function vaultHarness(options: { maxAttempts?: number } = {}) {
     events: { emit: (e) => void events.push(e) },
     options: { pollMs: 1000, minConfirmations: 1, ...options },
   });
+  const svc = build(repo);
   /** Drives the worker until the payout settles (bounded). */
   const drive = async (id: string, steps = 12) => {
     for (let i = 0; i < steps; i++) {
@@ -165,7 +168,7 @@ export function vaultHarness(options: { maxAttempts?: number } = {}) {
     }
     return svc.mustGet(id);
   };
-  return { clock, repo, vault, submitter, svc, drive, events };
+  return { clock, db, repo, build, vault, submitter, svc, drive, events };
 }
 
 /** Decodes real `disburse` calldata (used to check the production encoder). */

@@ -6,7 +6,7 @@ import { atomicToDecimal } from "../../shared/amount.ts";
 import type { CrosschainPayment, RouteQuote } from "../../modules/crosschain/domain.ts";
 import { PAYMENT_MODES, paymentStateOf } from "../../modules/crosschain/domain.ts";
 import { challengeBase64Url, encodeWebAuthnSignature, fromBase64Url, PasskeyFormatError } from "../../modules/accounts/evm/passkey.ts";
-import { LEGACY_TENANT_ID, TENANT_SCOPES, type TenantId, type TenantScope } from "../../modules/tenants/ports.ts";
+import { LEGACY_TENANT_ID, TENANT_SCOPES, type TenantApiKeyInfo, type TenantId, type TenantScope } from "../../modules/tenants/ports.ts";
 import type { Hex } from "../../shared/hex.ts";
 import { registerAccountRoutes } from "./accounts-routes.ts";
 import type { VaultDisbursement } from "../../modules/vault/domain.ts";
@@ -17,6 +17,8 @@ import { QR_MOCK_PREFIX, registerQrMock } from "../../modules/qrsimple/routes.ts
 import { systemClock } from "../../shared/clock.ts";
 import { bearerOf, isLoopback } from "./auth.ts";
 import { registerMonitorRoutes, RELAYER_WEBHOOK_PATH } from "./monitor-routes.ts";
+import { READY_PATH, registerReadinessRoutes } from "./readiness-routes.ts";
+import type { WorkerState } from "../../modules/readiness/service.ts";
 
 const json = (v: unknown) => JSON.stringify(v, (_, x) => (typeof x === "bigint" ? x.toString() : x));
 const send = (reply: FastifyReply, status: number, body: unknown) =>
@@ -52,13 +54,15 @@ const AccountAuthorizationBody = z.union([
 interface Caller {
   tenantId: TenantId;
   scopes: readonly TenantScope[];
+  key?: TenantApiKeyInfo;
 }
 
 /**
  * What a route asks of its caller. The vault, the event log and the relayer's status are TilcAI's
  * own: only the operator's keys (TILCAI_API_KEYS, the legacy tenant) reach them.
  */
-function requirementOf(method: string, path: string): { scope: TenantScope; operator: boolean } {
+function requirementOf(method: string, path: string): { scope: TenantScope | null; operator: boolean } {
+  if (path === "/v1/auth/context") return { scope: null, operator: false };
   if (path === "/v1/accounts" || path.startsWith("/v1/accounts/")) return { scope: method === "GET" || method === "HEAD" ? "accounts:read" : "accounts:write", operator: false };
   const operator =
     ["/v1/vault", "/v1/monitor", "/v1/relayer"].some((prefix) => path === prefix || path.startsWith(`${prefix}/`)) ||
@@ -76,7 +80,8 @@ const DisbursementBody = z.strictObject({
   reference: z.string().max(160).optional(),
 });
 
-export function buildServer(ctx: AppContext): FastifyInstance {
+/** `worker`: the reconciliation worker when it runs in this process, so `/ready` can tell whether it keeps going. */
+export function buildServer(ctx: AppContext, opts: { worker?: () => WorkerState } = {}): FastifyInstance {
   const app = Fastify({
     logger: { level: ctx.env.LOG_LEVEL, redact: ["req.headers.authorization", "req.headers['idempotency-key']"] },
     bodyLimit: 64 * 1024,
@@ -92,15 +97,15 @@ export function buildServer(ctx: AppContext): FastifyInstance {
     const path = req.url.split("?", 1)[0]!;
     // These authenticate on their own: the relayer signs its webhooks and the QR mock speaks
     // Vendis's API, with Vendis's tokens.
-    if (path === "/health" || path === RELAYER_WEBHOOK_PATH || path.startsWith(QR_WEBHOOK_PREFIX) || path === QR_MOCK_PREFIX || path.startsWith(`${QR_MOCK_PREFIX}/`)) return;
+    if (path === "/health" || path === READY_PATH || path === RELAYER_WEBHOOK_PATH || path.startsWith(QR_WEBHOOK_PREFIX) || path === QR_MOCK_PREFIX || path.startsWith(`${QR_MOCK_PREFIX}/`)) return;
     const presented = bearerOf(req.headers.authorization);
     const known = presented ? await ctx.tenants.authenticate(presented) : undefined;
-    let caller: Caller | undefined = known ? { tenantId: known.tenant.id, scopes: known.scopes } : undefined;
+    let caller: Caller | undefined = known ? { tenantId: known.tenant.id, scopes: known.scopes, ...(known.key ? { key: known.key } : {}) } : undefined;
     // Development: without operator keys, this host is the operator.
-    if (!caller && keys.length === 0 && isLoopback(req.ip)) caller = { tenantId: LEGACY_TENANT_ID, scopes: TENANT_SCOPES };
+    if (!caller && req.headers.authorization === undefined && keys.length === 0 && isLoopback(req.ip)) caller = { tenantId: LEGACY_TENANT_ID, scopes: TENANT_SCOPES };
     if (!caller) return send(reply, 401, { error: new DomainError("UNAUTHENTICATED").contract });
     const need = requirementOf(req.method, path);
-    if ((need.operator && caller.tenantId !== LEGACY_TENANT_ID) || !caller.scopes.includes(need.scope)) {
+    if ((need.operator && caller.tenantId !== LEGACY_TENANT_ID) || (need.scope !== null && !caller.scopes.includes(need.scope))) {
       return send(reply, 403, { error: new DomainError("FORBIDDEN").contract });
     }
     callers.set(req, caller);
@@ -144,6 +149,8 @@ export function buildServer(ctx: AppContext): FastifyInstance {
     return send(reply, 500, { error: new DomainError("INTERNAL_ERROR").contract });
   });
 
+  // Liveness: 200 while the process runs, whatever the relayer does (that is `/ready`), so an
+  // outage of a dependency never makes the platform restart this container.
   app.get("/health", async (_req, reply) => {
     const relayer = await ctx.relayer.health();
     return send(reply, 200, {
@@ -158,6 +165,21 @@ export function buildServer(ctx: AppContext): FastifyInstance {
       qrMock: ctx.qrMock ? "on" : "off",
       qr: ctx.qrCollect ? { mode: ctx.qrCollect.mode, providers: ctx.qrCollect.providers().map((p) => p.id) } : "off",
       monitor: ctx.forwarder ? "push" : "local",
+    });
+  });
+
+  registerReadinessRoutes(app, ctx, opts.worker);
+
+  app.get("/v1/auth/context", async (req, reply) => {
+    const caller = callers.get(req)!;
+    const tenant = await ctx.tenants.get(caller.tenantId);
+    reply.header("cache-control", "no-store");
+    return send(reply, 200, {
+      tenantId: caller.tenantId,
+      tenantName: tenant?.name,
+      scopes: caller.scopes,
+      environment: ctx.env.TILCAI_ENV,
+      credential: caller.key ?? null,
     });
   });
 

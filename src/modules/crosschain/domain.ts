@@ -41,6 +41,9 @@ export function canMove(from: CrosschainState, to: CrosschainState): boolean {
   return NEXT[from].includes(to);
 }
 
+/** Final states: nothing about the record may change any more (N-10). */
+export const isTerminal = (s: CrosschainState): boolean => s === "SETTLED" || s === "FAILED";
+
 /** Shared payment state. `uncertain` is sticky until a terminal state (shared graph has no UNCERTAIN → SENT). */
 export function paymentStateOf(state: CrosschainState, uncertain: boolean): PaymentState {
   if (state === "SETTLED") return "SETTLED";
@@ -66,6 +69,11 @@ export function assertSharedTransition(from: PaymentState, to: PaymentState): vo
 export type PaymentMode = "external" | "dev_signer" | "gasless" | "dev_gasless" | "account";
 export const PAYMENT_MODES = ["external", "dev_signer", "gasless", "dev_gasless", "account"] as const satisfies readonly PaymentMode[];
 export const isGaslessMode = (m: PaymentMode): boolean => m === "gasless" || m === "dev_gasless" || m === "account";
+/**
+ * Modes whose source burn is sent (and paid) by TilcAI's Relayer, so each payment takes one unit of the tenant's sponsored-operation
+ * quota. `external` is paid by the user's own wallet and `dev_signer` is a testnet-only developer key: neither counts (N-14, D-03 proposal).
+ */
+export const isSponsoredMode = (m: PaymentMode): boolean => isGaslessMode(m);
 export type Finality = 1000 | 2000;
 
 export interface Preflight {

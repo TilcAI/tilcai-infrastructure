@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import { tx } from "../../db/sqlite.ts";
-import type { MonitorAlert, MonitorEvent, MonitorEventType, MonitorSeverity, MonitorSource, SinkState } from "./domain.ts";
+import type { MonitorAlert, MonitorEvent, MonitorEventType, MonitorSeverity, MonitorSource, SinkGap, SinkState } from "./domain.ts";
 
 export interface EventQuery {
   /** Only events after this position. */
@@ -21,13 +21,33 @@ export interface MonitorRepository {
   latest(type: MonitorEventType): MonitorEvent | undefined;
   head(): number;
   count(): number;
-  prune(beforeIso: string): number;
+  /** Deletes what the window allows, in one transaction, and records the gap of every receiver that lost pending events. */
+  prune(p: PruneWindow, nowIso: string): PruneResult;
+  /** When the first event after `afterSeq` happened: how long a receiver at that cursor has been waiting. */
+  oldestPendingAt(afterSeq: number): string | null;
   sink(name: string, nowIso: string): SinkState;
   sinks(): SinkState[];
+  /** Saves the cursor and retry state. The gap is left alone: only `prune` sets it and `clearGap` clears it. */
   saveSink(s: SinkState, nowIso: string): void;
+  /** Clears the gap once the receiver acknowledged a delivery that carried it. False if it changed meanwhile. */
+  clearGap(name: string, told: SinkGap): boolean;
   alerts(): MonitorAlert[];
   /** Replaces the active alerts; returns what appeared and what went away. */
   replaceAlerts(next: MonitorAlert[]): { raised: MonitorAlert[]; cleared: MonitorAlert[] };
+}
+
+export interface PruneWindow {
+  /** Events up to every configured receiver's cursor go when older than this. */
+  deliveredBefore: string;
+  /** Anything older than this goes, acknowledged or not. Never later than `deliveredBefore`. */
+  pendingBefore: string;
+  sinks: readonly string[];
+}
+
+export interface PruneResult {
+  removed: number;
+  /** What this prune took from each receiver before it got it. */
+  gaps: Array<SinkGap & { sink: string }>;
 }
 
 const SEVERITY_RANK: Record<MonitorSeverity, number> = { info: 0, warning: 1, error: 2 };
@@ -77,8 +97,40 @@ export class SqliteMonitorRepository implements MonitorRepository {
     return Number((this.db.prepare("SELECT COUNT(*) AS n FROM monitor_events").get() as { n: number }).n);
   }
 
-  prune(beforeIso: string): number {
-    return Number(this.db.prepare("DELETE FROM monitor_events WHERE at < ?").run(beforeIso).changes);
+  prune(p: PruneWindow, nowIso: string): PruneResult {
+    return tx(this.db, () => {
+      const active = p.sinks.map((name) => this.sink(name, nowIso));
+      // What every configured receiver has acknowledged. With none configured, nothing is pending.
+      const floor = active.length ? Math.min(...active.map((s) => s.lastSeq)) : Number.MAX_SAFE_INTEGER;
+      const gaps: PruneResult["gaps"] = [];
+      for (const s of active) {
+        const lost = this.db
+          .prepare("SELECT MIN(seq) AS fromSeq, MAX(seq) AS toSeq, COUNT(*) AS n FROM monitor_events WHERE at < ? AND seq > ?")
+          .get(p.pendingBefore, s.lastSeq) as { fromSeq: number | null; toSeq: number | null; n: number };
+        if (!Number(lost.n)) continue;
+        const now: SinkGap = { fromSeq: Number(lost.fromSeq), toSeq: Number(lost.toSeq), count: Number(lost.n), prunedAt: nowIso };
+        // A gap the receiver has not been told about yet grows instead of being replaced.
+        const merged: SinkGap = s.gap
+          ? { fromSeq: Math.min(s.gap.fromSeq, now.fromSeq), toSeq: Math.max(s.gap.toSeq, now.toSeq), count: s.gap.count + now.count, prunedAt: nowIso }
+          : now;
+        this.db.prepare("UPDATE monitor_sinks SET gap_json = ?, updated_at = ? WHERE name = ?").run(JSON.stringify(merged), nowIso, s.name);
+        gaps.push({ sink: s.name, ...now });
+      }
+      const removed = this.db
+        .prepare("DELETE FROM monitor_events WHERE at < ? AND (seq <= ? OR at < ?)")
+        .run(p.deliveredBefore, floor, p.pendingBefore).changes;
+      return { removed: Number(removed), gaps };
+    });
+  }
+
+  oldestPendingAt(afterSeq: number): string | null {
+    const r = this.db.prepare("SELECT at FROM monitor_events WHERE seq > ? ORDER BY seq LIMIT 1").get(afterSeq) as { at: string } | undefined;
+    return r?.at ?? null;
+  }
+
+  clearGap(name: string, told: SinkGap): boolean {
+    // Only the gap that was sent: one that grew meanwhile still has to reach the receiver.
+    return Number(this.db.prepare("UPDATE monitor_sinks SET gap_json = NULL WHERE name = ? AND gap_json = ?").run(name, JSON.stringify(told)).changes) === 1;
   }
 
   sink(name: string, nowIso: string): SinkState {
@@ -178,5 +230,6 @@ function toSink(r: Record<string, any>): SinkState {
     nextAttemptAt: r.next_attempt_at,
     lastError: r.last_error,
     lastDeliveredAt: r.last_delivered_at,
+    gap: r.gap_json ? (JSON.parse(r.gap_json) as SinkGap) : null,
   };
 }

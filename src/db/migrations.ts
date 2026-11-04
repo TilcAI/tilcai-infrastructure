@@ -393,4 +393,48 @@ CREATE UNIQUE INDEX ux_qr_collections_reference ON qr_collections(tenant_id, ref
 CREATE INDEX ix_qr_collections_due ON qr_collections(status, checked_at);
 `,
   },
+  {
+    // N-14: the sponsored-operation quota is reserved per payment right before the Relayer sends the burn.
+    // The ordinal is provisional: coordinate with N-09 (also touches this file) before merging. Rollback: DROP TABLE sponsored_holds
+    // (the counters in tenant_usage keep whatever the holds had counted; they reset with the UTC day).
+    id: 7,
+    sql: `
+CREATE TABLE sponsored_holds (
+  payment_id TEXT PRIMARY KEY REFERENCES crosschain_payments(id),
+  tenant_id TEXT NOT NULL REFERENCES tenants(id),
+  day TEXT NOT NULL,
+  state TEXT NOT NULL CHECK (state IN ('HELD','CONSUMED','RELEASED')),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+CREATE INDEX ix_sponsored_holds_tenant_day ON sponsored_holds(tenant_id, day, state);
+`,
+  },
+  {
+    id: 8,
+    sql: `
+ALTER TABLE tenant_api_keys ADD COLUMN environment TEXT NOT NULL DEFAULT 'testnet' CHECK(environment IN ('testnet','mainnet'));
+ALTER TABLE tenant_api_keys ADD COLUMN expires_at TEXT;
+ALTER TABLE tenant_api_keys ADD COLUMN last_used_at TEXT;
+CREATE TABLE tenant_key_events (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT,
+  key_id TEXT NOT NULL REFERENCES tenant_api_keys(id),
+  kind TEXT NOT NULL CHECK(kind IN ('issued','revoked','rotated')),
+  at TEXT NOT NULL
+);
+CREATE TRIGGER trg_key_events_no_update BEFORE UPDATE ON tenant_key_events
+BEGIN SELECT RAISE(ABORT, 'tenant_key_events is insert-only'); END;
+CREATE TRIGGER trg_key_events_no_delete BEFORE DELETE ON tenant_key_events
+BEGIN SELECT RAISE(ABORT, 'tenant_key_events is insert-only'); END;
+`,
+  },
+  {
+    // 9: 6 is qr_collections, 7 sponsored_holds (N-14) and 8 the tenant credentials. Two migrations with one id would
+    // leave the second one never applied on a database that ran the first; the runner applies whatever id is missing.
+    // The pending events a receiver lost to MONITOR_PENDING_MAX_DAYS, until it is told (JSON SinkGap).
+    id: 9,
+    sql: `
+ALTER TABLE monitor_sinks ADD COLUMN gap_json TEXT;
+`,
+  },
 ];
