@@ -608,6 +608,34 @@ Comprobado en el contenedor: `/health` con `eip155:10143`, `vault` y `vaultStell
 
 `.env.example` reordenado en 10 secciones numeradas (núcleo, relayer, submitter Stellar, RPC, contratos testnet, monitoreo, mock QR, proveedores fiat, mainnet, pruebas). Añadidas las variables de Monad Testnet que el código ya lee (`RELAYER_MONAD_TESTNET_ID`, `RPC_MONAD_TESTNET`, router, routerV2, factory y vault) con las direcciones desplegadas el 2026-10-13; las direcciones de Fuji tomadas de `deploy/.env.example`; ids de relayer de mainnet con sus valores por defecto; `HORIZON_STELLAR_MAINNET` queda en `https://horizon.stellar.org`. Las variables `BANECO_*` y `ATC_*` se conservan pero ninguna parte de `src/` las lee todavía. `ACCOUNT_FACTORY_STELLAR` y `VAULT_STELLAR` siguen vacías porque sus IDs no están en el repositorio (el `.env` local no se leyó).
 
+## 2026-11-01T22:30:00Z · OmarQV · Claude Code (claude-opus-5-5)
+
+- **Sesión:** n/d
+- **Rama:** fix/deps-security (desde main)
+- **Repositorios:** tilcai-infrastructure, tilcai-web
+
+### Prompt
+
+> Hazlo
+> Revisalas y corrige esas vulnerabilidades
+
+### Salida
+
+Se corrigen las 11 alertas abiertas de Dependabot, todas de dependencias de runtime en package-lock.json:
+- zod 4.6.5 → 4.6.6 (alta, agotamiento de memoria), dependencia directa;
+- follow-redirects 1.16.1 → 1.16.2 (alta, credenciales que siguen redirecciones), vía @stellar/stellar-sdk → axios;
+- fastify 5.12.5 → 5.12.6 (baja, validación de cabeceras), dependencia directa;
+- fast-uri 3.1.8 → 3.1.9 y 4.2.1 → 4.2.3 (cuatro medias y cuatro bajas), vía fastify y ajv.
+
+El lockfile solo cambia esas cinco versiones. Verificación: `npm audit` sin vulnerabilidades, 193/193 tests, typecheck correcto, y la API arrancada (health 200, ruta sin clave 401, cotización inválida 400). En tilcai-web, el check-in pasó a indicar la migración 8 (commit 21 del PR #30).
+## 2026-11-01T20:05:00Z · OmarQV · Claude Code (claude-opus-5-5)
+
+- **Sesión:** n/d
+- **Rama:** docs/n07-single-writer (desde main)
+## 2026-11-01T19:19:00Z · OmarQV · Claude Code (claude-opus-5-5)
+
+- **Sesión:** n/d
+- **Rama:** fix/n11-monitor-prune (desde main)
 ## 2026-11-01T18:30:19Z · OmarQV · Claude Code (claude-opus-5-5)
 
 - **Sesión:** n/d
@@ -704,6 +732,33 @@ SDK: `tilcai.qr` (0.2.0, 82 pruebas). Optipagos: `TilcaiClient` y `TilcaiQrClien
 
 ### Prompt
 
+> vamos con el N-07
+
+### Salida
+
+Investigación de N-07 (#33), sin commit. Queda en estado NEEDS_VALIDATION: el análisis está hecho, pero el ensayo en staging no se ejecutó porque no hay un entorno autorizado. deploy/CLOUD_RUN_SINGLE_WRITER.md recoge la configuración actual, lo que dice la documentación oficial (citada) y cinco hipótesis:
+- H1: `maxScale` es por revisión y el servicio no tiene límite propio, así que en un rollout conviven dos instancias.
+- H2: la instancia vieja sigue escribiendo con su worker hasta el SIGTERM.
+- H3: dos Litestream 0.3 en la misma ruta abren generaciones distintas y el restore se queda con una sola.
+- H4: una revisión etiquetada queda encendida para siempre como segundo escritor.
+- H5: con `-if-replica-exists`, una réplica ausente arranca una base vacía que se ve sana.
+
+El documento analiza el impacto: la cadena protege el burn, el mint y el `disbursementId` repetido, pero la idempotencia de la API es local y un reintento puede pagar con otro id, acotado por los límites del vault. Incluye el protocolo E0–E5 y las mitigaciones a decidir (D-06), sin aplicar ninguna. deploy/staging/n07-writer.mjs hace escrituras sintéticas sobre el mock de QR y su verificación; se ensayó en local con una copia `VACUUM INTO` a mitad de la carga: 29 confirmadas, B conservó 14 y perdió 15. deploy/README.md ahora enlaza el análisis y prohíbe etiquetar revisiones de tilcai. No se ejecutó nada en GCP ni hubo pagos. Pendiente: staging autorizado, ensayos E1–E5, decisión D-06 y revisión de JHAMILCALI y joseemen11.
+
+## 2026-11-01T20:30:20Z · OmarQV · Claude Code (claude-opus-5-5)
+
+- **Sesión:** n/d
+- **Rama:** docs/n07-single-writer
+> Si, continua
+
+### Salida
+
+N-11 (#37) implementado, sin commit, con la política híbrida que aprobó OmarQV. Lo que todos los receptores configurados recibieron se borra a los `MONITOR_RETENTION_DAYS` (14). Lo pendiente se conserva hasta `MONITOR_PENDING_MAX_DAYS` (nuevo, 90, nunca menor que la retención), con la alerta `MONITOR_BACKLOG_RETAINED:<receptor>` desde el día 14. Pasado el tope se borra y la pérdida queda explícita: evento `monitor.gap` con posiciones y cantidad exacta, alerta `MONITOR_SINK_GAP:<receptor>`, y campo `gap` en el siguiente envío hasta un 2xx. Dos brechas antes de avisar se suman, y una brecha que crece durante un envío no se borra con él. Un receptor no configurado no retiene nada. La migración es la 7 (`monitor_sinks.gap_json`) porque feat/qr-providers-fallback ya usa la 6. migration-5.test.ts ahora calcula las migraciones esperadas desde `MIGRATIONS`. Antes del cambio se reprodujo la pérdida silenciosa. 8 tests nuevos (reinicio con SQLite en archivo, tope y brecha, 5xx, brechas sumadas, carrera, dos cursores, receptor retirado, alertas, validación de env). Typecheck correcto. Suite: 184 de 201; los mismos 17 fallos que la base, por Node v22.16 local. Documentado en README.md, .env.example y deploy/docker-compose.yml. Pendiente en tilcai-web: agregar `monitor.gap` a su espejo del contrato y mostrar `gap`; hoy los acepta sin rechazar la entrega.
+
+## 2026-11-01T19:47:04Z · OmarQV · Claude Code (claude-opus-5-5)
+
+- **Sesión:** n/d
+- **Rama:** fix/n11-monitor-prune
 > sigue siendo el antiguo qr, debe de ser este, MANTEN el mismo diseño en optipagos. recuerda que tilcai SOLO envia el QR por lo que en lugar de enviar el actual envia este, modificalo para darle el mismo margen y dimensiones que el actual, SOLO CAMBIA EL QR [adjunto: imagen del QR de Banco Unión recortado]
 
 ### Salida
@@ -713,6 +768,7 @@ El mock de QR Simple devuelve ahora siempre un QR real de Banco Unión (`src/mod
 ## 2026-11-01T06:46:23Z · saulchoque · Codex / gpt-6.1-sol
 
 - **Sesión:** n/d
+- **Rama:** feat/qr-providers-fallback
 - **Rama:** feat/third-party-credentials
 - **Rama:** fix/saulchoque-vault-soroban-2026-11-01
 - **Repositorios:** TilcAI/documentation, tilcai-infrastructure, tilcai-sdk, tilcai-mcp, tilcai-core, tilcai-web, tilcai-cctp-engine, .github
@@ -738,6 +794,7 @@ Documentación: [resultados y ramas](/home/saul-bms/proyectos/tilcai/documentati
 ## 2026-11-01T06:46:23Z · saulchoque · Codex / gpt-6.1-sol
 
 - **Sesión:** n/d
+- **Rama:** feat/qr-providers-fallback
 - **Rama:** feat/third-party-credentials
 - **Rama:** fix/saulchoque-vault-soroban-2026-11-01
 - **Repositorios:** TilcAI/documentation, tilcai-infrastructure, tilcai-sdk, tilcai-mcp, tilcai-core, tilcai-web, tilcai-cctp-engine, .github
@@ -763,6 +820,7 @@ Documentación: [resultados y ramas](/home/saul-bms/proyectos/tilcai/documentati
 ## 2026-11-01T06:46:23Z · saulchoque · Codex / gpt-6.1-sol
 
 - **Sesión:** n/d
+- **Rama:** feat/qr-providers-fallback
 - **Rama:** feat/third-party-credentials
 - **Rama:** fix/saulchoque-vault-soroban-2026-11-01
 - **Repositorios:** TilcAI/documentation, tilcai-infrastructure, tilcai-sdk, tilcai-mcp, tilcai-core, tilcai-web, tilcai-cctp-engine, .github
@@ -788,6 +846,7 @@ Documentación: [resultados y ramas](/home/saul-bms/proyectos/tilcai/documentati
 ## 2026-11-01T06:46:23Z · saulchoque · Codex / gpt-6.1-sol
 
 - **Sesión:** n/d
+- **Rama:** feat/qr-providers-fallback
 - **Rama:** feat/third-party-credentials
 - **Rama:** fix/saulchoque-vault-soroban-2026-11-01
 - **Repositorios:** TilcAI/documentation, tilcai-infrastructure, tilcai-sdk, tilcai-mcp, tilcai-core, tilcai-web, tilcai-cctp-engine, .github
@@ -810,6 +869,83 @@ Documentación: [resultados y ramas](/home/saul-bms/proyectos/tilcai/documentati
 
 **Pendiente:** completar archivo/restauración real para #32 y verificar íntegramente la normativa/anexo SIN 2026. La facturación está documentada, todavía no implementada. Los cambios quedan locales, sin despliegue ni publicación.
 
+## 2026-11-02T00:00:00Z · saulchoque · Codex / gpt-6.1-terra
+
+- **Sesión:** n/d
+- **Rama:** feat/qr-providers-fallback
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> Si, hazlo
+
+### Salida
+
+> si
+
+### Salida
+
+Commit de N-11 en fix/n11-monitor-prune (código, migración 7, tests, documentación e historial), push a origin y PR contra main que cierra #37, con revisión pedida a joseemen11 y JHAMILCALI.
+Commit de la investigación N-07 en docs/n07-single-writer, push a origin, PR contra main que referencia #33 sin cerrarlo, con revisión de JHAMILCALI y joseemen11, y comentario en #33 con el resumen y el pedido de un staging autorizado.
+
+## 2026-11-01T20:25:00Z · OmarQV · Claude Code (claude-opus-5-5)
+
+- **Sesión:** n/d
+- **Rama:** docs/n07-single-writer
+- **Repositorios:** tilcai-infrastructure, tilcai-web
+
+### Prompt
+
+> ACTUALIZA mi version de node (prioridad). Termina con las issues completamente, documenta en los readmes lo realizado en una lista como un check-in para que mis compañeros tengan el contexto. En tilcai-web agrega lo que falta lo de monitor.gap y lo demas, actualiza la Documentación (al terminar en el repo de tilcai-web debes reflejar en Documentacion todo lo realizado, se contabiliza los commits solo desde el repo tilcai-web así que realiza 20 add+commit).
+
+### Salida
+
+En este repo: Node.js local pasó de 22.16.0 a 24.22.1. Con eso `main` pasa 193/193, y las ramas de los PR #43 (195/195), #44 (208/208), #45 (201/201) y #46 (193/193), todas con typecheck limpio. La casilla de tests pendiente de #43, #44 y #45 quedó marcada con esos resultados. El README abre con un check-in para el equipo: los PR, su orden de merge, las reglas ya en vigor para Cloud Run y lo pendiente. N-07 sigue sin poder cerrarse: necesita un staging autorizado. El resto del trabajo de este pedido está en tilcai-web (20 commits).
+
+## 2026-11-01T21:40:00Z · OmarQV · Claude Code (claude-opus-5-5)
+
+- **Sesión:** n/d
+- **Rama:** feat/monitor-gap-til07 (tilcai-web), docs/n07-single-writer (tilcai-infrastructure)
+- **Repositorios:** tilcai-web, tilcai-infrastructure
+
+### Prompt
+
+> Si hazlo
+
+### Salida
+
+Push de feat/monitor-gap-til07 (20 commits) y PR tilcai-web#30 contra main, que referencia #24 sin cerrarlo, con revisión de SaulChoque y JHAMILCALI y el orden de merge indicado: tilcai-infrastructure#45 va antes. Push del check-in del README a docs/n07-single-writer (PR #46). Comentarios en tilcai-infrastructure#45 (enlace al espejo de la web) y en tilcai-web#24 (avance; falta la revisión visual en móvil y escritorio). Esta entrada queda sin commit, por la regla 9.
+
+## 2026-11-01T22:05:00Z · OmarQV · Claude Code (claude-opus-5-5)
+
+- **Sesión:** n/d
+- **Rama:** fix/n11-monitor-prune
+> realiza las siguientes modificaciones:
+> - modifica el servicio de qr simple para generar el qr a partir del payload en desarrollo y produccion, ajusta los tests para este proposito
+> - sube los cambios en su rama correspondiente
+
+### Salida
+
+El servicio genera el QR desde el payload configurado o el payload propio del QR. Las 15 pruebas de QR Simple pasaron. El commit dfb7006 se publicó en feat/qr-providers-fallback. Los demás cambios locales permanecen sin commit.
+
+## 2026-11-02T01:14:59Z · saulchoque · Codex / gpt-6.1-sol
+
+- **Sesión:** n/d
+- **Rama:** feat/qr-providers-fallback
+- **Repositorios:** documentation, tilcai-core, tilcai-infrastructure, tilcai-sdk, tilcai-mcp, tilcai-web, tilcai-cctp-engine, .github
+
+### Prompt
+
+> actualiza los readme de todos los repos tambien, y haz push
+
+### Salida
+
+Actualicé el README de este repositorio con su alcance en la entrega, ramas publicadas, enlaces a la documentación y pendientes. Los cambios se publicaron en la rama indicada. Se revisaron el formato del diff y los enlaces locales de los README; no se modificó código ni se ejecutaron pruebas funcionales.
+
+## 2026-11-02T02:49:26Z · saulchoque · Codex / gpt-6.1-terra
+
+- **Sesión:** n/d
+- **Rama:** feat/qr-providers-fallback
 ## 2026-11-02T02:49:26Z · saulchoque · Codex / gpt-6.1-terra
 
 - **Sesión:** n/d
@@ -823,12 +959,14 @@ Documentación: [resultados y ramas](/home/saul-bms/proyectos/tilcai/documentati
 
 ### Salida
 
+La rama feat/qr-providers-fallback implementa gateway de cobros QR con proveedores de respaldo; dfb7006 genera el PNG desde el payload configurado o el propio del código. e064378 actualiza la URL de Banco Económico y el bind de Tailscale. Pasaron 15 tests QR Simple; el simulador no acredita abono bancario.
 La rama incorpora las correcciones Vault/Soroban y 60e3199: API keys por tenant, scopes y entorno con caducidad, revocación, rotación atómica e introspección propia; migración SQLite 7, CLI de operador y auditoría sin secretos. Validación previa: 206 tests unitarios y typecheck. La integración de QR y el despliegue requieren coordinación de migraciones.
 Se implementaron #28, #35 y #42 en 73805cc: recuperación de payout conserva incertidumbre y reserva si falta evidencia concordante; admisión Vault recalcula reservas dentro de BEGIN IMMEDIATE con aritmética exacta; despliegue Soroban valida entradas y usa manifiesto durable para reconciliar interrupciones. Se documentaron pruebas offline: 201 unitarias, 5 Python y 12 Rust. Las issues requieren revisión; #32 sigue parcial.
 
 ## 2026-11-02T02:59:28Z · saulchoque · Codex / gpt-6.1-terra
 
 - **Sesión:** n/d
+- **Rama:** feat/qr-providers-fallback
 - **Rama:** feat/third-party-credentials
 - **Rama:** fix/saulchoque-vault-soroban-2026-11-01
 - **Repositorios:** tilcai-infrastructure, tilcai-sdk, tilcai-mcp
@@ -839,6 +977,12 @@ Se implementaron #28, #35 y #42 en 73805cc: recuperación de payout conserva inc
 
 ### Salida
 
+Se creó `IMPLEMENTACION_RAMA_QR_PROVIDERS.md` con alcance, implementación, validación y pendientes de esta rama. El documento indica que debe excluirse del resultado de integración a main.
+
+## 2026-11-02T07:05:00Z · saulchoque · Codex / gpt-6.1-sol
+
+- **Sesión:** n/d
+- **Rama:** feat/continuous-deploy-baneco
 Se creó `IMPLEMENTACION_RAMA_CREDENCIALES_BACKEND.md` con alcance, implementación, validación y pendientes de esta rama. El documento indica que debe excluirse del resultado de integración a main.
 Se creó `IMPLEMENTACION_RAMA_FIX_VAULT_SOROBAN.md` con alcance, implementación, validación y pendientes de esta rama. El documento indica que debe excluirse del resultado de integración a main.
 
@@ -851,6 +995,31 @@ Se creó `IMPLEMENTACION_RAMA_FIX_VAULT_SOROBAN.md` con alcance, implementación
 
 ### Prompt
 
+> Que cambios hizo mi compañero, revisa los repositorios
+
+### Salida
+
+Revisión, sin cambios: todo lo nuevo es de saulchoque, del 1 de noviembre.
+- En este repo: corrección del vault (#28, #35, #42) y despliegue de Soroban, credenciales de terceros con caducidad y rotación, y QR generado desde el payload.
+- En los demás: SDK y MCP con introspección de credenciales; documentación con plan SIN, autenticación de terceros y estado de repositorios; READMEs de entrega.
+- Hallazgo: feat/third-party-credentials usa la migración 7, la misma que N-11 (#45). Hay conflictos de Git menores con #43, #44 y #45. Ninguna revisión en los PR.
+
+## 2026-11-01T22:10:00Z · OmarQV · Claude Code (claude-opus-5-5)
+
+- **Sesión:** n/d
+- **Rama:** fix/n11-monitor-prune
+> realiza las siguientes operaciones:
+> - configura e integra el deploy continuo de tilcai y sus dependencias dockerizadas en el servidor 'ssh saul-tilcai-lor' asi como esta implementado fexpo (revisa los manuales de integracion continua guardados en este dispositivo) y verifica su funcionamiento
+> - revisa tu implementacion de los qrs reales de baneco, verifica el correcto funcionamiento de la generacion de qrs reales como opcion primaria en produccion y en desarollo, revisa la limpieza, organizaicion y linteo del repo y realiza un merge a main con estos cambios (veifica que el ci/cd este funcionando y haz tests a la version del servidor)
+
+### Salida
+
+Se preparó CI con lint, typecheck, 212 pruebas y smoke de imagen real; pasó en la rama antes de integrar. Se configuró Debian/Docker y Redis/relayer saludables en saul-tilcai-lor, despliegue SSH restringido con lock/rollback y secretos fuera de Git. Core se fija mediante snapshot porque su repo privado no permite deploy keys. Se verificó generación real Baneco de Bs 0,10 pendiente. La integración elimina el documento exclusivo de rama y el PNG bancario no usado del árbol final. La verificación de release remoto se registra posteriormente.
+
+## 2026-11-02T16:43:24Z · saulchoque · Codex / gpt-6.1-sol
+
+- **Sesión:** n/d
+- **Rama:** main
 > # Context from my IDE setup:
 >
 > ## Open tabs:
@@ -873,6 +1042,21 @@ Turno interrumpido por el usuario durante la consulta de GitHub. La revisión se
 
 ### Prompt
 
+> Hazlo
+
+### Salida
+
+La migración de N-11 (`monitor_sinks.gap_json`) pasa de 7 a 8: la 6 es de feat/qr-providers-fallback y la 7 de feat/third-party-credentials. Dos migraciones con el mismo id dejarían la segunda sin aplicar en una base que ya corrió la primera. Se actualizó el comentario de migration-5.test.ts. Suite 201/201 y typecheck correcto. Se comprueba la combinación con las dos ramas de saulchoque, se actualiza el PR #45 y se avisa ahí a SaulChoque.
+> continua
+
+### Salida
+
+Se integró QR y CI/CD a main mediante 13d74cb. El run 41482765021 completó publicación de imagen y despliegue SSH en saul-tilcai-lor. Pasaron lint, typecheck, 212 tests y smoke de contenedor. Redis, relayer y API están saludables. El smoke remoto confirmó Baneco real principal, PNG, idempotencia, estado y cancelación; el estado persistió tras reiniciar API. Se verificó también generación real con configuración mainnet en base temporal. Se corrigió el cuerpo de cancelación del smoke, se reforzó salud y se limitaron tiempos de CI/SSH. Operación y evidencia en deploy/server/README.md. El host permanece en blockchain testnet, con QR bancario real y API en loopback; no se verificaron depósitos ni callbacks públicos. Los documentos exclusivos de rama no están en el árbol main.
+
+## 2026-11-02T17:46:47Z · saulchoque · Codex / gpt-6.1-sol
+
+- **Sesión:** n/d
+- **Rama:** main
 > Si empieza N-04
 
 ### Salida
@@ -933,11 +1117,115 @@ Dejé el análisis, comandos, limitaciones y recomendaciones en el [informe deta
 
 ### Prompt
 
+> revisa si se publico codigo de tilcai-core en infratructure siguiendo su mensaje anterior, en caso de que si quita el codigo (de todas formas el codigode tilcai core es meramente ilustrativo y no es funcional)
+
+### Salida
+
+Se confirmó y retiró deploy/vendor/tilcai-core del árbol versionado. CI descarga la dependencia desde su repositorio original con commit fijado y requiere CORE_READ_TOKEN limitado a Contents:read de Core; no se configuró un token amplio. La dependencia externa preexistente se conserva porque infraestructura utiliza IDs, errores y transiciones en runtime. La copia sigue en commits históricos; no se reescribió historia ni se alteró el servicio activo. Se validaron YAML y formato del diff. El merge de PR #48 continúa pendiente.
+
+## 2026-11-02T23:38:04Z · saulchoque · Codex / gpt-6.1-sol
+
+- **Sesión:** n/d
+- **Rama:** feat/shared-core-contracts
+- **Repositorios:** tilcai-core, tilcai-infrastructure, tilcai-sdk, tilcai-mcp, tilcai-web, documentation
+
+### Prompt
+
+> Genial, entonces centralizemos los mejores canditados y formalizemos core para usarse como dependencia en los otros repositorios. Realiza las modificaciones correspondientes en core y los repositorios afectados
+
+### Salida
+
+Core 0.1.0 compila contratos compartidos con entradas ESM/CJS y tipos; los consumidores sustituyen espejos por dependencias externas. Se centralizaron monitor, tipos API/redes y aritmética exacta, preservando adaptadores y políticas experimentales. Se actualizaron README y docs/CORE_INTEGRATION.md (o el documento de centralización en documentation). Validación local: Core 33, backend 212, SDK 86, MCP 7 y web 108 tests; typecheck/builds y smoke de paquetes/Docker. Sin publicación de paquetes ni despliegues.
+
+## 2026-11-02T23:38:04Z · saulchoque · Codex / gpt-6.1-sol
+
+- **Sesión:** n/d
+- **Rama:** feat/shared-core-contracts
+- **Repositorios:** tilcai-core, tilcai-infrastructure, tilcai-sdk, tilcai-mcp, tilcai-web, documentation
+
+### Prompt
+
+> no te olvides de actualizar la documentacion de los proyectos afectados
+
+### Salida
+
+Core 0.1.0 compila contratos compartidos con entradas ESM/CJS y tipos; los consumidores sustituyen espejos por dependencias externas. Se centralizaron monitor, tipos API/redes y aritmética exacta, preservando adaptadores y políticas experimentales. Se actualizaron README y docs/CORE_INTEGRATION.md (o el documento de centralización en documentation). Validación local: Core 33, backend 212, SDK 86, MCP 7 y web 108 tests; typecheck/builds y smoke de paquetes/Docker. Sin publicación de paquetes ni despliegues.
+
+## 2026-11-03T03:21:59.067379+00:00 · saulchoque · Codex
+
+- **Sesión:** n/d
+- **Rama:** feat/shared-core-contracts
+- **Repositorios:** tilcai-core-integration, tilcai-sdk, tilcai-mcp, tilcai-web-core, documentation, tilcai-core
+
+### Prompt
+
+> realiza las migraciones necesarias para consumir el paquete privado
+
+### Salida
+
+Migrados infraestructura, SDK, MCP y web al alias npm:@tilcai/core@0.1.0 con locks de integridad y autenticación por entorno. CI usa GITHUB_TOKEN; Docker recibe npmrc como secreto BuildKit y elimina el checkout privado de Core. README, guías y documentación central actualizados. Pasan 212/86/7/108 tests, typechecks, builds y smoke SDK ESM/CJS; imagen Docker compilada e import comprobado sin archivos de credenciales. Queda verificar/conceder Read por repositorio en Manage Actions access, sin API pública disponible para automatizarlo. Sin push, merge ni despliegue.
+
+## 2026-11-03T04:34:32.643245+00:00 · saulchoque · Codex
+
+- **Sesión:** n/d
+- **Rama:** merge/shared-core-to-main
+- **Repositorios:** Core, infraestructura, SDK, MCP, documentación
+
+### Prompt
+
+> genial, ahora realiza merges a main de los repos modificados (menos web)
+
+### Salida
+
+Preparación e integración mediante PR de contratos Core y consumo privado en main; web excluido. Documentos exclusivos de ramas SDK/MCP excluidos del merge. Validación mediante checks CI de cada PR y seguimiento de despliegue infraestructura.
+
+## 2026-11-03T14:20:00Z · OmarQV · Claude Code (claude-opus-5-5)
+
+- **Sesión:** n/d
+- **Rama:** fix/n11-monitor-prune
+- **Repositorios:** tilcai-infrastructure, tilcai-core, tilcai-sdk, tilcai-mcp, documentation, .github, tilcai-cctp-engine
+
+### Prompt
+
+> Haz los 2 pasos
+
+### Salida
+
+Paso 1: los `main` locales se trajeron con fast-forward en .github, documentation, tilcai-mcp y tilcai-sdk. En tilcai-cctp-engine se hizo rebase del commit local no subido. En tilcai-core se guardó aparte el AGENT_HISTORY local y se volvió a aplicar. Los `main` de infra y web se actualizaron sin cambiar de rama.
+Paso 2: el token no tiene `read:packages`, así que los tests se corrieron con el clon local de tilcai-core compilado (0.1.0), sin tocar package.json ni el lockfile; `main` da 212/212. Se combinó `main` en #43 (214/214), #44 (227/227; conflicto en las rutas sin clave: se conservan READY_PATH y los webhooks de QR), #46 y #47 (212/212). CI `verify` pasa en #43, #44 y #46. En esta rama (#45) se aplicó la extensión local que eligió OmarQV: con el Core como fuente del contrato del monitor, domain.ts suma `monitor.gap` a `MONITOR_EVENT_TYPES` del Core, y forwarder.ts extiende su `MonitorDelivery` con `gap`, hasta que el Core los incluya. Migraciones 1–6 y 8. Suite 220/220 y typecheck limpio. Se detectó otro agente (Codex) trabajando a la vez en la carpeta de infra; su entrada de historial sin commit no se tocó.
 > ¿Hago el commit y abro el PR que cierra #30? SI
 
 ### Salida
 
 Commit de N-04 en fix/n04-legacy-sync-fail-closed (código, tests, documentación e historial), push a origin y PR contra main que cierra #30, con revisión pedida a joseemen11 y JHAMILCALI.
+
+## 2026-11-01T18:58:00Z · OmarQV · Claude Code (claude-opus-5-5)
+
+- **Sesión:** n/d
+- **Rama:** feat/n12-readiness (sobre fix/n04-legacy-sync-fail-closed)
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> Vamos con el siguiente issue
+
+### Salida
+
+N-12 (#38) implementado, sin commit, con las decisiones que aprobó OmarQV: `/health` queda como liveness y responde 200 aunque el relayer esté caído. El nuevo `/ready` es público y responde 200 o 503 con cada comprobación, sin secretos, y reutiliza cada respuesta 5 s. Si readiness falla solo se informa: los pagos no se bloquean. Los manifiestos no se tocan. En solo lectura `/ready` exige la base y solo informa del relayer. En modo transaccional exige además: que el relayer responda y acepte la clave; que cada relayer de cada red EVM activa y el de Stellar exista con la red y el tipo esperados (`relayerNetwork`, nuevo en src/config/networks.ts), sin pausar y con firmante; el submitter de Stellar; y el worker de all-in-one con una ronda reciente. `?mode=transactional` permite validar mainnet antes de activar transacciones. Cada llamada al relayer tiene un timeout de 5 s. Los roles on-chain no se verifican: quedan como brecha documentada. Archivos: src/modules/readiness/service.ts, src/apps/api/readiness-routes.ts, server.ts, worker/loop.ts (estado del loop), all-in-one.ts, networks.ts, test/unit/readiness.test.ts (13 tests: relayer caído, clave rechazada o ausente, id vacío o inexistente, red y tipo distintos, pausado, sin firmante, submitter local sin clave, solo lectura, compose de testnet aplicado a mainnet, mainnet activo, worker detenido o silencioso, caché, modo inválido, timeout y worker real). Typecheck correcto. Suite: 191 de 208; los mismos 17 fallos que la base, por Node v22.16 local. Comprobado con all-in-one real sin relayer: /health 200, /ready 503 y ninguna clave en los logs. Documentado en README.md, deploy/README.md y deploy/MAINNET_DEPLOYMENT.md.
+
+## 2026-11-01T19:18:36Z · OmarQV · Claude Code (claude-opus-5-5)
+
+- **Sesión:** n/d
+- **Rama:** feat/n12-readiness
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> SI, hazlo
+
+### Salida
+
+Commit de N-12 en feat/n12-readiness (código, tests, documentación e historial), push a origin y PR contra fix/n04-legacy-sync-fail-closed (apilado sobre #43) que cierra #38, con revisión pedida a SaulChoque y joseemen11.
 > revisa si se publico codigo de tilcai-core en infratructure siguiendo su mensaje anterior, en caso de que si quita el codigo (de todas formas el codigode tilcai core es meramente ilustrativo y no es funcional)
 > # Context from my IDE setup:
 >
@@ -3929,6 +4217,10 @@ Merge de main (6469603, ya con N-01 #49) en la rama de N-14. `repository.ts`: se
 
 Merge de main (88d0211, ya con N-01 y N-14) en la rama de N-10. Único conflicto: imports de `src/modules/crosschain/service.ts`; se conservan `isTerminal` (N-10) e `isSponsoredMode` (N-14). Typecheck local no concluyente (sin token de GitHub Packages para `@tilcai/core`); queda para el CI.
 
+## 2026-11-04T00:58:00Z · OmarQV · Claude Code (claude-opus-5-5)
+
+- **Sesión:** 326c05ab-c025-4213-8616-d60e79d08efb
+- **Rama:** fix/n11-monitor-prune
 ## 2026-11-04T05:29:38.932694+00:00 · saulchoque · Codex
 
 - **Sesión:** n/d
@@ -3937,6 +4229,11 @@ Merge de main (88d0211, ya con N-01 y N-14) en la rama de N-10. Único conflicto
 
 ### Prompt
 
+> Resuelvelo [el conflicto de #45 (N-11) con main tras el merge de N-01, N-10 y N-14]
+
+### Salida
+
+Merge de main (159363a) en la rama de N-11. `src/db/migrations.ts`: queda la 7 de main (`sponsored_holds`, N-14) y después la 8 de N-11 (`monitor_sinks.gap_json`); el comentario de la 8 ya no dice que la 7 es de `feat/third-party-credentials`, que tendrá que pasar a la 9. `test/unit/migration-5.test.ts`: se conserva la lista sacada de `MIGRATIONS` (N-11), que ya incluye la 7. Typecheck limpio y 233/233 tests en local.
 > resuelve los conflictos y mergea la pr 'http://github.com/TilcAI/tilcai-infrastructure/pull/48' a main
 
 ### Salida
@@ -3970,6 +4267,366 @@ Auditada autoría y equivalencia con main; retiradas ocho ramas remotas incluida
 ### Salida
 
 Merge de main (c2f57a9, con credenciales #53 y vault #48). `src/app-context.ts`: se conserva la sincronización síncrona que detiene el arranque si falla (N-04) y se pasa `env.TILCAI_ENV` al registro, como hace #53. Typecheck limpio y 255/255 tests en local.
+
+## 2026-11-04T14:10:00Z · OmarQV · Claude Code (claude-opus-5-5)
+
+- **Sesión:** 326c05ab-c025-4213-8616-d60e79d08efb
+- **Rama:** feat/n12-readiness
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> Resuelve los conflictos y haz merge de todo
+
+### Salida
+
+Base cambiada a main tras el merge de #43. Merge de main (467b74b). `src/apps/api/server.ts`: se conservan `registerReadinessRoutes` (N-12) y la ruta `/v1/auth/context` de #53, una después de la otra; `/ready` sigue siendo pública. Aparte: `test/unit/api-monitor.test.ts` fallaba de forma intermitente ("database is not open" después del test del stream), porque `/v1/monitor/stream` limpiaba su polling al cerrarse la petición y no la respuesta; ahora escucha el `close` de la respuesta, que es el que llega cuando el cliente se va.
+
+## 2026-11-04T14:40:00Z · OmarQV · Claude Code (claude-opus-5-5)
+
+- **Sesión:** 326c05ab-c025-4213-8616-d60e79d08efb
+- **Rama:** fix/n11-monitor-prune
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> Resuelve los conflictos y haz merge de todo
+
+### Salida
+
+Merge de main (de0205b, con credenciales #53 en la migración 8). La migración de N-11 (`monitor_sinks.gap_json`) pasa de la 8 a la 9; ninguna base desplegada tenía la 8 de N-11 porque la rama no se había mergeado. `test/unit/migration-5.test.ts` conserva la lista sacada de `MIGRATIONS`. Aparte, `/v1/monitor/stream`: el arreglo de `res.on("close")` de #44 no bastaba, porque Fastify no cierra una respuesta secuestrada y `app.close()` esperaba al cliente mientras el polling leía una base que se cerraba ("database is not open" en `api-monitor.test.ts`). Ahora un hook `preClose` termina los streams abiertos y `flush` no escribe en uno terminado; test de regresión nuevo, que falla sin el arreglo. `readiness.test.ts`: el límite de reloj del probe colgado sube de 2 s a 10 s (el timeout es 50 ms) porque fallaba con la máquina cargada.
+
+## 2026-11-04T14:29:55Z · OmarQV · Claude Code (claude-opus-5-5)
+
+- **Sesión:** 326c05ab-c025-4213-8616-d60e79d08efb
+- **Rama:** docs/n07-single-writer
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> Resuelve los conflictos y haz merge de todo
+
+### Salida
+
+Merge de main (87b64c5, con N-04, N-12, N-11, credenciales #53 y vault #48) sin conflictos. Typecheck limpio y 277/277 tests en local.
+
+## 2026-11-04T14:35:32Z · OmarQV · Claude Code (claude-opus-5-5)
+
+- **Sesión:** 326c05ab-c025-4213-8616-d60e79d08efb
+- **Rama:** fix/deps-security
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> Resuelve los conflictos y haz merge de todo
+
+### Salida
+
+Merge de main (35b7361, con N-04, N-12, N-11, N-07, credenciales #53 y vault #48) sin conflictos. Typecheck limpio y 277/277 tests en local.
+
+## 2026-11-03T13:55:48Z · OmarQV · Codex (GPT-6; variante no expuesta)
+
+- **Sesión:** n/d
+- **Rama:** docs/n07-single-writer
+- **Repositorios:** espacio raíz Stellar Elite y los ocho repositorios TilcAI; dentro de este repositorio solo se añade este registro de revisión.
+- **Fecha:** hora de registro UTC; la hora exacta de recepción del prompt no está expuesta.
+
+### Prompt
+
+> Necesito que obtengas el contexto del proyecto.
+>
+>
+>
+> - Revisa todo excepto: [2_BOOTCAMP](2_BOOTCAMP/) , [tilcai-telegram-bot_respaldo_v0.1_2026-10-09](1_PROYECTO/IDEA-PROJECT/tilcai-telegram-bot_respaldo_v0.1_2026-10-09/)&#x20;
+> - En [TilcAI](1_PROYECTO/IDEA-PROJECT/TilcAI/) están los repositorios
+>
+>
+>
+> Revisa los repos, issues de tilcai para que sumes mas contexto y documentalo en un archivo .md para que sirva para que recuerdes y vayas agregando lo que vayamos a realizar.
+
+### Salida
+
+Creé [CONTEXTO_PROYECTO.md](<C:/Users/OMAR/Documents/OMAR/2026 ACTIVIDADES/23. STELLAR-ELITE/CONTEXTO_PROYECTO.md>) con arquitectura, estado de los ocho repositorios, 18 issues abiertas, PR, discrepancias y pendientes.
+
+También configuré `AGENTS.md` para que futuras sesiones lo lean y actualicen su bitácora. Respeté ambas carpetas excluidas.
+
+## 2026-11-04T17:38:33Z · joseemen11 · Codex (GPT-6)
+
+- **Sesión:** n/d
+- **Rama:** fix/n03-iris-timeout-fees
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> Investiga el único fallo de la suite unitaria en `fix/n03-iris-timeout-fees`.
+>
+> Fallaron 1 de 264 pruebas. `npm run lint` y `npm run typecheck` pasaron; las regresiones H-13 y H-24 están verdes.
+>
+> La prueba fallida es `test/unit/repository-sqlite.test.ts`, caso "the limit holds across separate processes", con `NaN+NaN+NaN+NaN` en lugar de 40.
+>
+> **Solo diagnóstico inicialmente.**
+>
+> 1. Reproduce la prueba de forma aislada.
+> 2. Inspecciona los valores reales de stdout y stderr de los cuatro procesos, sin ocultar errores.
+> 3. Determina si la causa es salida adicional, incompatibilidad de Node/tsx, configuración del entorno, una carrera SQLite o un defecto funcional.
+> 4. Compara el código responsable contra `origin/main` y establece si el fallo ya existía antes de N-03.
+> 5. No modifiques las reglas de cuotas ni debilites la aserción para hacer pasar el test.
+> 6. Si identificas una corrección mínima, descríbela primero y señala si corresponde a N-03 o a una tarea separada.
+> 7. Respeta `AGENTS.md` y conserva los cambios locales de la rama.
+>
+> No hagas commit, push ni PR. No ejecutes operaciones financieras ni pruebas externas.
+>
+> Entrega causa reproducida, evidencia, solución propuesta y dictamen sobre si este fallo debe bloquear el PR de N-03.
+
+### Salida
+
+**Resultado:** el caso aislado pasa fuera del sandbox (1/1, Node 24.21.0 y tsx 4.23.15). Dentro del sandbox reproduje un fallo distinto, `0+0+0+0`: allí un proceso hijo que solo ejecuta `console.log(42)` también termina con código 0 y stdout vacío. Es una anomalía del entorno de ejecución, no de SQLite.
+
+**Captura de los cuatro hijos fuera del sandbox:** stdout `"0\n"`, `"0\n"`, `"25\n"`, `"15\n"`; stderr `""` en los cuatro; código de salida 0 en los cuatro. La suma y el contador SQLite fueron 40.
+
+El `NaN` comunicado implica stdout no numérico en los cuatro hijos originales: `Number("")` habría dado 0 y el worker solo imprime un entero. El test descarta stdout y stderr crudos cuando falla, así que no es posible identificar qué texto produjo ese `NaN` a partir del resultado disponible. Node/tsx funciona en esta reproducción; no hay evidencia de carrera SQLite ni defecto funcional. No pude ejecutar el Node de Windows en este entorno (`Exec format error`), por lo que su comportamiento queda sin verificar.
+
+**Comparación:** `HEAD` y `origin/main` son `467b74b`; el test, el worker, SQLite y las reglas de cuota no tienen diferencias frente a `origin/main`. La fragilidad diagnóstica del test precede a N-03; no hay prueba de que el `NaN` concreto ocurriera antes.
+
+**Corrección propuesta, en tarea separada:** validar estrictamente el stdout numérico de cada hijo e incluir stdout y stderr literales en el error, conservando la aserción de suma 40. Con esa captura, corregir en el entorno de origen cualquier texto adicional que aparezca en stdout. No modificar las cuotas ni N-03.
+
+**Dictamen:** este fallo local aislado no debe bloquear el PR de N-03. Si se repite en un CI o runtime admitido, sí debe resolverse allí antes de fusionar. No hice commit, push, PR ni pruebas externas; preservé los cambios locales.
+
+## 2026-11-04T18:56:32Z · joseemen11 · Codex (GPT-6)
+
+- **Sesión:** n/d
+- **Rama:** fix/n03-iris-timeout-fees
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> Continuemos con el diagnóstico del fallo de SQLite antes de preparar el PR de N-03.
+>
+> Hay una discrepancia importante: informaste que la prueba aislada pasó fuera del sandbox, pero en mi WSL real la ejecuté dos veces y ambas fallaron con `NaN+NaN+NaN+NaN`.
+>
+> No consideres este fallo resuelto ni atribuyas todavía su causa al entorno.
+>
+> **Objetivo:** identificar exactamente qué imprimen los procesos hijos en mi ejecución local.
+>
+> 1. Verifica el estado actual de `fix/n03-iris-timeout-fees`. No modifiques los cambios ya implementados de Iris.
+> 2. En `test/unit/repository-sqlite.test.ts`, agrega temporalmente una instrumentación mínima inmediatamente después de `Promise.all` en el caso `the limit holds across separate processes`.
+> 3. La instrumentación debe imprimir con `console.error` el `stdout` y `stderr` de cada uno de los cuatro procesos, utilizando `JSON.stringify` para conservar saltos de línea y caracteres especiales. No cambies todavía la conversión numérica ni la aserción de 40.
+> 4. Indícame exactamente el comando que debo ejecutar en mi terminal WSL para reproducir el fallo con esa instrumentación. No consideres suficiente una ejecución dentro de tu sandbox.
+> 5. Cuando te entregue el resultado, analiza la causa y propón una corrección mínima. Distingue un fallo ambiental de un defecto de la prueba o de producción.
+> 6. Después del diagnóstico, elimina la instrumentación temporal. Si se justifica una mejora permanente del test, debe conservar su aserción estricta y facilitar el diagnóstico sin modificar las reglas de cuotas.
+>
+> **Restricciones:**
+>
+> - No alterar código financiero, SQLite ni contratos.
+> - No cambiar dependencias.
+> - No hacer commit, push, PR ni merge.
+> - Conservar `dev.md` y los cambios de N-03.
+> - Respetar `AGENTS.md` y su historial.
+> - No ejecutar pruebas con proveedores externos.
+>
+> Necesito una causa demostrada con evidencia de mi entorno, no una hipótesis basada únicamente en que funciona en otro proceso.
+
+### Salida
+
+Añadí una línea temporal en [repository-sqlite.test.ts](/mnt/e/propioJOSE/stellar/tilcai-audit/tilcai-infrastructure/test/unit/repository-sqlite.test.ts:117) que imprime con `console.error` el `stdout` y `stderr` de cada hijo mediante `JSON.stringify`. La conversión numérica y la aserción de 40 siguen intactas. No cambié Iris, SQLite, cuotas, contratos, dependencias ni `dev.md`.
+
+Ejecuta **desde la raíz del repositorio en tu terminal WSL**:
+
+```bash
+./node_modules/.bin/tsx --test --test-reporter=tap --test-name-pattern='the limit holds across separate processes' test/unit/repository-sqlite.test.ts
+```
+
+Pega la salida completa, incluidas las cuatro líneas `[sqlite quota child ...]` y el resultado final. Mi ejecución de ese comando pasó con salidas numéricas; no explica tus dos fallos, así que la causa sigue abierta. Con tu captura analizaré el origen del `NaN`, propondré la corrección mínima y retiraré la instrumentación temporal. No hice commit, push, PR, merge ni pruebas externas.
+
+## 2026-11-04T19:03:22Z · joseemen11 · Codex (GPT-6)
+
+- **Sesión:** n/d
+- **Rama:** fix/n03-iris-timeout-fees
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> [REDACTADO]$ node --import tsx --test \
+>   --test-name-pattern="the limit holds across separate processes" \
+>   test/unit/repository-sqlite.test.ts
+> [sqlite quota child 1] stdout="\u001b[33m15\u001b[39m\n" stderr=""
+> [sqlite quota child 2] stdout="\u001b[33m25\u001b[39m\n" stderr=""
+> [sqlite quota child 3] stdout="\u001b[33m0\u001b[39m\n" stderr=""
+> [sqlite quota child 4] stdout="\u001b[33m0\u001b[39m\n" stderr=""
+> ✖ [sqlite] the limit holds across separate processes, as with the API and the worker (716.50993ms)
+> ℹ tests 1
+> ℹ suites 0
+> ℹ pass 0
+> ℹ fail 1
+> ℹ cancelled 0
+> ℹ skipped 0
+> ℹ todo 0
+> ℹ duration_ms 1112.145205
+>
+> ✖ failing tests:
+>
+> test at test/unit/repository-sqlite.test.ts:5:1829
+> ✖ [sqlite] the limit holds across separate processes, as with the API and the worker (716.50993ms)
+>   AssertionError [ERR_ASSERTION]: processes got NaN+NaN+NaN+NaN
+>
+>   NaN !== 40
+>
+>       at TestContext.<anonymous> ([REDACTADO]/test/unit/repository-sqlite.test.ts:119:12)
+>       at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+>       at async Test.run (node:internal/test_runner/test:1409:7)
+>       at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+>     generatedMessage: false,
+>     code: 'ERR_ASSERTION',
+>     actual: NaN,
+>     expected: 40,
+>     operator: 'strictEqual',
+>     diff: 'simple'
+>   }
+> [REDACTADO]$
+
+### Salida
+
+**Causa demostrada en tu WSL:** los cuatro hijos imprimieron `15`, `25`, `0` y `0`, cada número rodeado por códigos ANSI de color (`\u001b[33m` y `\u001b[39m`); `stderr` estaba vacío. Suman 40, pero `Number(stdout.trim())` devuelve `NaN` al encontrar esos códigos. Reproduje exactamente el formato con `FORCE_COLOR=1`; no he comprobado qué ajuste concreto activó el color en tu terminal. Es una fragilidad del test ante la configuración de color, sin indicios de carrera SQLite ni defecto de cuotas.
+
+**Corrección aplicada, separada de N-03:** [quota-worker.ts](/mnt/e/propioJOSE/stellar/tilcai-audit/tilcai-infrastructure/test/support/quota-worker.ts:13) escribe el entero como texto sin formato con `process.stdout.write`. [repository-sqlite.test.ts](/mnt/e/propioJOSE/stellar/tilcai-audit/tilcai-infrastructure/test/unit/repository-sqlite.test.ts:117) exige un stdout numérico y muestra stdout y stderr literales si vuelve a fallar. Conservé la conversión y la aserción de 40; retiré el `console.error` temporal. No cambié Iris, SQLite, cuotas, contratos, dependencias ni `dev.md`.
+
+**Verificación:** el caso aislado pasó 1/1 con el mismo comando `node --import tsx --test` y `FORCE_COLOR=1`; `git diff --check` pasó. Falta reejecutarlo en tu WSL tras esta corrección. El defecto del test ya estaba en `origin/main`; no corresponde al código de N-03. No hice commit, push, PR, merge ni pruebas externas.
+
+## 2026-11-04T19:40:17Z · joseemen11 · Codex (GPT-6)
+
+- **Sesión:** n/d
+- **Rama:** fix/sqlite-quota-worker-output
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> # TilcAI — Preparación segura de commits y PR para N-03
+>
+> Trabajamos en `fix/n03-iris-timeout-fees`, basada en `467b74b`.
+>
+> La implementación de N-03 está completa y sus pruebas han pasado: 264/264, lint, typecheck y `git diff --check`.
+>
+> La revisión final detectó dos problemas de preparación:
+>
+> 1. Hay una corrección independiente de salida ANSI en `test/support/quota-worker.ts` y `test/unit/repository-sqlite.test.ts`.
+> 2. `AGENT_HISTORY.md` tiene entradas locales que no cumplen estrictamente el criterio append-only y contiene un `+##` literal.
+>
+> Quiero preparar ambos trabajos correctamente, sin perder nada.
+>
+> ## 1. Verificación y respaldo
+>
+> Inspecciona la rama, HEAD, cambios locales y archivos sin seguimiento.
+>
+> Verifica que existen los respaldos locales creados en el directorio padre. Si necesitas crear respaldos adicionales, guárdalos fuera del repositorio.
+>
+> Preserva especialmente `dev.md`, `test/unit/iris.test.ts` y todas las entradas nuevas de `AGENT_HISTORY.md`.
+>
+> No ejecutes `git reset --hard`, `git clean`, force push ni operaciones destructivas.
+>
+> ## 2. Separar la corrección SQLite
+>
+> Usa preferentemente un Git worktree independiente basado en `origin/main` para preparar la rama `fix/sqlite-quota-worker-output`.
+>
+> Traslada exclusivamente la corrección de estos archivos:
+>
+> - `test/support/quota-worker.ts`
+> - `test/unit/repository-sqlite.test.ts`
+>
+> Conserva la aserción original de 40 y la validación estricta del stdout.
+>
+> Registra en `AGENT_HISTORY.md` únicamente las entradas que correspondan a esa rama, respetando las instrucciones del repositorio.
+>
+> No mezcles implementaciones de N-03.
+>
+> No elimines los cambios originales hasta comprobar que la copia independiente es idéntica y recuperable.
+>
+> ## 3. Integridad del historial
+>
+> En la rama N-03, compara el contenido actual de `AGENT_HISTORY.md` con el archivo versionado en HEAD.
+>
+> La versión comprometida debe permanecer intacta, byte por byte, como prefijo del nuevo contenido.
+>
+> Puedes reorganizar las entradas que todavía son exclusivamente locales, sin commit, para colocarlas al final y en su orden cronológico relativo.
+>
+> Corrige el encabezado literal `+##` únicamente si pertenece a una entrada nueva no comprometida.
+>
+> Conserva todas las entradas legítimas de prompts N-03.
+>
+> No alteres las 137 marcas repetidas ni ningún contenido histórico ya presente en `origin/main`. No modifiques ni suprimas entradas de otros usuarios.
+>
+> Si las reglas de orden cronológico y append-only entran en conflicto debido a entradas ya publicadas, prioriza preservar el historial publicado y explica la limitación.
+>
+> Comprueba que ninguna entrada nueva incluya secretos, tokens o credenciales.
+>
+> ## 4. Preparar N-03
+>
+> Determina cómo retirar de la rama N-03 únicamente las modificaciones auxiliares de SQLite una vez aseguradas en la rama independiente.
+>
+> La rama N-03 debe contener solamente estos cambios funcionales:
+>
+> - `.env.example`
+> - `deploy/README.md`
+> - `src/app-context.ts`
+> - `src/config/env.ts`
+> - `src/modules/crosschain/cctp/iris.ts`
+> - `test/unit/config-networks.test.ts`
+> - `test/unit/iris.test.ts`
+> - Entradas correspondientes en `AGENT_HISTORY.md`
+>
+> `dev.md` debe permanecer fuera de los commits.
+>
+> No modificar el comportamiento de Iris salvo que encuentres un defecto nuevo demostrado.
+>
+> ## 5. Verificaciones y resultado
+>
+> Comprobar ambos árboles de trabajo y sus diferencias contra `origin/main`.
+>
+> Ejecutar las pruebas pertinentes donde las dependencias estén disponibles; distinguir cualquier bloqueo de pruebas de un fallo funcional.
+>
+> No ejecutar transacciones, Circle, blockchain, relayers ni despliegues.
+>
+> Al finalizar, informar en español:
+>
+> 1. Ramas y directorios preparados.
+> 2. Archivos exactos en cada rama.
+> 3. Cómo quedó garantizada la integridad append-only.
+> 4. Resultados reales de las verificaciones.
+> 5. Comandos de `git add` y `git commit` que debo ejecutar manualmente en cada rama.
+> 6. Qué secuencia de integración recomiendas.
+> 7. Qué cambios continúan pendientes y por qué.
+>
+> **No realizar commit, push, PR ni merge.** Detenerse si alguna operación puede perder cambios locales o modificar trabajo de otros integrantes.
+
+### Salida
+
+**Preparación terminada.** Ambas ramas parten de `467b74b` (`origin/main`). No hice commit, push, PR ni merge.
+
+### Árboles y archivos para cada commit
+
+- `fix/sqlite-quota-worker-output` en `/tmp/tilcai-infrastructure-sqlite-quota-worker-output`: `AGENT_HISTORY.md`, `test/support/quota-worker.ts`, `test/unit/repository-sqlite.test.ts`. La aserción de 40 y la validación estricta de stdout siguen intactas.
+- `fix/n03-iris-timeout-fees` en el directorio actual: `.env.example`, `AGENT_HISTORY.md`, `deploy/README.md`, `src/app-context.ts`, `src/config/env.ts`, `src/modules/crosschain/cctp/iris.ts`, `test/unit/config-networks.test.ts`, `test/unit/iris.test.ts`. `dev.md` permanece sin seguimiento y fuera de ambos commits.
+
+No encontré respaldos preexistentes en el directorio padre. Creé y verifiqué `../tilcai-n03-prep-20261104T194017Z-workspace-files.tgz`, con los 11 archivos locales originales, incluidos `dev.md`, `iris.test.ts`, el historial y los dos archivos SQLite. Comparé los archivos SQLite copiados byte por byte antes de restaurarlos en N-03; los archivos de Iris y `dev.md` siguen idénticos al respaldo.
+
+### Historial y verificaciones
+
+Los **313 534 bytes versionados** de `AGENT_HISTORY.md` son el prefijo exacto en ambos árboles. Redistribuí las seis entradas locales anteriores: tres de N-03 y tres del diagnóstico SQLite; este prompt queda registrado en ambos. Solo corregí `+##` en la entrada local de N-03. Las 137 marcas repetidas del historial publicado permanecen intactas. La entrada local de las 13:33 queda después de una entrada publicada de las 13:44: es la inversión cronológica necesaria para preservar el prefijo publicado. La búsqueda de patrones de credenciales en las entradas nuevas dio cero resultados.
+
+- N-03: pruebas focalizadas de Iris y configuración, PASS; lint y typecheck, PASS.
+- SQLite: archivo unitario completo, **37/37 PASS**; caso aislado con `FORCE_COLOR=1`, **1/1 PASS**, fuera del sandbox. Dentro del sandbox ese archivo dio un fallo genérico antes de la aserción.
+- `git diff --check`, PASS en ambos árboles. La suite 264/264 que reportaste corresponde al árbol anterior a la separación; no la repetí sobre N-03 aislada, donde el fallo ANSI puede reaparecer en WSL hasta integrar la rama SQLite.
+
+### Comandos manuales
+
+```bash
+git -C /tmp/tilcai-infrastructure-sqlite-quota-worker-output add -- AGENT_HISTORY.md test/support/quota-worker.ts test/unit/repository-sqlite.test.ts
+git -C /tmp/tilcai-infrastructure-sqlite-quota-worker-output commit -m "test(sqlite): keep quota worker stdout numeric"
+
+git add -- .env.example AGENT_HISTORY.md deploy/README.md src/app-context.ts src/config/env.ts src/modules/crosschain/cctp/iris.ts test/unit/config-networks.test.ts test/unit/iris.test.ts
+git commit -m "fix(cctp): bound Iris requests and validate fees"
+```
+
+Integra primero la corrección SQLite mediante su propio PR; después actualiza N-03 sobre `main`, comprueba otra vez el prefijo del historial y ejecuta la suite completa en tu WSL antes del PR N-03. Quedan pendientes esos commits y PR manuales, la suite completa tras la integración y las revisiones funcionales de Saúl/Jhamil. El worktree SQLite está en `/tmp`, por lo que conviene completar su commit antes de una limpieza de temporales; el respaldo durable está en el directorio padre.
 
 ## 2026-11-04T13:33:56Z · joseemen11 · Codex (GPT-6)
 
@@ -4106,7 +4763,7 @@ La [issue #29](https://github.com/TilcAI/tilcai-infrastructure/issues/29) queda 
 
 **Separación segura:** conservar ambos archivos de cuotas y sus entradas de historial como parche independiente; integrarlo primero en una rama/PR aparte y luego actualizar N-03 sobre esa base. Para el commit N-03, seleccionar rutas y secciones de historial explícitamente; no usar `git add .`. Si se excluye el arreglo de cuotas antes de integrarlo, la suite de ese commit puede volver a fallar en tu WSL. Falta resolver el tratamiento append-only de la entrada histórica mal ubicada; las revisiones de Saúl y Jhamil siguen pendientes para el merge. No hice commit, push, PR ni merge, ni contacté servicios financieros.
 
-## 2026-11-04T19:40:17Z · joseemen11 · Codex (GPT-6)
+## 2026-11-04T20:32:13Z · joseemen11 · Codex (GPT-6)
 
 - **Sesión:** n/d
 - **Rama:** fix/n03-iris-timeout-fees
@@ -4114,130 +4771,34 @@ La [issue #29](https://github.com/TilcAI/tilcai-infrastructure/issues/29) queda 
 
 ### Prompt
 
-> # TilcAI — Preparación segura de commits y PR para N-03
+> Estamos en `fix/n03-iris-timeout-fees`, durante un merge iniciado con `git merge --no-commit --no-ff origin/main`.
 >
-> Trabajamos en `fix/n03-iris-timeout-fees`, basada en `467b74b`.
+> El merge automático no presentó conflictos, pero el script de integridad de `AGENT_HISTORY.md` se detuvo con:
 >
-> La implementación de N-03 está completa y sus pruebas han pasado: 264/264, lint, typecheck y `git diff --check`.
+> `ERROR: alguna entrada N-03 ya existe en main`
 >
-> La revisión final detectó dos problemas de preparación:
+> **Objetivo:** resolver exclusivamente la integración del historial, conservando el trabajo propio y de los compañeros.
 >
-> 1. Hay una corrección independiente de salida ANSI en `test/support/quota-worker.ts` y `test/unit/repository-sqlite.test.ts`.
-> 2. `AGENT_HISTORY.md` tiene entradas locales que no cumplen estrictamente el criterio append-only y contiene un `+##` literal.
+> 1. Inspecciona `HEAD:AGENT_HISTORY.md`, `origin/main:AGENT_HISTORY.md` y la versión del índice/working tree.
+> 2. Identifica todas las entradas N-03 desde la base `467b74b`, comparando fecha, autor, prompt y salida completa.
+> 3. Detecta entradas ya publicadas por el PR #54 de SQLite. No confundas encabezados iguales con contenido idéntico.
+> 4. Reconstruye `AGENT_HISTORY.md` preservando byte por byte la versión actual de `origin/main` como prefijo, y añade solamente el contenido legítimo de N-03 que todavía no esté registrado.
+> 5. Si una entrada publicada contiene el mismo prompt pero una salida distinta, no la sobrescribas ni elimines información única: documenta mediante una entrada complementaria append-only la información adicional, citando la entrada original.
+> 6. No dupliques registros ni reescribas entradas históricas publicadas.
+> 7. Verifica integridad, ausencia de secretos, `git diff --check` y que `dev.md` permanece intacto.
+> 8. No modifiques código funcional, dependencias ni tests.
+> 9. No realices commit, push, PR, merge adicional ni abortes el merge actual.
 >
-> Quiero preparar ambos trabajos correctamente, sin perder nada.
+> Entrega el número de entradas duplicadas, faltantes y diferentes; qué conservaste; y un dictamen `HISTORY_READY` o `BLOCKED`.
 >
-> ## 1. Verificación y respaldo
->
-> Inspecciona la rama, HEAD, cambios locales y archivos sin seguimiento.
->
-> Verifica que existen los respaldos locales creados en el directorio padre. Si necesitas crear respaldos adicionales, guárdalos fuera del repositorio.
->
-> Preserva especialmente `dev.md`, `test/unit/iris.test.ts` y todas las entradas nuevas de `AGENT_HISTORY.md`.
->
-> No ejecutes `git reset --hard`, `git clean`, force push ni operaciones destructivas.
->
-> ## 2. Separar la corrección SQLite
->
-> Usa preferentemente un Git worktree independiente basado en `origin/main` para preparar la rama `fix/sqlite-quota-worker-output`.
->
-> Traslada exclusivamente la corrección de estos archivos:
->
-> - `test/support/quota-worker.ts`
-> - `test/unit/repository-sqlite.test.ts`
->
-> Conserva la aserción original de 40 y la validación estricta del stdout.
->
-> Registra en `AGENT_HISTORY.md` únicamente las entradas que correspondan a esa rama, respetando las instrucciones del repositorio.
->
-> No mezcles implementaciones de N-03.
->
-> No elimines los cambios originales hasta comprobar que la copia independiente es idéntica y recuperable.
->
-> ## 3. Integridad del historial
->
-> En la rama N-03, compara el contenido actual de `AGENT_HISTORY.md` con el archivo versionado en HEAD.
->
-> La versión comprometida debe permanecer intacta, byte por byte, como prefijo del nuevo contenido.
->
-> Puedes reorganizar las entradas que todavía son exclusivamente locales, sin commit, para colocarlas al final y en su orden cronológico relativo.
->
-> Corrige el encabezado literal `+##` únicamente si pertenece a una entrada nueva no comprometida.
->
-> Conserva todas las entradas legítimas de prompts N-03.
->
-> No alteres las 137 marcas repetidas ni ningún contenido histórico ya presente en `origin/main`. No modifiques ni suprimas entradas de otros usuarios.
->
-> Si las reglas de orden cronológico y append-only entran en conflicto debido a entradas ya publicadas, prioriza preservar el historial publicado y explica la limitación.
->
-> Comprueba que ninguna entrada nueva incluya secretos, tokens o credenciales.
->
-> ## 4. Preparar N-03
->
-> Determina cómo retirar de la rama N-03 únicamente las modificaciones auxiliares de SQLite una vez aseguradas en la rama independiente.
->
-> La rama N-03 debe contener solamente estos cambios funcionales:
->
-> - `.env.example`
-> - `deploy/README.md`
-> - `src/app-context.ts`
-> - `src/config/env.ts`
-> - `src/modules/crosschain/cctp/iris.ts`
-> - `test/unit/config-networks.test.ts`
-> - `test/unit/iris.test.ts`
-> - Entradas correspondientes en `AGENT_HISTORY.md`
->
-> `dev.md` debe permanecer fuera de los commits.
->
-> No modificar el comportamiento de Iris salvo que encuentres un defecto nuevo demostrado.
->
-> ## 5. Verificaciones y resultado
->
-> Comprobar ambos árboles de trabajo y sus diferencias contra `origin/main`.
->
-> Ejecutar las pruebas pertinentes donde las dependencias estén disponibles; distinguir cualquier bloqueo de pruebas de un fallo funcional.
->
-> No ejecutar transacciones, Circle, blockchain, relayers ni despliegues.
->
-> Al finalizar, informar en español:
->
-> 1. Ramas y directorios preparados.
-> 2. Archivos exactos en cada rama.
-> 3. Cómo quedó garantizada la integridad append-only.
-> 4. Resultados reales de las verificaciones.
-> 5. Comandos de `git add` y `git commit` que debo ejecutar manualmente en cada rama.
-> 6. Qué secuencia de integración recomiendas.
-> 7. Qué cambios continúan pendientes y por qué.
->
-> **No realizar commit, push, PR ni merge.** Detenerse si alguna operación puede perder cambios locales o modificar trabajo de otros integrantes.
+> Si está listo, deja `AGENT_HISTORY.md` preparado para que pueda continuar manualmente con las pruebas y el commit de merge.
 
 ### Salida
 
-**Preparación terminada.** Ambas ramas parten de `467b74b` (`origin/main`). No hice commit, push, PR ni merge.
+**HISTORY_READY.** El merge sigue abierto; no hice commit, push, PR, merge adicional ni aborté el actual.
 
-### Árboles y archivos para cada commit
+Comparé las cuatro entradas N-03 de `HEAD` posteriores a `467b74b` por fecha, autor, prompt y salida completa. En `origin/main` hay **1 duplicada** (`2026-11-04T19:40:17Z`: mismo prompt y salida; el campo `Rama` refleja su publicación por el PR #54 de SQLite), **3 faltantes** (`13:33:56`, `13:46:31`, `19:21:41`) y **0 con salida publicada diferente**. El índice automático había incrustado fragmentos de unas entradas en otras; reconstruí el archivo desde las versiones completas.
 
-- `fix/sqlite-quota-worker-output` en `/tmp/tilcai-infrastructure-sqlite-quota-worker-output`: `AGENT_HISTORY.md`, `test/support/quota-worker.ts`, `test/unit/repository-sqlite.test.ts`. La aserción de 40 y la validación estricta de stdout siguen intactas.
-- `fix/n03-iris-timeout-fees` en el directorio actual: `.env.example`, `AGENT_HISTORY.md`, `deploy/README.md`, `src/app-context.ts`, `src/config/env.ts`, `src/modules/crosschain/cctp/iris.ts`, `test/unit/config-networks.test.ts`, `test/unit/iris.test.ts`. `dev.md` permanece sin seguimiento y fuera de ambos commits.
+`AGENT_HISTORY.md` conserva los **356 196 bytes de `origin/main` como prefijo exacto**. Después contiene las tres entradas N-03 faltantes, tomadas de `HEAD`, y el registro de este prompt. No reescribí entradas de compañeros ni dupliqué la ya publicada. La entrada de las 13:33 queda al final para respetar el historial publicado, aunque su hora sea anterior a otras entradas.
 
-No encontré respaldos preexistentes en el directorio padre. Creé y verifiqué `../tilcai-n03-prep-20261104T194017Z-workspace-files.tgz`, con los 11 archivos locales originales, incluidos `dev.md`, `iris.test.ts`, el historial y los dos archivos SQLite. Comparé los archivos SQLite copiados byte por byte antes de restaurarlos en N-03; los archivos de Iris y `dev.md` siguen idénticos al respaldo.
-
-### Historial y verificaciones
-
-Los **313 534 bytes versionados** de `AGENT_HISTORY.md` son el prefijo exacto en ambos árboles. Redistribuí las seis entradas locales anteriores: tres de N-03 y tres del diagnóstico SQLite; este prompt queda registrado en ambos. Solo corregí `+##` en la entrada local de N-03. Las 137 marcas repetidas del historial publicado permanecen intactas. La entrada local de las 13:33 queda después de una entrada publicada de las 13:44: es la inversión cronológica necesaria para preservar el prefijo publicado. La búsqueda de patrones de credenciales en las entradas nuevas dio cero resultados.
-
-- N-03: pruebas focalizadas de Iris y configuración, PASS; lint y typecheck, PASS.
-- SQLite: archivo unitario completo, **37/37 PASS**; caso aislado con `FORCE_COLOR=1`, **1/1 PASS**, fuera del sandbox. Dentro del sandbox ese archivo dio un fallo genérico antes de la aserción.
-- `git diff --check`, PASS en ambos árboles. La suite 264/264 que reportaste corresponde al árbol anterior a la separación; no la repetí sobre N-03 aislada, donde el fallo ANSI puede reaparecer en WSL hasta integrar la rama SQLite.
-
-### Comandos manuales
-
-```bash
-git -C /tmp/tilcai-infrastructure-sqlite-quota-worker-output add -- AGENT_HISTORY.md test/support/quota-worker.ts test/unit/repository-sqlite.test.ts
-git -C /tmp/tilcai-infrastructure-sqlite-quota-worker-output commit -m "test(sqlite): keep quota worker stdout numeric"
-
-git add -- .env.example AGENT_HISTORY.md deploy/README.md src/app-context.ts src/config/env.ts src/modules/crosschain/cctp/iris.ts test/unit/config-networks.test.ts test/unit/iris.test.ts
-git commit -m "fix(cctp): bound Iris requests and validate fees"
-```
-
-Integra primero la corrección SQLite mediante su propio PR; después actualiza N-03 sobre `main`, comprueba otra vez el prefijo del historial y ejecuta la suite completa en tu WSL antes del PR N-03. Quedan pendientes esos commits y PR manuales, la suite completa tras la integración y las revisiones funcionales de Saúl/Jhamil. El worktree SQLite está en `/tmp`, por lo que conviene completar su commit antes de una limpieza de temporales; el respaldo durable está en el directorio padre.
+Verifiqué que el archivo preparado coincide con el índice, que `git diff --check` y la comprobación de espacios del historial preparado pasan, y que no aparecen patrones de claves, tokens o credenciales en lo añadido. `dev.md` conserva su hash SHA-256 original y sigue sin seguimiento. No cambié código, dependencias ni tests. Puedes continuar manualmente con las pruebas y el commit del merge.

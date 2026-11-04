@@ -428,4 +428,13 @@ CREATE TRIGGER trg_key_events_no_delete BEFORE DELETE ON tenant_key_events
 BEGIN SELECT RAISE(ABORT, 'tenant_key_events is insert-only'); END;
 `,
   },
+  {
+    // 9: 6 is qr_collections, 7 sponsored_holds (N-14) and 8 the tenant credentials. Two migrations with one id would
+    // leave the second one never applied on a database that ran the first; the runner applies whatever id is missing.
+    // The pending events a receiver lost to MONITOR_PENDING_MAX_DAYS, until it is told (JSON SinkGap).
+    id: 9,
+    sql: `
+ALTER TABLE monitor_sinks ADD COLUMN gap_json TEXT;
+`,
+  },
 ];
