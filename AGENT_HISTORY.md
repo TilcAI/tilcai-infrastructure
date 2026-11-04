@@ -3801,3 +3801,17 @@ Merge de main (6469603, ya con N-01 #49) en la rama de N-14. `repository.ts`: se
 ### Salida
 
 Merge de main (88d0211, ya con N-01 y N-14) en la rama de N-10. Único conflicto: imports de `src/modules/crosschain/service.ts`; se conservan `isTerminal` (N-10) e `isSponsoredMode` (N-14). Typecheck local no concluyente (sin token de GitHub Packages para `@tilcai/core`); queda para el CI.
+
+## 2026-11-04T05:29:38.932694+00:00 · saulchoque · Codex
+
+- **Sesión:** n/d
+- **Rama:** fix/saulchoque-vault-soroban-2026-11-01
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> resuelve los conflictos y mergea la pr 'http://github.com/TilcAI/tilcai-infrastructure/pull/48' a main
+
+### Salida
+
+Actualizada la PR con main mediante merge automático, conservando Core privado y guardas Vault. Validados lint, typecheck, 247 tests TypeScript, 5 Python y 5 de evidencia offline. CI ampliado con preflight/evidencia; integración por squash y seguimiento del despliegue automático. Documento exclusivo de rama excluido; #32 conserva aceptación D-05 pendiente.
