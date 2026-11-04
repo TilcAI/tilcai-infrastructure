@@ -161,7 +161,7 @@ export function createAppContext(name: string, env: Env = loadEnv()): AppContext
     repo: new SqliteCrosschainRepository(db),
     evm: primaryLeg!.evm,
     stellar: new SorobanStellarCctp(nets.stellar, runtime.stellarSimulationSource || undefined),
-    iris: new IrisClient(runtime.irisApiUrl),
+    iris: new IrisClient(runtime.irisApiUrl, fetch, env.IRIS_TIMEOUT_MS),
     submitters,
     activeSubmitter: env.STELLAR_MINT_SUBMITTER,
     ...(primaryLeg!.evmSubmitter ? { evmSubmitter: primaryLeg!.evmSubmitter } : {}),

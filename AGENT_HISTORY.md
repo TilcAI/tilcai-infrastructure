@@ -3970,3 +3970,274 @@ Auditada autoría y equivalencia con main; retiradas ocho ramas remotas incluida
 ### Salida
 
 Merge de main (c2f57a9, con credenciales #53 y vault #48). `src/app-context.ts`: se conserva la sincronización síncrona que detiene el arranque si falla (N-04) y se pasa `env.TILCAI_ENV` al registro, como hace #53. Typecheck limpio y 255/255 tests en local.
+
+## 2026-11-04T13:33:56Z · joseemen11 · Codex (GPT-6)
+
+- **Sesión:** n/d
+- **Rama:** main
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> dev.md lee y ejecuta para tilcai
+
+### Salida
+
+## Revisión técnica N-03 — [issue #29](https://github.com/TilcAI/tilcai-infrastructure/issues/29)
+
+**Baseline.** Rama `main`, HEAD `c2f57a9`, idéntico a `origin/main` y al último commit publicado consultado. Al comenzar, el único cambio local era `dev.md` sin seguimiento. N-01 ([PR #49](https://github.com/TilcAI/tilcai-infrastructure/pull/49)), N-14 ([PR #51](https://github.com/TilcAI/tilcai-infrastructure/pull/51)) y N-10 ([PR #50](https://github.com/TilcAI/tilcai-infrastructure/pull/50)) ya están integradas. Solo añadí esta respuesta a `AGENT_HISTORY.md`.
+
+### Diagnóstico
+
+- **H-13: confirmado.** Las dos llamadas `fetch` de [iris.ts](/mnt/e/propioJOSE/stellar/tilcai-audit/tilcai-infrastructure/src/modules/crosschain/cctp/iris.ts:29) carecen de `AbortSignal`; tampoco acotan `res.json()`. Una tarifa colgada deja pendiente `quote()` antes de insertar en SQLite ([service.ts](/mnt/e/propioJOSE/stellar/tilcai-audit/tilcai-infrastructure/src/modules/crosschain/service.ts:136)). Una consulta de mensaje colgada retiene `stepBurnConfirmed()`; `processDue()` espera cada pago en serie ([service.ts](/mnt/e/propioJOSE/stellar/tilcai-audit/tilcai-infrastructure/src/modules/crosschain/service.ts:449)). El worker espera esa ronda al detenerse ([loop.ts](/mnt/e/propioJOSE/stellar/tilcai-audit/tilcai-infrastructure/src/apps/worker/loop.ts:75)). Su separación de housekeeping no libera la ronda de conciliación.
+- **H-24: confirmado.** `find(...)?.minimumFee ?? 0` convierte tier ausente y tarifa nula en cero ([iris.ts](/mnt/e/propioJOSE/stellar/tilcai-audit/tilcai-infrastructure/src/modules/crosschain/cctp/iris.ts:42)); `quote()` solicita el tier `2000`, calcula `maxFee` y persiste la cotización ([service.ts](/mnt/e/propioJOSE/stellar/tilcai-audit/tilcai-infrastructure/src/modules/crosschain/service.ts:136), [repository.ts](/mnt/e/propioJOSE/stellar/tilcai-audit/tilcai-infrastructure/src/modules/crosschain/repository.ts:69)). Un negativo también pasa al `bigint` y `maxFeeForBps` lo trata como cero ([amount.ts](/mnt/e/propioJOSE/stellar/tilcai-audit/tilcai-infrastructure/src/shared/amount.ts:7)). El tipo declarado no valida JSON en ejecución; un string numérico puede convertirse por coerción. `Math.round(bps * 100)` puede rebajar una fracción menor a 0,005 bps a cero.
+
+**Contrato verificado.** La [referencia oficial de tarifas V2](https://developers.circle.com/api-reference/cctp/all/get-burn-usdc-fees) define un array con `finalityThreshold` y `minimumFee` numérico en puntos básicos; su ejemplo incluye `2000` con cero explícito. La [guía de Circle](https://developers.circle.com/cctp/references/technical-guide) identifica `2000` como finalidad estándar. Esto respalda aceptar cero explícito y rechazar ausencia; la referencia no fija una precisión decimal máxima ni demuestra la respuesta de una ruta real. No se consultó Iris en vivo.
+
+### Impacto y propuesta mínima
+
+- En `cctp/iris.ts`, aplicar un plazo finito a ambas consultas y al consumo del cuerpo mediante una señal de aborto; clasificar timeout, aborto y HTTP/JSON inválido sin convertirlos en `not_found` ni `pending`. `AbortSignal.timeout` encaja con patrones ya presentes en el repositorio. Un `Promise.race` aislado deja el `fetch` en curso; un timeout global del worker tampoco resuelve el bloqueo de `quote()`.
+- Validar el array, seleccionar solo el tier exacto solicitado y exigir `minimumFee` de tipo number, finito y no negativo. Convertirlo a centésimas de bps sin redondear a la baja; fijar con Saúl el tratamiento de más de dos decimales y del límite seguro de `number` antes de cambiar importes. Mantener `maxFeeForBps`, `RouteQuote` y columnas SQLite.
+- Conservar `service.ts` salvo que se decida cancelar inmediatamente en `stop()`: el plazo de Iris por sí solo hace acotada la parada. Si se exige cancelación inmediata, propagar señal desde `loop.ts` por `processDue/step` hasta `IrisPort.lookup`, distinguiendo parada de timeout al reprogramar. No tocar las guardas de reenvío de burn/mint, la cuota patrocinada ni `settle()` atómico.
+
+**Compatibilidad.** N-01 añadió `settle()` transaccional ([repository.ts](/mnt/e/propioJOSE/stellar/tilcai-audit/tilcai-infrastructure/src/modules/crosschain/repository.ts:36)); N-14 reserva cuota antes del burn ([service.ts](/mnt/e/propioJOSE/stellar/tilcai-audit/tilcai-infrastructure/src/modules/crosschain/service.ts:387)); N-10 evita reprogramar estados terminales ([service.ts](/mnt/e/propioJOSE/stellar/tilcai-audit/tilcai-infrastructure/src/modules/crosschain/service.ts:775)). Ninguna corrigió H-13/H-24. El lookup de Iris es lectura tras un burn existente; su timeout debe producir backoff y permitir el siguiente pago, sin generar otro burn ni mint. Las quotes ya guardadas quedan intactas; revisarlas sería un trabajo separado.
+
+### Pruebas, documentación y checklist
+
+- Reutilizar [cctp.test.ts](/mnt/e/propioJOSE/stellar/tilcai-audit/tilcai-infrastructure/test/unit/cctp.test.ts:19), [crosschain-service.test.ts](/mnt/e/propioJOSE/stellar/tilcai-audit/tilcai-infrastructure/test/unit/crosschain-service.test.ts:34), el harness SQLite de [fakes.ts](/mnt/e/propioJOSE/stellar/tilcai-audit/tilcai-infrastructure/test/support/fakes.ts:259) y la prueba de carrera N-10. Añadir dos grupos offline: (1) `fetch`/lectura JSON colgados que obedecen aborto, 503, JSON roto y aborto, verificando backoff, avance del segundo pago y `stop()` acotado; (2) tier `2000` con tarifa positiva/cero y respuestas vacía, otro tier, campo ausente/nulo, negativo, string, no finito o precisión límite, verificando error y cero quotes inválidas tras reabrir SQLite. El fake actual devuelve siempre 0 y debe ampliarse.
+- La [issue #29](https://github.com/TilcAI/tilcai-infrastructure/issues/29) sigue abierta: baseline y contrato revisados; faltan implementación, regresiones, typecheck, resultados offline, evidencia en PR y revisión independiente. No ejecuté pruebas: faltan `node` y `node_modules` en este entorno. No ejecuté proveedores reales ni `crosschain-e2e.test.ts`.
+- Durante este análisis no corresponde editar documentación técnica. En la implementación, actualizar `.env.example` y `deploy/README.md` solo si se introduce un plazo configurable; ajustar `README.md` si cambia el comportamiento observable de cotización o parada. `implementación.md` solo menciona contratos Circle en las secciones pertinentes y no exige cambio ahora.
+
+**Decisiones para Saúl/Jhamil.** Saúl: política de precisión y límites de tarifa, sin modificar margen ni finalidad. Jhamil: si basta parada acotada por timeout o se necesita aborto inmediato del worker. Revisar en PR el tratamiento de un error de Iris tras un avance concurrente de estado.
+
+**Dictamen: NEEDS_DECISION.** El diagnóstico y el alcance mínimo están claros; faltan esas dos decisiones antes de fijar la implementación y sus tests.
+
+## 2026-11-04T13:46:31Z · joseemen11 · Codex (GPT-6)
+
+- **Sesión:** n/d
+- **Rama:** fix/n03-iris-timeout-fees
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> vuelve a leer y ejecutar camibé el contenido
+
+### Salida
+
+## N-03 preparada para revisión
+
+**Base:** creé `fix/n03-iris-timeout-fees` desde `c2f57a9` y la avancé hasta `467b74b`, igual a `origin/main`. Conservé `dev.md` y el historial local; resolví la combinación con la nueva entrada N-04 en orden cronológico. No hice commit, push ni PR.
+
+**Cambios realizados:**
+
+- [iris.ts](/mnt/e/propioJOSE/stellar/tilcai-audit/tilcai-infrastructure/src/modules/crosschain/cctp/iris.ts:26): plazo con `AbortSignal.timeout` para consultas y lectura del cuerpo; errores distinguibles de timeout, aborto, HTTP, red y respuesta inválida. Una respuesta inválida de mensajes ya no se interpreta como pendiente o inexistente.
+- [iris.ts](/mnt/e/propioJOSE/stellar/tilcai-audit/tilcai-infrastructure/src/modules/crosschain/cctp/iris.ts:93): exige un único tier exacto y `minimumFee` numérico, finito y no negativo. Conserva el decimal original del JSON y redondea hacia arriba con `bigint` solo cuando excede dos decimales: `1.09 → 109`, `1.0901 → 110`, y cualquier positivo menor de `0.01 → 1`. Rechaza valores fuera del límite seguro de centésimas; acepta cero explícito.
+- [env.ts](/mnt/e/propioJOSE/stellar/tilcai-audit/tilcai-infrastructure/src/config/env.ts:101) y [app-context.ts](/mnt/e/propioJOSE/stellar/tilcai-audit/tilcai-infrastructure/src/app-context.ts:164): `IRIS_TIMEOUT_MS` validado entre 1000 y 60000 ms, por defecto 10000 ms, conectado al cliente.
+- [iris.test.ts](/mnt/e/propioJOSE/stellar/tilcai-audit/tilcai-infrastructure/test/unit/iris.test.ts:1) y [config-networks.test.ts](/mnt/e/propioJOSE/stellar/tilcai-audit/tilcai-infrastructure/test/unit/config-networks.test.ts:52): regresiones offline de fetch/cuerpo colgados, 503, aborto, JSON inválido, reintento, avance del segundo pago, `stop()`, tarifas y SQLite reabierta. Actualicé [.env.example](/mnt/e/propioJOSE/stellar/tilcai-audit/tilcai-infrastructure/.env.example:21) y [deploy/README.md](/mnt/e/propioJOSE/stellar/tilcai-audit/tilcai-infrastructure/deploy/README.md:120) por la nueva configuración.
+
+**Verificación real:** `git diff --check` pasó sin errores. Los tests focalizados, `npm run lint`, `npm run typecheck` y `npm test` **no se ejecutaron**: no hay Node/npm de Linux ni `node_modules`; `node.exe` da `Exec format error`, `npm.cmd` no funciona en Bash y Docker no está integrado. Tampoco se contactó a Circle, blockchain ni Relayer.
+
+**Checklist #29:** H-13 y H-24 tienen implementación y casos de regresión escritos, incluidos cero explícito y ausencia de quotes inválidas tras reabrir SQLite. Quedan pendientes la ejecución de esas pruebas, typecheck/lint, evidencia de resultados y revisión independiente. N-01, N-10 y N-14 permanecen intactas: no cambié `service.ts`, `ports.ts`, el worker, `maxFeeForBps`, la finalidad ni el esquema SQLite.
+
+**Riesgos para revisión:** Saúl debe validar la política de redondeo conservador y el límite técnico de precisión frente al contrato de Circle. Jhamil debe revisar que la parada acotada por el timeout de Iris satisface el criterio; este cambio no cancela inmediatamente otros proveedores del worker.
+
+`git status --short`:
+```text
+ M .env.example
+ M AGENT_HISTORY.md
+ M deploy/README.md
+ M src/app-context.ts
+ M src/config/env.ts
+ M src/modules/crosschain/cctp/iris.ts
+ M test/unit/config-networks.test.ts
+?? dev.md
+?? test/unit/iris.test.ts
+```
+`git diff --stat`: 7 archivos, 251 inserciones y 15 borrados. Los dos archivos sin seguimiento no aparecen hasta añadirse al índice. `git diff --check`: sin salida, código 0.
+
+## 2026-11-04T19:21:41Z · joseemen11 · Codex (GPT-6)
+
+- **Sesión:** n/d
+- **Rama:** fix/n03-iris-timeout-fees
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> # TilcAI — N-03 | Revisión final previa al commit
+>
+> Estamos trabajando en la rama `fix/n03-iris-timeout-fees`, issue #29.
+>
+> Ya ejecutamos las verificaciones en WSL con resultados reales:
+>
+> - `npm run lint`: PASS
+> - `npm run typecheck`: PASS
+> - `npm test`: 264/264 PASS
+> - `git diff --check`: PASS
+> - Regresiones H-13, H-24, N-01, N-10 y N-14: PASS
+>
+> Quiero una última revisión independiente del código modificado antes del commit.
+>
+> **Tareas:**
+>
+> 1. Inspecciona todos los cambios de N-03 respecto de `origin/main`, incluidos los archivos nuevos sin seguimiento.
+> 2. Revisa especialmente `iris.ts`: precisión decimal, JSON, notación científica, abortos, timeout, respuesta inválida y clasificación de errores.
+> 3. Verifica que los tests cubran realmente los casos exigidos en la issue #29, sin aserciones artificiales ni fakes que oculten errores.
+> 4. Comprueba que las actualizaciones de configuración y documentación son estrictamente necesarias.
+> 5. Comprueba que `AGENT_HISTORY.md` mantiene su integridad y no contiene duplicaciones accidentales ni secretos.
+> 6. Identifica los cambios de `test/support/quota-worker.ts` y `test/unit/repository-sqlite.test.ts` como una corrección independiente de N-03. Propón cómo separarlos de forma segura sin perderlos.
+> 7. Preserva `dev.md` sin incluirlo en ningún commit.
+> 8. No modifiques código salvo para corregir un defecto concreto que puedas demostrar; en ese caso explica qué cambió y repite las verificaciones afectadas.
+>
+> Entrega una lista exacta de archivos que deben formar parte del commit N-03, los que deben quedar fuera, cualquier hallazgo pendiente y el dictamen `READY_FOR_COMMIT` o `NEEDS_FIX`.
+>
+> **No ejecutes commit, push, PR ni merge. No toques servicios en ejecución ni proveedores financieros reales.**
+
+### Salida
+
+**Dictamen: NEEDS_FIX para preparar el commit.** El código N-03 y sus regresiones están verdes; queda separar la corrección de cuotas y resolver la integridad de `AGENT_HISTORY.md` antes de seleccionar archivos.
+
+**Archivos del commit N-03:** `.env.example`, `deploy/README.md`, `src/app-context.ts`, `src/config/env.ts`, `src/modules/crosschain/cctp/iris.ts`, `test/unit/config-networks.test.ts`, `test/unit/iris.test.ts` (sin seguimiento) y únicamente las entradas N-03 pertinentes de `AGENT_HISTORY.md`. **Fuera:** `test/support/quota-worker.ts`, `test/unit/repository-sqlite.test.ts` (arreglo independiente de salida ANSI) y `dev.md` (sin seguimiento).
+
+**Defectos corregidos en esta revisión:** [iris.ts](/mnt/e/propioJOSE/stellar/tilcai-audit/tilcai-infrastructure/src/modules/crosschain/cctp/iris.ts:63) clasificaba un fallo de lectura del cuerpo como JSON inválido, y [iris.ts](/mnt/e/propioJOSE/stellar/tilcai-audit/tilcai-infrastructure/src/modules/crosschain/cctp/iris.ts:83) aceptaba `status: ""` como pendiente. Reproduje ambos casos, corregí solo esas ramas y añadí regresiones en [iris.test.ts](/mnt/e/propioJOSE/stellar/tilcai-audit/tilcai-infrastructure/test/unit/iris.test.ts:78). Tras el cambio: Iris 8/8, suite offline 264/264, lint, typecheck y `git diff --check` pasan.
+
+La [issue #29](https://github.com/TilcAI/tilcai-infrastructure/issues/29) queda cubierta por tests de fetch/cuerpo colgados, reintento y parada, sin nuevos burns/mints; tarifas ausentes o inválidas no dejan quotes tras reabrir SQLite, y cero explícito sí se acepta. Los fakes observan el aborto real y el servicio usa SQLite real. El parser conserva lexemas decimales, admite `2e3` como tier 2000, redondea hacia arriba sin coma flotante y rechaza desbordes. La [referencia V2 de Circle](https://developers.circle.com/api-reference/cctp/all/get-burn-usdc-fees) documenta `minimumFee` numérico en bps y un ejemplo de tier 2000 con cero. `.env.example` y `deploy/README.md` son necesarios para el nuevo plazo configurable.
+
+**Historial:** no hallé nuevas marcas de tiempo duplicadas ni patrones de tokens o claves privadas en las líneas añadidas. Sin embargo, la entrada de `2026-11-04T13:33:56Z` se insertó antes de una entrada previa, contra la regla de solo añadir, y conserva un encabezado literal `+##` ([AGENT_HISTORY.md](/mnt/e/propioJOSE/stellar/tilcai-audit/tilcai-infrastructure/AGENT_HISTORY.md:3973)). Las 137 marcas de tiempo repetidas ya existen en `origin/main`. No edité entradas anteriores.
+
+**Separación segura:** conservar ambos archivos de cuotas y sus entradas de historial como parche independiente; integrarlo primero en una rama/PR aparte y luego actualizar N-03 sobre esa base. Para el commit N-03, seleccionar rutas y secciones de historial explícitamente; no usar `git add .`. Si se excluye el arreglo de cuotas antes de integrarlo, la suite de ese commit puede volver a fallar en tu WSL. Falta resolver el tratamiento append-only de la entrada histórica mal ubicada; las revisiones de Saúl y Jhamil siguen pendientes para el merge. No hice commit, push, PR ni merge, ni contacté servicios financieros.
+
+## 2026-11-04T19:40:17Z · joseemen11 · Codex (GPT-6)
+
+- **Sesión:** n/d
+- **Rama:** fix/n03-iris-timeout-fees
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> # TilcAI — Preparación segura de commits y PR para N-03
+>
+> Trabajamos en `fix/n03-iris-timeout-fees`, basada en `467b74b`.
+>
+> La implementación de N-03 está completa y sus pruebas han pasado: 264/264, lint, typecheck y `git diff --check`.
+>
+> La revisión final detectó dos problemas de preparación:
+>
+> 1. Hay una corrección independiente de salida ANSI en `test/support/quota-worker.ts` y `test/unit/repository-sqlite.test.ts`.
+> 2. `AGENT_HISTORY.md` tiene entradas locales que no cumplen estrictamente el criterio append-only y contiene un `+##` literal.
+>
+> Quiero preparar ambos trabajos correctamente, sin perder nada.
+>
+> ## 1. Verificación y respaldo
+>
+> Inspecciona la rama, HEAD, cambios locales y archivos sin seguimiento.
+>
+> Verifica que existen los respaldos locales creados en el directorio padre. Si necesitas crear respaldos adicionales, guárdalos fuera del repositorio.
+>
+> Preserva especialmente `dev.md`, `test/unit/iris.test.ts` y todas las entradas nuevas de `AGENT_HISTORY.md`.
+>
+> No ejecutes `git reset --hard`, `git clean`, force push ni operaciones destructivas.
+>
+> ## 2. Separar la corrección SQLite
+>
+> Usa preferentemente un Git worktree independiente basado en `origin/main` para preparar la rama `fix/sqlite-quota-worker-output`.
+>
+> Traslada exclusivamente la corrección de estos archivos:
+>
+> - `test/support/quota-worker.ts`
+> - `test/unit/repository-sqlite.test.ts`
+>
+> Conserva la aserción original de 40 y la validación estricta del stdout.
+>
+> Registra en `AGENT_HISTORY.md` únicamente las entradas que correspondan a esa rama, respetando las instrucciones del repositorio.
+>
+> No mezcles implementaciones de N-03.
+>
+> No elimines los cambios originales hasta comprobar que la copia independiente es idéntica y recuperable.
+>
+> ## 3. Integridad del historial
+>
+> En la rama N-03, compara el contenido actual de `AGENT_HISTORY.md` con el archivo versionado en HEAD.
+>
+> La versión comprometida debe permanecer intacta, byte por byte, como prefijo del nuevo contenido.
+>
+> Puedes reorganizar las entradas que todavía son exclusivamente locales, sin commit, para colocarlas al final y en su orden cronológico relativo.
+>
+> Corrige el encabezado literal `+##` únicamente si pertenece a una entrada nueva no comprometida.
+>
+> Conserva todas las entradas legítimas de prompts N-03.
+>
+> No alteres las 137 marcas repetidas ni ningún contenido histórico ya presente en `origin/main`. No modifiques ni suprimas entradas de otros usuarios.
+>
+> Si las reglas de orden cronológico y append-only entran en conflicto debido a entradas ya publicadas, prioriza preservar el historial publicado y explica la limitación.
+>
+> Comprueba que ninguna entrada nueva incluya secretos, tokens o credenciales.
+>
+> ## 4. Preparar N-03
+>
+> Determina cómo retirar de la rama N-03 únicamente las modificaciones auxiliares de SQLite una vez aseguradas en la rama independiente.
+>
+> La rama N-03 debe contener solamente estos cambios funcionales:
+>
+> - `.env.example`
+> - `deploy/README.md`
+> - `src/app-context.ts`
+> - `src/config/env.ts`
+> - `src/modules/crosschain/cctp/iris.ts`
+> - `test/unit/config-networks.test.ts`
+> - `test/unit/iris.test.ts`
+> - Entradas correspondientes en `AGENT_HISTORY.md`
+>
+> `dev.md` debe permanecer fuera de los commits.
+>
+> No modificar el comportamiento de Iris salvo que encuentres un defecto nuevo demostrado.
+>
+> ## 5. Verificaciones y resultado
+>
+> Comprobar ambos árboles de trabajo y sus diferencias contra `origin/main`.
+>
+> Ejecutar las pruebas pertinentes donde las dependencias estén disponibles; distinguir cualquier bloqueo de pruebas de un fallo funcional.
+>
+> No ejecutar transacciones, Circle, blockchain, relayers ni despliegues.
+>
+> Al finalizar, informar en español:
+>
+> 1. Ramas y directorios preparados.
+> 2. Archivos exactos en cada rama.
+> 3. Cómo quedó garantizada la integridad append-only.
+> 4. Resultados reales de las verificaciones.
+> 5. Comandos de `git add` y `git commit` que debo ejecutar manualmente en cada rama.
+> 6. Qué secuencia de integración recomiendas.
+> 7. Qué cambios continúan pendientes y por qué.
+>
+> **No realizar commit, push, PR ni merge.** Detenerse si alguna operación puede perder cambios locales o modificar trabajo de otros integrantes.
+
+### Salida
+
+**Preparación terminada.** Ambas ramas parten de `467b74b` (`origin/main`). No hice commit, push, PR ni merge.
+
+### Árboles y archivos para cada commit
+
+- `fix/sqlite-quota-worker-output` en `/tmp/tilcai-infrastructure-sqlite-quota-worker-output`: `AGENT_HISTORY.md`, `test/support/quota-worker.ts`, `test/unit/repository-sqlite.test.ts`. La aserción de 40 y la validación estricta de stdout siguen intactas.
+- `fix/n03-iris-timeout-fees` en el directorio actual: `.env.example`, `AGENT_HISTORY.md`, `deploy/README.md`, `src/app-context.ts`, `src/config/env.ts`, `src/modules/crosschain/cctp/iris.ts`, `test/unit/config-networks.test.ts`, `test/unit/iris.test.ts`. `dev.md` permanece sin seguimiento y fuera de ambos commits.
+
+No encontré respaldos preexistentes en el directorio padre. Creé y verifiqué `../tilcai-n03-prep-20261104T194017Z-workspace-files.tgz`, con los 11 archivos locales originales, incluidos `dev.md`, `iris.test.ts`, el historial y los dos archivos SQLite. Comparé los archivos SQLite copiados byte por byte antes de restaurarlos en N-03; los archivos de Iris y `dev.md` siguen idénticos al respaldo.
+
+### Historial y verificaciones
+
+Los **313 534 bytes versionados** de `AGENT_HISTORY.md` son el prefijo exacto en ambos árboles. Redistribuí las seis entradas locales anteriores: tres de N-03 y tres del diagnóstico SQLite; este prompt queda registrado en ambos. Solo corregí `+##` en la entrada local de N-03. Las 137 marcas repetidas del historial publicado permanecen intactas. La entrada local de las 13:33 queda después de una entrada publicada de las 13:44: es la inversión cronológica necesaria para preservar el prefijo publicado. La búsqueda de patrones de credenciales en las entradas nuevas dio cero resultados.
+
+- N-03: pruebas focalizadas de Iris y configuración, PASS; lint y typecheck, PASS.
+- SQLite: archivo unitario completo, **37/37 PASS**; caso aislado con `FORCE_COLOR=1`, **1/1 PASS**, fuera del sandbox. Dentro del sandbox ese archivo dio un fallo genérico antes de la aserción.
+- `git diff --check`, PASS en ambos árboles. La suite 264/264 que reportaste corresponde al árbol anterior a la separación; no la repetí sobre N-03 aislada, donde el fallo ANSI puede reaparecer en WSL hasta integrar la rama SQLite.
+
+### Comandos manuales
+
+```bash
+git -C /tmp/tilcai-infrastructure-sqlite-quota-worker-output add -- AGENT_HISTORY.md test/support/quota-worker.ts test/unit/repository-sqlite.test.ts
+git -C /tmp/tilcai-infrastructure-sqlite-quota-worker-output commit -m "test(sqlite): keep quota worker stdout numeric"
+
+git add -- .env.example AGENT_HISTORY.md deploy/README.md src/app-context.ts src/config/env.ts src/modules/crosschain/cctp/iris.ts test/unit/config-networks.test.ts test/unit/iris.test.ts
+git commit -m "fix(cctp): bound Iris requests and validate fees"
+```
+
+Integra primero la corrección SQLite mediante su propio PR; después actualiza N-03 sobre `main`, comprueba otra vez el prefijo del historial y ejecuta la suite completa en tu WSL antes del PR N-03. Quedan pendientes esos commits y PR manuales, la suite completa tras la integración y las revisiones funcionales de Saúl/Jhamil. El worktree SQLite está en `/tmp`, por lo que conviene completar su commit antes de una limpieza de temporales; el respaldo durable está en el directorio padre.

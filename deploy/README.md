@@ -117,6 +117,7 @@ decide un pago por ellos.
 | `TILCAI_API_KEYS` | sí | Claves Bearer aceptadas, separadas por comas (`openssl rand -hex 32`). Vacía, la API solo responde desde dentro del propio contenedor: en un despliegue hay que definirla. Quitar una clave la revoca al reiniciar; si esa sincronización falla, el contenedor sale con código 1 sin escuchar (log `could not sync TILCAI_API_KEYS`) |
 | `RELAYER_URL` | no | URL del relayer |
 | `RELAYER_API_KEY` | sí | La misma `API_KEY` del relayer |
+| `IRIS_TIMEOUT_MS` | no | Plazo de cada consulta HTTP a Circle Iris, incluida la lectura del cuerpo; 10000 ms por defecto, configurable entre 1000 y 60000 ms. Un timeout de attestation reprograma ese pago |
 | `CCTP_ROUTER_FUJI` | no | `TilcaiCctpRouter` desplegado; habilita los modos gasless |
 | `ACCOUNT_FACTORY_FUJI` | no | `TilcaiAccountFactory` desplegada; habilita `/v1/accounts` (fase SCA). Las cuentas las piden terceros con claves de `npm run tenant -- key` |
 | `CCTP_ROUTER_V2_FUJI` | no | `TilcaiCctpRouterV2` desplegado; habilita el modo de pago `account` |
