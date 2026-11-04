@@ -176,6 +176,11 @@ export class SqliteTenantRegistry implements TenantRegistry, TenantAdmin {
   }
 
   async syncLegacyKeys(keys: readonly string[]) {
+    return this.syncLegacyKeysSync(keys);
+  }
+
+  /** `syncLegacyKeys`, throwing at the call: startup must stop on a failure, not find out from a rejected promise. */
+  syncLegacyKeysSync(keys: readonly string[]): { added: number; revoked: number; active: number } {
     const wanted = [...new Set(keys.filter((k) => typeof k === "string" && k.length > 0).map(hashApiKey))];
     const now = iso(this.clock.now());
     return tx(this.db, () => {

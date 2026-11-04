@@ -95,6 +95,9 @@ tercero (*tenant*) y lleva permisos:
 
 - Las claves de `TILCAI_API_KEYS` son las del operador: permiso `payments` y acceso a lo que es de
   TilcAI (`/v1/vault`, `/v1/monitor`, `/v1/relayer`). Optipagos y optus-agentBE siguen igual.
+  Cada arranque las sincroniza: quitar una de la lista la revoca. Si la sincronización falla (por
+  ejemplo, un valor que ya es la clave emitida de un tercero), el proceso no arranca, porque
+  seguir dejaría activa la clave retirada. Se corrige la lista con un valor nuevo y se reinicia.
 - Las claves emitidas con `npm run tenant -- key` pertenecen a un tercero y solo ven lo suyo:
   `payments` para cotizar y pagar, `accounts:read` y `accounts:write` para sus cuentas. Nunca
   alcanzan el vault, el registro de eventos ni el relayer (403).

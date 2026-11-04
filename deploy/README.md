@@ -114,7 +114,7 @@ decide un pago por ellos.
 
 | Variable | Secreto | Notas |
 | --- | --- | --- |
-| `TILCAI_API_KEYS` | sí | Claves Bearer aceptadas, separadas por comas (`openssl rand -hex 32`). Vacía, la API solo responde desde dentro del propio contenedor: en un despliegue hay que definirla |
+| `TILCAI_API_KEYS` | sí | Claves Bearer aceptadas, separadas por comas (`openssl rand -hex 32`). Vacía, la API solo responde desde dentro del propio contenedor: en un despliegue hay que definirla. Quitar una clave la revoca al reiniciar; si esa sincronización falla, el contenedor sale con código 1 sin escuchar (log `could not sync TILCAI_API_KEYS`) |
 | `RELAYER_URL` | no | URL del relayer |
 | `RELAYER_API_KEY` | sí | La misma `API_KEY` del relayer |
 | `CCTP_ROUTER_FUJI` | no | `TilcaiCctpRouter` desplegado; habilita los modos gasless |
