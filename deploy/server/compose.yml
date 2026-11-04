@@ -1,0 +1,183 @@
+name: tilcai
+services:
+  redis:
+    image: redis:7-bookworm
+    command:
+    - redis-server
+    - --appendonly
+    - 'yes'
+    - --save
+    - '60'
+    - '1'
+    volumes:
+    - redis-data:/data
+    healthcheck:
+      test:
+      - CMD
+      - redis-cli
+      - ping
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    security_opt:
+    - no-new-privileges
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+    pids_limit: 256
+  relayer:
+    image: ghcr.io/tilcai/tilcai-relayer@sha256:6597cecc21a0b6eea2337b3d5bbc652468abe14dbcb8d60ce8b40574f572841e
+    environment:
+      API_KEY: ${RELAYER_API_KEY:?set RELAYER_API_KEY in deploy/.env}
+      KEYSTORE_PASSPHRASE: ${KEYSTORE_PASSPHRASE:?set KEYSTORE_PASSPHRASE in deploy/.env}
+      KEYSTORE_JSON_B64: ${KEYSTORE_JSON_B64:?set KEYSTORE_JSON_B64 in deploy/.env}
+      REDIS_URL: redis://redis:6379
+      REPOSITORY_STORAGE_TYPE: ${REPOSITORY_STORAGE_TYPE:-in-memory}
+      STORAGE_ENCRYPTION_KEY: ${STORAGE_ENCRYPTION_KEY:-}
+      RESET_STORAGE_ON_START: ${RESET_STORAGE_ON_START:-false}
+      WEBHOOK_SIGNING_KEY: ${WEBHOOK_SIGNING_KEY:?set WEBHOOK_SIGNING_KEY in deploy/.env}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    depends_on:
+      redis:
+        condition: service_healthy
+    ports:
+    - 127.0.0.1:${RELAYER_PORT:-8080}:8080
+    healthcheck:
+      test:
+      - CMD
+      - node
+      - -e
+      - fetch('http://127.0.0.1:8080/api/v1/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 6
+    security_opt:
+    - no-new-privileges
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+    pids_limit: 256
+  tilcai:
+    image: ghcr.io/tilcai/tilcai-api:${IMAGE_TAG:?IMAGE_TAG required}
+    environment:
+      TILCAI_ENV: ${TILCAI_ENV:-testnet}
+      MAINNET_TRANSACTIONS_ENABLED: ${MAINNET_TRANSACTIONS_ENABLED:-false}
+      TILCAI_API_KEYS: ${TILCAI_API_KEYS:-}
+      TILCAI_API_KEYS_MAINNET: ${TILCAI_API_KEYS_MAINNET:-}
+      DATABASE_PATH_MAINNET: ${DATABASE_PATH_MAINNET:-}
+      RELAYER_URL: http://relayer:8080
+      RELAYER_API_KEY: ${RELAYER_API_KEY}
+      RELAYER_STELLAR_ID: ${RELAYER_STELLAR_ID:-stellar-example}
+      RELAYER_FUJI_ID: ${RELAYER_FUJI_ID:-avalanche-fuji-relayer}
+      RELAYER_X402_PLUGIN_ID: ${RELAYER_X402_PLUGIN_ID:-x402}
+      RELAYER_MONAD_TESTNET_ID: ${RELAYER_MONAD_TESTNET_ID:-monad-testnet-relayer}
+      RPC_MONAD_TESTNET: ${RPC_MONAD_TESTNET:-https://testnet-rpc.monad.xyz}
+      CCTP_ROUTER_MONAD_TESTNET: ${CCTP_ROUTER_MONAD_TESTNET:-}
+      CCTP_ROUTER_V2_MONAD_TESTNET: ${CCTP_ROUTER_V2_MONAD_TESTNET:-}
+      ACCOUNT_FACTORY_MONAD_TESTNET: ${ACCOUNT_FACTORY_MONAD_TESTNET:-}
+      VAULT_MONAD_TESTNET: ${VAULT_MONAD_TESTNET:-}
+      CCTP_ROUTER_FUJI: ${CCTP_ROUTER_FUJI:-}
+      VAULT_FUJI: ${VAULT_FUJI:-}
+      ACCOUNT_FACTORY_FUJI: ${ACCOUNT_FACTORY_FUJI:-}
+      CCTP_ROUTER_V2_FUJI: ${CCTP_ROUTER_V2_FUJI:-}
+      ACCOUNT_FACTORY_STELLAR: ${ACCOUNT_FACTORY_STELLAR:-}
+      VAULT_STELLAR: ${VAULT_STELLAR:-}
+      RPC_AVALANCHE_FUJI: ${RPC_AVALANCHE_FUJI:-https://api.avax-test.network/ext/bc/C/rpc}
+      RPC_STELLAR_TESTNET: ${RPC_STELLAR_TESTNET:-https://soroban-testnet.stellar.org}
+      HORIZON_STELLAR_TESTNET: ${HORIZON_STELLAR_TESTNET:-https://horizon-testnet.stellar.org}
+      IRIS_API_URL: ${IRIS_API_URL:-https://iris-api-sandbox.circle.com}
+      RELAYER_URL_MAINNET: ${RELAYER_URL_MAINNET:-}
+      RELAYER_API_KEY_MAINNET: ${RELAYER_API_KEY_MAINNET:-}
+      RELAYER_AVALANCHE_MAINNET_ID: ${RELAYER_AVALANCHE_MAINNET_ID:-}
+      RELAYER_STELLAR_MAINNET_ID: ${RELAYER_STELLAR_MAINNET_ID:-}
+      RELAYER_X402_PLUGIN_ID_MAINNET: ${RELAYER_X402_PLUGIN_ID_MAINNET:-}
+      MONITOR_WEB_URL_MAINNET: ${MONITOR_WEB_URL_MAINNET:-}
+      MONITOR_WEB_SECRET_MAINNET: ${MONITOR_WEB_SECRET_MAINNET:-}
+      RELAYER_WEBHOOK_SIGNING_KEY_MAINNET: ${RELAYER_WEBHOOK_SIGNING_KEY_MAINNET:-}
+      CCTP_ROUTER_AVALANCHE_MAINNET: ${CCTP_ROUTER_AVALANCHE_MAINNET:-}
+      CCTP_ROUTER_V2_AVALANCHE_MAINNET: ${CCTP_ROUTER_V2_AVALANCHE_MAINNET:-}
+      ACCOUNT_FACTORY_AVALANCHE_MAINNET: ${ACCOUNT_FACTORY_AVALANCHE_MAINNET:-}
+      VAULT_AVALANCHE_MAINNET: ${VAULT_AVALANCHE_MAINNET:-}
+      ERC4337_ENTRYPOINT_AVALANCHE_MAINNET: ${ERC4337_ENTRYPOINT_AVALANCHE_MAINNET:-}
+      ACCOUNT_FACTORY_STELLAR_MAINNET: ${ACCOUNT_FACTORY_STELLAR_MAINNET:-}
+      VAULT_STELLAR_MAINNET: ${VAULT_STELLAR_MAINNET:-}
+      RPC_AVALANCHE_MAINNET: ${RPC_AVALANCHE_MAINNET:-}
+      RPC_STELLAR_MAINNET: ${RPC_STELLAR_MAINNET:-}
+      HORIZON_STELLAR_MAINNET: ${HORIZON_STELLAR_MAINNET:-}
+      IRIS_API_URL_MAINNET: ${IRIS_API_URL_MAINNET:-https://iris-api.circle.com}
+      STELLAR_SIMULATION_SOURCE_MAINNET: ${STELLAR_SIMULATION_SOURCE_MAINNET:-}
+      EVM_MIN_CONFIRMATIONS_MAINNET: ${EVM_MIN_CONFIRMATIONS_MAINNET:-1}
+      WORKER_POLL_MS: ${WORKER_POLL_MS:-4000}
+      QUOTE_TTL_SECONDS: ${QUOTE_TTL_SECONDS:-900}
+      EVM_MIN_CONFIRMATIONS: ${EVM_MIN_CONFIRMATIONS:-1}
+      MONITOR_RESOURCES_INTERVAL_MS: ${MONITOR_RESOURCES_INTERVAL_MS:-30000}
+      MONITOR_RETENTION_DAYS: ${MONITOR_RETENTION_DAYS:-14}
+      STELLAR_MINT_SUBMITTER: ${STELLAR_MINT_SUBMITTER:-relayer}
+      STELLAR_OPERATOR_SECRET: ${STELLAR_OPERATOR_SECRET:-}
+      STELLAR_SIMULATION_SOURCE: ${STELLAR_SIMULATION_SOURCE:-}
+      DEV_EVM_PAYER_PRIVATE_KEY: ${DEV_EVM_PAYER_PRIVATE_KEY:-}
+      MONITOR_WEB_URL: ${MONITOR_WEB_URL:-}
+      MONITOR_WEB_SECRET: ${MONITOR_WEB_SECRET:-}
+      RELAYER_WEBHOOK_SIGNING_KEY: ${WEBHOOK_SIGNING_KEY:-}
+      QR_MOCK_ENABLED: 'false'
+      QR_MOCK_EMAIL: ${QR_MOCK_EMAIL:-}
+      QR_MOCK_PASSWORD: ${QR_MOCK_PASSWORD:-}
+      QR_MOCK_CALLBACK_URL: ${QR_MOCK_CALLBACK_URL:-}
+      QR_MOCK_PUBLIC_URL: ${QR_MOCK_PUBLIC_URL:-}
+      QR_MOCK_SIMULATOR_KEY: ${QR_MOCK_SIMULATOR_KEY:-}
+      QR_PROVIDERS: baneco,atc-simple,atc-mld
+      QR_PROVIDER_TIMEOUT_MS: ${QR_PROVIDER_TIMEOUT_MS:-15000}
+      QR_PROVIDER_BREAKER_THRESHOLD: ${QR_PROVIDER_BREAKER_THRESHOLD:-3}
+      QR_PROVIDER_COOLDOWN_SECONDS: ${QR_PROVIDER_COOLDOWN_SECONDS:-60}
+      QR_PUBLIC_URL: ${QR_PUBLIC_URL:-}
+      BANECO_BASE_URL: ${BANECO_BASE_URL:-https://apimkt.baneco.com.bo/apiGateway/}
+      BANECO_USER: ${BANECO_USER:-}
+      BANECO_PASSWORD: ${BANECO_PASSWORD:-}
+      BANECO_ENCRIPTION_KEY: ${BANECO_ENCRIPTION_KEY:-}
+      BANECO_PAYMENT_ACCOUNT: ${BANECO_PAYMENT_ACCOUNT:-}
+      BANECO_BRANCH_CODE: ${BANECO_BRANCH_CODE:-}
+      ATC_BASE_URL: ${ATC_BASE_URL:-https://atcgwapitest.redenlace.com.bo/sandbox/}
+      ATC_CLIENT_ID: ${ATC_CLIENT_ID:-}
+      ATC_CLIENT_SECRET: ${ATC_CLIENT_SECRET:-}
+      ATC_ESTABLISHMENT_ID: ${ATC_ESTABLISHMENT_ID:-1}
+      ATC_ESTABLISHMENT_NAME: ${ATC_ESTABLISHMENT_NAME:-TilcAI}
+      ATC_WEBHOOK_URL: ${ATC_WEBHOOK_URL:-}
+      ATC_WEBHOOK_SECRET: ${ATC_WEBHOOK_SECRET:-}
+      LITESTREAM_REPLICA_URL: ${LITESTREAM_REPLICA_URL:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+    - tilcai-data:/data
+    depends_on:
+      relayer:
+        condition: service_healthy
+    ports:
+    - 127.0.0.1:${TILCAI_PORT:-8787}:8787
+    security_opt:
+    - no-new-privileges
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+    pids_limit: 256
+    healthcheck:
+      test:
+      - CMD
+      - node
+      - -e
+      - fetch('http://127.0.0.1:8787/health').then(async r=>{const b=await r.json();process.exit(r.ok&&b.relayer==='up'&&b.qrMock==='off'&&b.qr?.mode==='live'&&b.qr.providers[0]==='baneco'?0:1)},()=>process.exit(1))
+      interval: 10s
+      timeout: 10s
+      start_period: 30s
+      retries: 6
+volumes:
+  redis-data: null
+  tilcai-data: null

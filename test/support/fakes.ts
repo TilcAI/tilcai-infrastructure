@@ -23,7 +23,8 @@ import type {
 } from "../../src/modules/crosschain/ports.ts";
 import { SubmissionRejected } from "../../src/modules/crosschain/ports.ts";
 import { ROUTER_ABI, ROUTER_V2_ABI } from "../../src/modules/crosschain/router.ts";
-import { SqliteCrosschainRepository } from "../../src/modules/crosschain/repository.ts";
+import type { DatabaseSync } from "node:sqlite";
+import { SqliteCrosschainRepository, type CrosschainRepository } from "../../src/modules/crosschain/repository.ts";
 import { CrosschainPaymentService } from "../../src/modules/crosschain/service.ts";
 import type { NewMonitorEvent } from "../../src/modules/monitor/domain.ts";
 
@@ -143,14 +144,17 @@ export class FakeEvmSubmitter implements EvmTxSubmitter {
   readonly name = "relayer";
   submits: Array<{ to: Hex; data: Hex }> = [];
   statuses = new Map<string, EvmSubmissionStatus>();
-  failNextSubmit: false | "ambiguous" | "rejected" = false;
+  /** rejected: a 400, nothing sent. timeout408: a 408 (may have landed). ambiguous: no answer. */
+  failNextSubmit: false | "ambiguous" | "rejected" | "timeout408" = false;
   autoConfirm = true;
   constructor(private readonly evm: FakeEvm) {}
   async submit(to: Hex, data: Hex) {
     if (this.failNextSubmit) {
       const k = this.failNextSubmit;
       this.failNextSubmit = false;
-      throw k === "rejected" ? new SubmissionRejected("relayer 400") : new Error("relayer timeout");
+      if (k === "rejected") throw new SubmissionRejected("relayer 400", 400);
+      if (k === "timeout408") throw new SubmissionRejected("relayer 408", 408);
+      throw new Error("relayer timeout");
     }
     this.submits.push({ to, data });
     const id = `evm-${this.submits.length}`;
@@ -252,9 +256,8 @@ export class FakeSubmitter implements MintSubmitter {
   }
 }
 
-export function harness() {
+export function harness(db: DatabaseSync = openDatabase(":memory:")) {
   const clock = new FakeClock();
-  const db = openDatabase(":memory:");
   const repo = new SqliteCrosschainRepository(db);
   const evm = new FakeEvm();
   const iris = new FakeIris();
@@ -265,7 +268,8 @@ export function harness() {
   const accountPayers = { active: new Map<string, string>(), valid: new Set<string>(), checked: [] as Array<{ account: Hex; hash: Hex; signature: Hex }> };
   /** What the service announced for the dashboard, in order. */
   const events: NewMonitorEvent[] = [];
-  const svc = new CrosschainPaymentService({
+  /** Builds the service over a repository; tests reopen the SQLite file and rebuild it over the same fakes. */
+  const build = (repo: CrosschainRepository) => new CrosschainPaymentService({
     repo,
     evm,
     evmSubmitter,
@@ -287,6 +291,7 @@ export function harness() {
     events: { emit: (e) => void events.push(e) },
     options: { quoteTtlSeconds: 600, pollMs: 1000, minConfirmations: 1 },
   });
+  const svc = build(repo);
   /** Makes Iris return a correct attestation for a burn tx. */
   const attest = (txHash: string, nonce: Hex, over: Partial<Parameters<typeof encodeMessageV2>[0]> = {}, gasless: boolean | "v2" = false) => {
     const b = evm.lastBurn!;
@@ -320,5 +325,5 @@ export function harness() {
     }
     return svc.mustGet(id);
   };
-  return { clock, db, repo, evm, evmSubmitter, accountPayers, iris, stellar, submitter, svc, attest, drive, events };
+  return { clock, db, repo, build, evm, evmSubmitter, accountPayers, iris, stellar, submitter, svc, attest, drive, events };
 }

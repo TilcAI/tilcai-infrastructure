@@ -1,5 +1,5 @@
 // Phase 1–2 · owner: Jhamil. Provider identity, operators and versioned payout destinations (report §12.10).
-import type { BusinessId, PrincipalId } from "tilcai-core/src/contracts.ts";
+import type { BusinessId, PrincipalId } from "tilcai-core/contracts";
 import type { StellarNetworkId } from "../../config/networks.ts";
 
 export interface PayoutDestination {

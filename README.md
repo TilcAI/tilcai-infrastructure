@@ -2,7 +2,7 @@
 
 Backend e infraestructura de TilcAI: gateway, rieles de pago (x402 sobre Stellar y USDC crosschain con Circle CCTP V2), vault de desembolsos en Avalanche, cobro con QR Simple (mock), eventos para el tablero de monitorización, integración con el OpenZeppelin Relayer y, por fases, cuentas abstractas, paymasters, ERC-8004, MCP y A2A.
 
-Plan y arquitectura completos: [`documentation/TILCAI_PLAN_ARQUITECTURA_BACKEND_INFRA_2026-10-02.md`](../documentation/TILCAI_PLAN_ARQUITECTURA_BACKEND_INFRA_2026-10-02.md).
+Plan y arquitectura completos: [`documentation/TILCAI_PLAN_ARQUITECTURA_BACKEND_INFRA_2026-10-02.md`](https://github.com/TilcAI/documentation/blob/main/TILCAI_PLAN_ARQUITECTURA_BACKEND_INFRA_2026-10-02.md).
 
 > **Mainnet: pagos crosschain habilitados, sin auditoría.** Una instancia con `TILCAI_ENV=mainnet`
 > corre junto a la de testnet (misma imagen, base, claves y puerto propios). En mainnet se documentó
@@ -60,6 +60,8 @@ payer (Fuji)                TilcAI API + worker                          Circle 
 - Un burn respalda como máximo un pago, y un nonce CCTP una sola liquidación (índices únicos).
 - El mint es idempotente por el nonce de CCTP: se reintenta sin riesgo. Nunca se crea un segundo burn para un pago existente.
 - Un burn no encontrado o una atestación que no coincide pasan a `UNCERTAIN` y no se mintean. Nunca se marcan `FAILED` sin evidencia.
+- **Liquidación atómica (N-01):** `SETTLED`, su evento y el recibo se guardan en una sola transacción SQLite (`CrosschainRepository.settle`, con control de versión). Si cualquier escritura falla, el pago sigue en `MINT_SUBMITTED` y el worker lo reintenta; no hay esquema ni migración nueva.
+  - *Anomalías históricas:* los pagos liquidados antes de este cambio podrían carecer de recibo si el proceso se interrumpió entre ambas escrituras. El worker no los vuelve a seleccionar y no se reparan automáticamente; se detectan con `SELECT p.id FROM crosschain_payments p LEFT JOIN payment_receipts r ON r.payment_id = p.id WHERE p.state = 'SETTLED' AND r.id IS NULL;` y requieren conciliación manual revisada por finanzas (contrastar `mint_tx_hash` en Stellar antes de emitir el recibo).
 
 ## Uso
 
@@ -324,11 +326,19 @@ QR_MOCK_CALLBACK_URL=http://localhost:3200/api/v1/devices/simple-qr/callback npm
 # abrir http://127.0.0.1:8787/mock/vendis/
 ```
 
+## Cobro con QR bancario: pasarela con fallback
+
+`POST /v1/qr` emite un QR con un proveedor principal (Banco Económico, Red Enlace ATC QR Simple o
+QR MLD) y, si falla, con el siguiente de `QR_PROVIDERS`. Con `QR_MOCK_ENABLED=true` el mock
+reemplaza a todos; con `false`, los reales. Funcionamiento, restricciones de campos de cada API,
+pruebas y pendientes: [`docs/qr-providers.md`](docs/qr-providers.md). `npm run qr -- probe` emite
+un QR por proveedor.
+
 ## Monitorización
 
 TilcAI anota en su base lo que le pasa y lo que le cuentan, y lo envía a `tilcai-web`, que lo
 muestra en el tablero. La explicación completa, con el contrato y los pasos para conectarlos,
-está en [`documentation/2-ARQUITECTURA/TILCAI_MONITORIZACION_EVENTOS_BACKEND_FRONTEND_2026-10-09.md`](../documentation/2-ARQUITECTURA/TILCAI_MONITORIZACION_EVENTOS_BACKEND_FRONTEND_2026-10-09.md).
+está en [`documentation/2-ARQUITECTURA/TILCAI_MONITORIZACION_EVENTOS_BACKEND_FRONTEND_2026-10-09.md`](https://github.com/TilcAI/documentation/blob/main/2-ARQUITECTURA/TILCAI_MONITORIZACION_EVENTOS_BACKEND_FRONTEND_2026-10-09.md).
 
 ```
 servicios (pagos, vault, API) ─┐
@@ -407,3 +417,45 @@ contracts/soroban    Cargo: cuenta, factory, vault, verificadores y política de
 test/unit            174 tests sin red     test/integration   relayer y e2e reales (se omiten sin credenciales)
 deploy/              imágenes Docker de TilcAI y del relayer, compose del stack y manifiestos de Cloud Run
 ```
+
+## Entrega publicada · 2026-11-02 UTC
+
+| Rama | Cambios y alcance |
+| --- | --- |
+| `feat/qr-providers-fallback` | Gateway QR; `dfb7006` genera el PNG desde payload; `e064378` publica configuración bancaria y de despliegue |
+| `fix/saulchoque-vault-soroban-2026-11-01` | `73805cc` implementa evidencia de payout (#28), reservas concurrentes (#35) y validaciones/manifiesto Soroban (#42); documentación en `f2cf032` |
+| `feat/third-party-credentials` | `60e3199` añade caducidad, entorno, permisos, rotación/revocación por CLI e introspección propia; `b47165e` incorpora la rama de correcciones |
+
+Las ramas de correcciones y credenciales están publicadas por separado de esta rama QR.
+Usar el código de la rama correspondiente antes de consumir `GET /v1/auth/context` desde SDK/MCP.
+Migración 6 corresponde a QR y 7 a credenciales: verificar el orden al integrar, sin modificar migraciones aplicadas.
+Las issues #28/#35/#42 siguen abiertas para revisión; #32 requiere archivo/restauración real y decisión D-05.
+
+QR Simple genera la imagen desde el payload configurado no vacío o, si falta, el propio del
+código, tanto en desarrollo como en producción. `bank-qr.png` está versionado pero ya no se
+usa como imagen fija. Las 15 pruebas específicas pasaron. El simulador no acredita un abono bancario.
+`BANECO_BASE_URL` usa producción por defecto; configurar explícitamente certificación cuando corresponda.
+Compose mainnet incorpora `MAINNET_TAILSCALE_IP` además de loopback/bridge; configurar la IP del host.
+
+Evidencia previa de credenciales: 206 tests backend, 5 Python de despliegue y 12 Rust Vault,
+además de typecheck. Estas cifras pertenecen a las ramas y ejecuciones documentadas; no
+representan un recuento actualizado de todas las ramas combinadas.
+[Resultados y pendientes](https://github.com/TilcAI/documentation/blob/main/3-CONSTRUCCION/ESTADO_REPOSITORIOS_2026-11-01.md) · [QR/configuración](https://github.com/TilcAI/documentation/blob/main/3-CONSTRUCCION/QR_PAYLOAD_Y_CONFIGURACION_2026-11-02.md) · [Credenciales](https://github.com/TilcAI/documentation/blob/main/3-CONSTRUCCION/CREDENCIALES_TERCEROS_IMPLEMENTACION_2026-11-01.md).
+La [facturación SIN](https://github.com/TilcAI/documentation/blob/main/2-ARQUITECTURA/TILCAI_FACTURACION_SIN_2026-11-01.md) sigue siendo diseño y requiere habilitación e implementación.
+
+## Despliegue continuo en servidor
+
+`main` ejecuta lint, typecheck, tests y smoke de la imagen Docker antes de publicarla
+y desplegarla en `saul-tilcai-lor`. Redis y relayer se ejecutan en Docker; los secretos
+permanecen fuera de Git. Operación, rollback y smoke bancario en
+[deploy/server/README.md](deploy/server/README.md).
+
+## Contratos centralizados · Core 0.1.0
+
+Esta rama consume entradas compiladas de Core y conserva separados los módulos experimentales.
+Consultar [integración, compatibilidad y distribución](docs/CORE_INTEGRATION.md).
+La dependencia file es para desarrollo con repositorios hermanos; requiere compilar Core primero.
+
+### Dependencia privada Core
+
+Core se instala desde GitHub Packages, versión exacta `@tilcai/core@0.1.0`, usando el alias `tilcai-core`. Se requiere `NODE_AUTH_TOKEN` con acceso de lectura; no hace falta clonar Core. Consulta [configuración local, CI y Docker](docs/CORE_INTEGRATION.md).

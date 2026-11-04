@@ -129,3 +129,12 @@ test("one relayer may serve both environments: the relayer ids keep them apart",
   assert.deepEqual([active.evmRelayerId, active.stellarRelayerId], ["avalanche-mainnet-relayer", "stellar-mainnet-relayer"]);
   assert.throws(() => loadEnv(minimalMainnet({ ...shared, RELAYER_FUJI_ID: "avalanche-mainnet-relayer" })), /RELAYER_AVALANCHE_MAINNET_ID/);
 });
+
+test("real Banco Economico remains primary without the mock in both environments", () => {
+  for (const source of [{}, mainnetSource()]) {
+    const env = loadEnv(source);
+    assert.equal(env.QR_MOCK_ENABLED, false);
+    assert.deepEqual(env.QR_PROVIDERS, ["baneco", "atc-simple", "atc-mld"]);
+    assert.equal(env.BANECO_BASE_URL, "https://apimkt.baneco.com.bo/apiGateway/");
+  }
+});

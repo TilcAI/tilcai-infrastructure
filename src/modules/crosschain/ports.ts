@@ -83,7 +83,12 @@ export type SubmissionStatus =
   | { state: "failed"; txHash?: string; reason: string };
 
 /** Thrown when the submitter proves nothing was sent (4xx, failed simulation): no in-flight guard needed. */
-export class SubmissionRejected extends Error {}
+export class SubmissionRejected extends Error {
+  /** HTTP status of the refusal when there was one. 408 means "timed out", so it does not prove that nothing was sent. */
+  constructor(message: string, readonly status?: number) {
+    super(message);
+  }
+}
 
 export interface MintSubmitter {
   readonly name: string;
