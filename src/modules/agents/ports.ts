@@ -1,6 +1,6 @@
 // Phase 2 (local identity) · Phase 4 (ERC-8004 link) · owner: Omar.
 // An agent identity is NOT a financial account (report §12.2).
-import type { AgentId, PrincipalId } from "tilcai-core/src/contracts.ts";
+import type { AgentId, PrincipalId } from "tilcai-core/contracts";
 
 export interface AgentIdentity {
   id: AgentId;

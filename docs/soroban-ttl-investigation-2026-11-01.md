@@ -1,5 +1,7 @@
 # N-06 / #32: resultado parcial de investigación TTL
 
+> Actualización del 2 de noviembre: se ejecutó archivo/restore en Core local. Véase [resultado experimental y D-05 propuesta](soroban-ttl-results-2026-11-02.md). El texto siguiente conserva el alcance de la primera investigación.
+
 Fecha: 2026-11-01. No se demuestra doble pago ni se modifica el contrato en producción.
 
 Entorno ejecutado: rustc 1.98.1 (48a229cea 2026-09-01), cargo 1.98.1,

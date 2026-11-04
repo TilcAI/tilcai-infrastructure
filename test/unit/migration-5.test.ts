@@ -4,7 +4,6 @@ import { execFile } from "node:child_process";
 import { DatabaseSync } from "node:sqlite";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { MIGRATIONS } from "../../src/db/migrations.ts";
 import { migrate, openDatabase } from "../../src/db/sqlite.ts";
 import { SqliteCrosschainRepository } from "../../src/modules/crosschain/repository.ts";
 import { LEGACY_TENANT_ID } from "../../src/modules/tenants/ports.ts";
@@ -17,7 +16,9 @@ const run = promisify(execFile);
 /** The migration under test: third parties, quotas, accounts and delegations (SCA phase M1). */
 const SCA_MIGRATION = 5;
 const BEFORE = Array.from({ length: SCA_MIGRATION - 1 }, (_, i) => i + 1);
-const AFTER = MIGRATIONS.map(m => m.id);
+/** Migrations added after the SCA one (6: QR collections, 7: sponsored holds, 8: tenant credentials). They extend the schema; the SCA assertions here remain about 5. */
+const LATER = [6, 7, 8];
+const AFTER = [...BEFORE, SCA_MIGRATION, ...LATER];
 
 /**
  * A database exactly as the release before the SCA phase left it: the phase-1 tables with their payments

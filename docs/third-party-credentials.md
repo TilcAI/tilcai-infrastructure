@@ -5,7 +5,7 @@ Branch: feat/third-party-credentials, based on 73805cc (Vault/Soroban fixes).
 ## Implemented
 
 Operator CLI creates tenants, issues expiring/scoped keys and rotates/revokes them. New keys
-are restricted to the configured testnet/mainnet environment. SQLite migration 7 is additive;
+are restricted to the configured testnet/mainnet environment. SQLite migration 8 is additive;
 key events contain IDs, kinds and timestamps only. Authentication reads revocation, expiry
 and tenant status each time; last-use updates are throttled to once a minute.
 
@@ -41,7 +41,7 @@ merely by issuing a new tenant key: reconcile ownership and plan migration expli
 partners need access to historical payments.
 
 Deploy backend migration before SDK/MCP introspection usage. Back up SQLite, verify migration
-ID availability (6 is reserved for the existing QR branch; this change uses 7), run migration on a restored copy,
+ID availability (6 is QR, 7 is sponsored holds already deployed; this change uses 8), run migration on a restored copy,
 then confirm legacy operator and one test tenant. Restoring old code would ignore new expiry
 and environment rules; do not roll back to an auth implementation that bypasses those rules.
 A rollback requires revoking affected secrets and restoring a reviewed compatible release.
@@ -78,3 +78,9 @@ covers issue/revoke/rotate operations from the operator CLI; env-key synchroniza
 its existing configuration-driven lifecycle.
 
 Comprobación adicional: backend local real + SDK + cliente MCP pasaron introspección, rotación mediante proveedor dinámico y rechazo 401 de la clave anterior. El ejecutable MCP compilado pasó initialize/tools/list/tools/call mediante stdio sin acceder a una red pública.
+
+## Integration with main · 2026-11-04
+
+Migration 8 is appended without changing deployed migrations 1–7. Upgrade tests cover schemas 5 and 7 and preserve existing credentials and QR/sponsored tables. Preexisting issued keys default to testnet and keep no expiry until rotated; legacy environment keys retain their compatibility. Before a mainnet rollout, inventory old issued keys and explicitly reissue in the correct environment rather than changing authorization implicitly. The server currently runs testnet.
+
+The current Vault evidence and reservation safeguards from #48 remain intact. The branch-only implementation summary is excluded from main. CI/CD continues to use the private Core package and BuildKit credentials.

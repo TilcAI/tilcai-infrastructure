@@ -1,4 +1,4 @@
-import { createContractError, type ContractError, type ErrorCode } from "tilcai-core/src/contracts.ts";
+import { createContractError, type ContractError, type ErrorCode } from "tilcai-core/contracts";
 
 /**
  * Domain error carrying a public `tilcai-shared-v1` envelope. `detail` is for

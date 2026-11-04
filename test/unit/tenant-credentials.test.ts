@@ -59,14 +59,16 @@ test("rotation is atomic, preserves scopes, and never extends the old expiry", a
   } finally { db.close(); }
 });
 
-test("migration from schema 5 preserves issued and env keys", async () => {
+for (const previous of [5, 7]) test(`migration from schema ${previous} preserves issued and env keys`, async () => {
   const db = new DatabaseSync(":memory:");
   try {
-    migrate(db, 5);
+    migrate(db, previous);
     const { hashApiKey } = await import("../../src/modules/tenants/keys.ts");
     for (const source of ["env", "issued"]) db.prepare("INSERT INTO tenant_api_keys(id,tenant_id,key_hash,key_hint,label,scopes_json,source,created_at) VALUES (?, 'tenant_legacy', ?, 'hint','old','[\"payments\"]',?,?)").run(source, hashApiKey(source), source, new Date().toISOString());
     migrate(db);
     migrate(db);
+    assert.ok(db.prepare("SELECT name FROM sqlite_master WHERE name = 'sponsored_holds'").get());
+    assert.ok(db.prepare("SELECT name FROM sqlite_master WHERE name = 'qr_collections'").get());
     assert.ok(await new SqliteTenantRegistry(db).authenticate("issued"));
     const live = new SqliteTenantRegistry(db, undefined, "mainnet");
     assert.ok(await live.authenticate("env"));
