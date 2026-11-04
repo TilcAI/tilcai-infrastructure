@@ -608,6 +608,26 @@ Comprobado en el contenedor: `/health` con `eip155:10143`, `vault` y `vaultStell
 
 `.env.example` reordenado en 10 secciones numeradas (núcleo, relayer, submitter Stellar, RPC, contratos testnet, monitoreo, mock QR, proveedores fiat, mainnet, pruebas). Añadidas las variables de Monad Testnet que el código ya lee (`RELAYER_MONAD_TESTNET_ID`, `RPC_MONAD_TESTNET`, router, routerV2, factory y vault) con las direcciones desplegadas el 2026-10-13; las direcciones de Fuji tomadas de `deploy/.env.example`; ids de relayer de mainnet con sus valores por defecto; `HORIZON_STELLAR_MAINNET` queda en `https://horizon.stellar.org`. Las variables `BANECO_*` y `ATC_*` se conservan pero ninguna parte de `src/` las lee todavía. `ACCOUNT_FACTORY_STELLAR` y `VAULT_STELLAR` siguen vacías porque sus IDs no están en el repositorio (el `.env` local no se leyó).
 
+## 2026-11-01T22:30:00Z · OmarQV · Claude Code (claude-opus-5-5)
+
+- **Sesión:** n/d
+- **Rama:** fix/deps-security (desde main)
+- **Repositorios:** tilcai-infrastructure, tilcai-web
+
+### Prompt
+
+> Hazlo
+> Revisalas y corrige esas vulnerabilidades
+
+### Salida
+
+Se corrigen las 11 alertas abiertas de Dependabot, todas de dependencias de runtime en package-lock.json:
+- zod 4.6.5 → 4.6.6 (alta, agotamiento de memoria), dependencia directa;
+- follow-redirects 1.16.1 → 1.16.2 (alta, credenciales que siguen redirecciones), vía @stellar/stellar-sdk → axios;
+- fastify 5.12.5 → 5.12.6 (baja, validación de cabeceras), dependencia directa;
+- fast-uri 3.1.8 → 3.1.9 y 4.2.1 → 4.2.3 (cuatro medias y cuatro bajas), vía fastify y ajv.
+
+El lockfile solo cambia esas cinco versiones. Verificación: `npm audit` sin vulnerabilidades, 193/193 tests, typecheck correcto, y la API arrancada (health 200, ruta sin clave 401, cotización inválida 400). En tilcai-web, el check-in pasó a indicar la migración 8 (commit 21 del PR #30).
 ## 2026-11-01T20:05:00Z · OmarQV · Claude Code (claude-opus-5-5)
 
 - **Sesión:** n/d
@@ -4289,3 +4309,17 @@ Merge de main (de0205b, con credenciales #53 en la migración 8). La migración 
 ### Salida
 
 Merge de main (87b64c5, con N-04, N-12, N-11, credenciales #53 y vault #48) sin conflictos. Typecheck limpio y 277/277 tests en local.
+
+## 2026-11-04T14:35:32Z · OmarQV · Claude Code (claude-opus-5-5)
+
+- **Sesión:** 326c05ab-c025-4213-8616-d60e79d08efb
+- **Rama:** fix/deps-security
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> Resuelve los conflictos y haz merge de todo
+
+### Salida
+
+Merge de main (35b7361, con N-04, N-12, N-11, N-07, credenciales #53 y vault #48) sin conflictos. Typecheck limpio y 277/277 tests en local.
