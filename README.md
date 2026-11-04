@@ -426,10 +426,8 @@ deploy/              imágenes Docker de TilcAI y del relayer, compose del stack
 | `fix/saulchoque-vault-soroban-2026-11-01` | `73805cc` implementa evidencia de payout (#28), reservas concurrentes (#35) y validaciones/manifiesto Soroban (#42); documentación en `f2cf032` |
 | `feat/third-party-credentials` | `60e3199` añade caducidad, entorno, permisos, rotación/revocación por CLI e introspección propia; `b47165e` incorpora la rama de correcciones |
 
-Las ramas de correcciones y credenciales están publicadas por separado de esta rama QR.
-Usar el código de la rama correspondiente antes de consumir `GET /v1/auth/context` desde SDK/MCP.
-Migración 6 corresponde a QR y 7 a credenciales: verificar el orden al integrar, sin modificar migraciones aplicadas.
-Las issues #28/#35/#42 siguen abiertas para revisión; #32 requiere archivo/restauración real y decisión D-05.
+Las correcciones Vault/Soroban están integradas por #48. La integración de credenciales añade `GET /v1/auth/context`, caducidad y rotación. Migraciones: 6 QR, 7 cuotas patrocinadas, 8 credenciales; no se modifican migraciones aplicadas.
+Las issues #28/#35/#42 conservan pendiente la revisión independiente; #32 tiene evidencia de archivo/restauración local y mantiene pendiente la decisión D-05.
 
 QR Simple genera la imagen desde el payload configurado no vacío o, si falta, el propio del
 código, tanto en desarrollo como en producción. `bank-qr.png` está versionado pero ya no se
@@ -454,8 +452,12 @@ permanecen fuera de Git. Operación, rollback y smoke bancario en
 
 Esta rama consume entradas compiladas de Core y conserva separados los módulos experimentales.
 Consultar [integración, compatibilidad y distribución](docs/CORE_INTEGRATION.md).
-La dependencia file es para desarrollo con repositorios hermanos; requiere compilar Core primero.
+Core se descarga desde GitHub Packages con autenticación; no requiere un clon hermano.
 
 ### Dependencia privada Core
 
 Core se instala desde GitHub Packages, versión exacta `@tilcai/core@0.1.0`, usando el alias `tilcai-core`. Se requiere `NODE_AUTH_TOKEN` con acceso de lectura; no hace falta clonar Core. Consulta [configuración local, CI y Docker](docs/CORE_INTEGRATION.md).
+
+## Credenciales de terceros
+
+[Guía de operación y actualización](docs/third-party-credentials.md) · [Decisión API keys/OAuth](docs/third-party-auth-plan.md). Las claves emitidas tienen entorno y vencimiento; la rotación es atómica y la introspección solo muestra la credencial propia.

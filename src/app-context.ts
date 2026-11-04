@@ -106,7 +106,7 @@ export function createAppContext(name: string, env: Env = loadEnv()): AppContext
   const evmSubmitter = evmSubmitters[nets.avalanche.id] ?? null;
   // The keys of TILCAI_API_KEYS belong to the legacy tenant (scope `payments`): Optipagos and optus-agentBE keep working.
   // SQLite runs this to completion before the call returns, so the keys are in place when the context is.
-  const tenants = new SqliteTenantRegistry(db, systemClock);
+  const tenants = new SqliteTenantRegistry(db, systemClock, env.TILCAI_ENV);
   tenants
     .syncLegacyKeys(runtime.apiKeys)
     .then((r) => log.info("legacy tenant keys synced", r))

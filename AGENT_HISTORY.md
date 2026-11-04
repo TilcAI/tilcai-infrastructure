@@ -611,6 +611,7 @@ Comprobado en el contenedor: `/health` con `eip155:10143`, `vault` y `vaultStell
 ## 2026-11-01T06:46:23Z · saulchoque · Codex / gpt-6.1-sol
 
 - **Sesión:** n/d
+- **Rama:** feat/third-party-credentials
 - **Rama:** fix/saulchoque-vault-soroban-2026-11-01
 - **Repositorios:** TilcAI/documentation, tilcai-infrastructure, tilcai-sdk, tilcai-mcp, tilcai-core, tilcai-web, tilcai-cctp-engine, .github
 
@@ -635,6 +636,7 @@ Documentación: [resultados y ramas](/home/saul-bms/proyectos/tilcai/documentati
 ## 2026-11-01T06:46:23Z · saulchoque · Codex / gpt-6.1-sol
 
 - **Sesión:** n/d
+- **Rama:** feat/third-party-credentials
 - **Rama:** fix/saulchoque-vault-soroban-2026-11-01
 - **Repositorios:** TilcAI/documentation, tilcai-infrastructure, tilcai-sdk, tilcai-mcp, tilcai-core, tilcai-web, tilcai-cctp-engine, .github
 
@@ -659,6 +661,7 @@ Documentación: [resultados y ramas](/home/saul-bms/proyectos/tilcai/documentati
 ## 2026-11-01T06:46:23Z · saulchoque · Codex / gpt-6.1-sol
 
 - **Sesión:** n/d
+- **Rama:** feat/third-party-credentials
 - **Rama:** fix/saulchoque-vault-soroban-2026-11-01
 - **Repositorios:** TilcAI/documentation, tilcai-infrastructure, tilcai-sdk, tilcai-mcp, tilcai-core, tilcai-web, tilcai-cctp-engine, .github
 
@@ -683,6 +686,7 @@ Documentación: [resultados y ramas](/home/saul-bms/proyectos/tilcai/documentati
 ## 2026-11-01T06:46:23Z · saulchoque · Codex / gpt-6.1-sol
 
 - **Sesión:** n/d
+- **Rama:** feat/third-party-credentials
 - **Rama:** fix/saulchoque-vault-soroban-2026-11-01
 - **Repositorios:** TilcAI/documentation, tilcai-infrastructure, tilcai-sdk, tilcai-mcp, tilcai-core, tilcai-web, tilcai-cctp-engine, .github
 
@@ -707,6 +711,7 @@ Documentación: [resultados y ramas](/home/saul-bms/proyectos/tilcai/documentati
 ## 2026-11-02T02:49:26Z · saulchoque · Codex / gpt-6.1-terra
 
 - **Sesión:** n/d
+- **Rama:** feat/third-party-credentials
 - **Rama:** fix/saulchoque-vault-soroban-2026-11-01
 - **Repositorios:** tilcai-infrastructure, tilcai-sdk, tilcai-mcp
 
@@ -716,11 +721,13 @@ Documentación: [resultados y ramas](/home/saul-bms/proyectos/tilcai/documentati
 
 ### Salida
 
+La rama incorpora las correcciones Vault/Soroban y 60e3199: API keys por tenant, scopes y entorno con caducidad, revocación, rotación atómica e introspección propia; migración SQLite 7, CLI de operador y auditoría sin secretos. Validación previa: 206 tests unitarios y typecheck. La integración de QR y el despliegue requieren coordinación de migraciones.
 Se implementaron #28, #35 y #42 en 73805cc: recuperación de payout conserva incertidumbre y reserva si falta evidencia concordante; admisión Vault recalcula reservas dentro de BEGIN IMMEDIATE con aritmética exacta; despliegue Soroban valida entradas y usa manifiesto durable para reconciliar interrupciones. Se documentaron pruebas offline: 201 unitarias, 5 Python y 12 Rust. Las issues requieren revisión; #32 sigue parcial.
 
 ## 2026-11-02T02:59:28Z · saulchoque · Codex / gpt-6.1-terra
 
 - **Sesión:** n/d
+- **Rama:** feat/third-party-credentials
 - **Rama:** fix/saulchoque-vault-soroban-2026-11-01
 - **Repositorios:** tilcai-infrastructure, tilcai-sdk, tilcai-mcp
 
@@ -730,6 +737,7 @@ Se implementaron #28, #35 y #42 en 73805cc: recuperación de payout conserva inc
 
 ### Salida
 
+Se creó `IMPLEMENTACION_RAMA_CREDENCIALES_BACKEND.md` con alcance, implementación, validación y pendientes de esta rama. El documento indica que debe excluirse del resultado de integración a main.
 Se creó `IMPLEMENTACION_RAMA_FIX_VAULT_SOROBAN.md` con alcance, implementación, validación y pendientes de esta rama. El documento indica que debe excluirse del resultado de integración a main.
 
 
@@ -3815,3 +3823,17 @@ Merge de main (88d0211, ya con N-01 y N-14) en la rama de N-10. Único conflicto
 ### Salida
 
 Actualizada la PR con main mediante merge automático, conservando Core privado y guardas Vault. Validados lint, typecheck, 247 tests TypeScript, 5 Python y 5 de evidencia offline. CI ampliado con preflight/evidencia; integración por squash y seguimiento del despliegue automático. Documento exclusivo de rama excluido; #32 conserva aceptación D-05 pendiente.
+
+## 2026-11-04T05:37:31.732828+00:00 · saulchoque · Codex
+
+- **Sesión:** n/d
+- **Rama:** feat/third-party-credentials
+- **Repositorios:** tilcai-infrastructure, documentation
+
+### Prompt
+
+> posteriormente cierra las issues y prs terminados y analiza las ramas en tilcai-infrastructure, quita las que ya estan incluidas en main, luego usando solo las mias mergea a main las que aun no lo estan, luego actualiza la documentacion en tilcai (en el repo 'documentation' y en el repositorio mismo)
+
+### Salida
+
+Auditada autoría y equivalencia con main; retiradas ocho ramas remotas incluidas y PR48 integrada. Credenciales de SaulChoque se combina con main conservando Vault y reasignando su migración a 8; 253 tests TypeScript y suites offline correctos. Se documentan ramas ajenas conservadas y los requisitos de aceptación que mantienen abiertas #28/#35/#42/#32. CI, PR y documentación acompañan la integración; sin cierre de requisitos humanos pendientes.

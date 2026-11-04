@@ -410,4 +410,22 @@ CREATE TABLE sponsored_holds (
 CREATE INDEX ix_sponsored_holds_tenant_day ON sponsored_holds(tenant_id, day, state);
 `,
   },
+  {
+    id: 8,
+    sql: `
+ALTER TABLE tenant_api_keys ADD COLUMN environment TEXT NOT NULL DEFAULT 'testnet' CHECK(environment IN ('testnet','mainnet'));
+ALTER TABLE tenant_api_keys ADD COLUMN expires_at TEXT;
+ALTER TABLE tenant_api_keys ADD COLUMN last_used_at TEXT;
+CREATE TABLE tenant_key_events (
+  seq INTEGER PRIMARY KEY AUTOINCREMENT,
+  key_id TEXT NOT NULL REFERENCES tenant_api_keys(id),
+  kind TEXT NOT NULL CHECK(kind IN ('issued','revoked','rotated')),
+  at TEXT NOT NULL
+);
+CREATE TRIGGER trg_key_events_no_update BEFORE UPDATE ON tenant_key_events
+BEGIN SELECT RAISE(ABORT, 'tenant_key_events is insert-only'); END;
+CREATE TRIGGER trg_key_events_no_delete BEFORE DELETE ON tenant_key_events
+BEGIN SELECT RAISE(ABORT, 'tenant_key_events is insert-only'); END;
+`,
+  },
 ];
