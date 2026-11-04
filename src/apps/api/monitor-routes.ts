@@ -72,7 +72,8 @@ export function registerMonitorRoutes(app: FastifyInstance, ctx: AppContext): vo
     const poll = setInterval(flush, 1000);
     const beat = setInterval(() => res.write(": ping\n\n"), 20_000);
     const unsubscribe = ctx.monitor.subscribe(() => setImmediate(flush));
-    req.raw.on("close", () => {
+    // The response, not the request: its close is what arrives when the client goes away.
+    res.on("close", () => {
       clearInterval(poll);
       clearInterval(beat);
       unsubscribe();

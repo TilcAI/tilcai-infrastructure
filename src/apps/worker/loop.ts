@@ -1,5 +1,6 @@
 import type { AppContext } from "../../app-context.ts";
 import type { ResourceSnapshot } from "../../modules/monitor/resources.ts";
+import type { WorkerState } from "../../modules/readiness/service.ts";
 
 const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
@@ -9,9 +10,9 @@ const errText = (e: unknown) => (e instanceof Error ? e.message : String(e));
  *  - housekeeping feeds the dashboard (events to tilcai-web, resource snapshots) and runs the
  *    QR mock's clock (payment notifications, expirations). A slow dashboard or a caller that
  *    does not answer its callback never delays a payment.
- * Both stop on signal.
+ * Both stop on signal. `state` is the reconciliation loop's, for `/ready`.
  */
-export function startWorker(ctx: AppContext): { stop(): Promise<void> } {
+export function startWorker(ctx: AppContext): { stop(): Promise<void>; state(): WorkerState } {
   const reconcile = loop(ctx, "worker", ctx.env.WORKER_POLL_MS, [() => ctx.crosschain.processDue(), ...Object.values(ctx.vaults).map((v) => () => v.processDue()), () => ctx.accountService?.processDue()]);
 
   let lastSnapshotAt = 0;
@@ -37,6 +38,7 @@ export function startWorker(ctx: AppContext): { stop(): Promise<void> } {
   const unsubscribe = ctx.monitor.subscribe(() => housekeeping.wake());
 
   return {
+    state: reconcile.state,
     async stop() {
       unsubscribe();
       await Promise.all([reconcile.stop(), housekeeping.stop()]);
@@ -66,8 +68,9 @@ export async function recordResources(ctx: AppContext): Promise<ResourceSnapshot
 }
 
 /** Runs the passes every `everyMs`. Each one fails on its own: a stuck one never holds the others back. */
-function loop(ctx: AppContext, name: string, everyMs: number, passes: Array<() => Promise<unknown> | undefined>): { stop(): Promise<void>; wake(): void } {
+function loop(ctx: AppContext, name: string, everyMs: number, passes: Array<() => Promise<unknown> | undefined>): { stop(): Promise<void>; wake(): void; state(): WorkerState } {
   let running = true;
+  let lastRoundAt = Date.now();
   let wake: (() => void) | null = null;
   let woken = false;
   const done = (async () => {
@@ -78,6 +81,7 @@ function loop(ctx: AppContext, name: string, everyMs: number, passes: Array<() =
       for (const r of results) {
         if (r.status === "rejected") ctx.log.error(`${name} iteration failed`, { error: errText(r.reason) });
       }
+      lastRoundAt = Date.now();
       // Something asked for another round while this one was running: do not sleep on it.
       if (woken || !running) continue;
       await new Promise<void>((resolve) => {
@@ -89,6 +93,7 @@ function loop(ctx: AppContext, name: string, everyMs: number, passes: Array<() =
     ctx.log.info(`${name} stopped`);
   })();
   return {
+    state: () => ({ running, lastRoundAt }),
     wake() {
       woken = true;
       wake?.();

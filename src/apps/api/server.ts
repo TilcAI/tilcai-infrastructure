@@ -17,6 +17,8 @@ import { QR_MOCK_PREFIX, registerQrMock } from "../../modules/qrsimple/routes.ts
 import { systemClock } from "../../shared/clock.ts";
 import { bearerOf, isLoopback } from "./auth.ts";
 import { registerMonitorRoutes, RELAYER_WEBHOOK_PATH } from "./monitor-routes.ts";
+import { READY_PATH, registerReadinessRoutes } from "./readiness-routes.ts";
+import type { WorkerState } from "../../modules/readiness/service.ts";
 
 const json = (v: unknown) => JSON.stringify(v, (_, x) => (typeof x === "bigint" ? x.toString() : x));
 const send = (reply: FastifyReply, status: number, body: unknown) =>
@@ -78,7 +80,8 @@ const DisbursementBody = z.strictObject({
   reference: z.string().max(160).optional(),
 });
 
-export function buildServer(ctx: AppContext): FastifyInstance {
+/** `worker`: the reconciliation worker when it runs in this process, so `/ready` can tell whether it keeps going. */
+export function buildServer(ctx: AppContext, opts: { worker?: () => WorkerState } = {}): FastifyInstance {
   const app = Fastify({
     logger: { level: ctx.env.LOG_LEVEL, redact: ["req.headers.authorization", "req.headers['idempotency-key']"] },
     bodyLimit: 64 * 1024,
@@ -94,7 +97,7 @@ export function buildServer(ctx: AppContext): FastifyInstance {
     const path = req.url.split("?", 1)[0]!;
     // These authenticate on their own: the relayer signs its webhooks and the QR mock speaks
     // Vendis's API, with Vendis's tokens.
-    if (path === "/health" || path === RELAYER_WEBHOOK_PATH || path.startsWith(QR_WEBHOOK_PREFIX) || path === QR_MOCK_PREFIX || path.startsWith(`${QR_MOCK_PREFIX}/`)) return;
+    if (path === "/health" || path === READY_PATH || path === RELAYER_WEBHOOK_PATH || path.startsWith(QR_WEBHOOK_PREFIX) || path === QR_MOCK_PREFIX || path.startsWith(`${QR_MOCK_PREFIX}/`)) return;
     const presented = bearerOf(req.headers.authorization);
     const known = presented ? await ctx.tenants.authenticate(presented) : undefined;
     let caller: Caller | undefined = known ? { tenantId: known.tenant.id, scopes: known.scopes, ...(known.key ? { key: known.key } : {}) } : undefined;
@@ -146,6 +149,8 @@ export function buildServer(ctx: AppContext): FastifyInstance {
     return send(reply, 500, { error: new DomainError("INTERNAL_ERROR").contract });
   });
 
+  // Liveness: 200 while the process runs, whatever the relayer does (that is `/ready`), so an
+  // outage of a dependency never makes the platform restart this container.
   app.get("/health", async (_req, reply) => {
     const relayer = await ctx.relayer.health();
     return send(reply, 200, {
@@ -162,6 +167,8 @@ export function buildServer(ctx: AppContext): FastifyInstance {
       monitor: ctx.forwarder ? "push" : "local",
     });
   });
+
+  registerReadinessRoutes(app, ctx, opts.worker);
 
   app.get("/v1/auth/context", async (req, reply) => {
     const caller = callers.get(req)!;

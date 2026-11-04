@@ -938,6 +938,34 @@ Dejé el análisis, comandos, limitaciones y recomendaciones en el [informe deta
 ### Salida
 
 Commit de N-04 en fix/n04-legacy-sync-fail-closed (código, tests, documentación e historial), push a origin y PR contra main que cierra #30, con revisión pedida a joseemen11 y JHAMILCALI.
+
+## 2026-11-01T18:58:00Z · OmarQV · Claude Code (claude-opus-5-5)
+
+- **Sesión:** n/d
+- **Rama:** feat/n12-readiness (sobre fix/n04-legacy-sync-fail-closed)
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> Vamos con el siguiente issue
+
+### Salida
+
+N-12 (#38) implementado, sin commit, con las decisiones que aprobó OmarQV: `/health` queda como liveness y responde 200 aunque el relayer esté caído. El nuevo `/ready` es público y responde 200 o 503 con cada comprobación, sin secretos, y reutiliza cada respuesta 5 s. Si readiness falla solo se informa: los pagos no se bloquean. Los manifiestos no se tocan. En solo lectura `/ready` exige la base y solo informa del relayer. En modo transaccional exige además: que el relayer responda y acepte la clave; que cada relayer de cada red EVM activa y el de Stellar exista con la red y el tipo esperados (`relayerNetwork`, nuevo en src/config/networks.ts), sin pausar y con firmante; el submitter de Stellar; y el worker de all-in-one con una ronda reciente. `?mode=transactional` permite validar mainnet antes de activar transacciones. Cada llamada al relayer tiene un timeout de 5 s. Los roles on-chain no se verifican: quedan como brecha documentada. Archivos: src/modules/readiness/service.ts, src/apps/api/readiness-routes.ts, server.ts, worker/loop.ts (estado del loop), all-in-one.ts, networks.ts, test/unit/readiness.test.ts (13 tests: relayer caído, clave rechazada o ausente, id vacío o inexistente, red y tipo distintos, pausado, sin firmante, submitter local sin clave, solo lectura, compose de testnet aplicado a mainnet, mainnet activo, worker detenido o silencioso, caché, modo inválido, timeout y worker real). Typecheck correcto. Suite: 191 de 208; los mismos 17 fallos que la base, por Node v22.16 local. Comprobado con all-in-one real sin relayer: /health 200, /ready 503 y ninguna clave en los logs. Documentado en README.md, deploy/README.md y deploy/MAINNET_DEPLOYMENT.md.
+
+## 2026-11-01T19:18:36Z · OmarQV · Claude Code (claude-opus-5-5)
+
+- **Sesión:** n/d
+- **Rama:** feat/n12-readiness
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> SI, hazlo
+
+### Salida
+
+Commit de N-12 en feat/n12-readiness (código, tests, documentación e historial), push a origin y PR contra fix/n04-legacy-sync-fail-closed (apilado sobre #43) que cierra #38, con revisión pedida a SaulChoque y joseemen11.
 > revisa si se publico codigo de tilcai-core en infratructure siguiendo su mensaje anterior, en caso de que si quita el codigo (de todas formas el codigode tilcai core es meramente ilustrativo y no es funcional)
 > # Context from my IDE setup:
 >
@@ -3970,3 +3998,17 @@ Auditada autoría y equivalencia con main; retiradas ocho ramas remotas incluida
 ### Salida
 
 Merge de main (c2f57a9, con credenciales #53 y vault #48). `src/app-context.ts`: se conserva la sincronización síncrona que detiene el arranque si falla (N-04) y se pasa `env.TILCAI_ENV` al registro, como hace #53. Typecheck limpio y 255/255 tests en local.
+
+## 2026-11-04T14:10:00Z · OmarQV · Claude Code (claude-opus-5-5)
+
+- **Sesión:** 326c05ab-c025-4213-8616-d60e79d08efb
+- **Rama:** feat/n12-readiness
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> Resuelve los conflictos y haz merge de todo
+
+### Salida
+
+Base cambiada a main tras el merge de #43. Merge de main (467b74b). `src/apps/api/server.ts`: se conservan `registerReadinessRoutes` (N-12) y la ruta `/v1/auth/context` de #53, una después de la otra; `/ready` sigue siendo pública. Aparte: `test/unit/api-monitor.test.ts` fallaba de forma intermitente ("database is not open" después del test del stream), porque `/v1/monitor/stream` limpiaba su polling al cerrarse la petición y no la respuesta; ahora escucha el `close` de la respuesta, que es el que llega cuando el cliente se va.
