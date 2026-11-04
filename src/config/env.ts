@@ -97,6 +97,8 @@ const schema = z.object({
   RPC_STELLAR_TESTNET: z.string().url().default("https://soroban-testnet.stellar.org"),
   HORIZON_STELLAR_TESTNET: z.string().url().default("https://horizon-testnet.stellar.org"),
   IRIS_API_URL: z.string().url().default("https://iris-api-sandbox.circle.com"),
+  /** One deadline covers the Iris HTTP request and response body. */
+  IRIS_TIMEOUT_MS: z.coerce.number().int().min(1000).max(60_000).default(10_000),
   RPC_AVALANCHE_MAINNET: optionalUrl,
   RPC_STELLAR_MAINNET: optionalUrl,
   HORIZON_STELLAR_MAINNET: optionalUrl,
