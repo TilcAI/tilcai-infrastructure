@@ -359,11 +359,20 @@ foto de recursos cada 30 s ────┘        └── GET /v1/monitor/even
   estado de cada cola; saldo de gas y estado de cada relayer; saldo, límites y pausa de cada vault
   (Fuji y Stellar; las alertas del segundo llevan la red: `VAULT_EMPTY:stellar:testnet`).
 - **Alertas**: lo que está mal ahora (`VAULT_EMPTY`, `VAULT_LOW`, `RELAYER_DOWN`,
-  `RELAYER_LOW_GAS:<id>`, `MONITOR_SINK_FAILING:web`…). Un evento cuando aparece y otro cuando
-  se resuelve, no uno por cada foto.
+  `RELAYER_LOW_GAS:<id>`, `MONITOR_SINK_FAILING:web`, `MONITOR_BACKLOG_RETAINED:web`,
+  `MONITOR_SINK_GAP:web`…). Un evento cuando aparece y otro cuando se resuelve, no uno por cada foto.
 - **Envío a tilcai-web**: por lotes, en orden y al menos una vez. El cursor solo avanza con un
-  `2xx`, así que un tablero caído recibe después todo lo que se perdió. Cada envío va firmado:
+  `2xx`, así que un tablero caído recibe después todo lo que se perdió, si vuelve dentro de
+  `MONITOR_PENDING_MAX_DAYS` (90 días). Cada envío va firmado:
   `X-Tilcai-Signature: v1=HMAC-SHA256(secreto, "<X-Tilcai-Timestamp>.<cuerpo>")`.
+- **Retención**: lo que todos los receptores configurados ya recibieron se borra a los
+  `MONITOR_RETENTION_DAYS` (14). Lo que alguno todavía no recibió se conserva, y desde el día 14
+  se levanta `MONITOR_BACKLOG_RETAINED:<receptor>`. Pasados `MONITOR_PENDING_MAX_DAYS` también se
+  borra, pero la pérdida nunca es silenciosa: queda un evento `monitor.gap` con las posiciones y la
+  cantidad, la alerta `MONITOR_SINK_GAP:<receptor>`, y el siguiente envío lleva
+  `gap: {fromSeq, toSeq, count, prunedAt}` hasta que el receptor lo acepta. Un receptor que ya no
+  está configurado (sin `MONITOR_WEB_URL`) no retiene nada. Estos eventos son del tablero; no son
+  recibos financieros.
 - **Avisos del relayer**: se guardan una vez (por su `id`) y, si la transacción la envió
   TilcAI, enlazan con su pago o su desembolso. Sirven para ver, no para decidir: un pago solo
   se liquida cuando TilcAI comprobó la cadena.

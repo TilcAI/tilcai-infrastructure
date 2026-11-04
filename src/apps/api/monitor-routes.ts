@@ -44,6 +44,14 @@ export function registerMonitorRoutes(app: FastifyInstance, ctx: AppContext): vo
     return send(reply, 200, { schema: MONITOR_SCHEMA, resources: cached.snapshot, alerts: ctx.monitor.alerts() });
   });
 
+  // Fastify does not close a hijacked response: open streams end here, or their poll would read a database that is
+  // closing and the shutdown would wait for every dashboard to leave.
+  const streams = new Set<() => void>();
+  app.addHook("preClose", (done) => {
+    for (const end of streams) end();
+    done();
+  });
+
   app.get("/v1/monitor/stream", (req, reply) => {
     const q = z.object({ after: z.coerce.number().int().min(0).optional() }).parse(req.query);
     const resumed = Number(req.headers["last-event-id"]);
@@ -57,7 +65,9 @@ export function registerMonitorRoutes(app: FastifyInstance, ctx: AppContext): vo
       "x-accel-buffering": "no",
     });
     res.write("retry: 3000\n\n");
+    let open = true;
     const flush = () => {
+      if (!open) return;
       let batch: MonitorEvent[];
       do {
         batch = ctx.monitor.list({ after: cursor, limit: 200 });
@@ -72,12 +82,18 @@ export function registerMonitorRoutes(app: FastifyInstance, ctx: AppContext): vo
     const poll = setInterval(flush, 1000);
     const beat = setInterval(() => res.write(": ping\n\n"), 20_000);
     const unsubscribe = ctx.monitor.subscribe(() => setImmediate(flush));
-    // The response, not the request: its close is what arrives when the client goes away.
-    res.on("close", () => {
+    const end = () => {
+      if (!open) return;
+      open = false;
       clearInterval(poll);
       clearInterval(beat);
       unsubscribe();
-    });
+      streams.delete(end);
+      res.end();
+    };
+    // The response, not the request: its close is what arrives when the client goes away.
+    res.on("close", end);
+    streams.add(end);
     flush();
   });
 

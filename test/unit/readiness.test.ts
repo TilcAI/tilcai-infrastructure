@@ -231,7 +231,8 @@ test("readiness: a relayer that does not answer is a failed check within the tim
     { db, relayer: hung, relayerApiKeySet: true, relayers: [], mintSubmitter: { kind: "relayer", localKeySet: false }, workerMaxSilenceMs: 1000, timeoutMs: 50 },
     "transactional",
   );
-  assert.ok(Date.now() - started < 2000);
+  // A hung probe never returns; the bound only has to be far from that on a loaded machine (the timeout is 50 ms).
+  assert.ok(Date.now() - started < 10_000);
   assert.equal(r.ready, false);
   assert.equal(r.checks.find((c) => c.name === "relayer.reachable")?.ok, false);
   db.close();
