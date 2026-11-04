@@ -253,7 +253,11 @@ Límites que conviene conocer antes de elegir Cloud Run para TilcAI:
 - **Una instancia, nunca más.** Dos instancias serían dos workers y dos copias de la base.
 - **Al publicar una revisión nueva**, Cloud Run enciende la instancia nueva antes de apagar
   la anterior. Durante esos segundos conviven dos: lo que la anterior escriba después de que
-  la nueva restauró no llega a la nueva. Publica sin pagos en curso.
+  la nueva restauró no llega a la nueva. Publica sin pagos en curso. Cuánto dura esa convivencia
+  y qué conserva el restore está sin medir: ver [`CLOUD_RUN_SINGLE_WRITER.md`](CLOUD_RUN_SINGLE_WRITER.md).
+- **Nunca etiquetes revisiones de `tilcai`** (`--tag`, `--set-tags`): Cloud Run mantiene
+  encendida cada revisión etiquetada con su instancia mínima, así que su worker y su Litestream
+  seguirían escribiendo en la misma réplica que la revisión activa.
 - **Una caída brusca** puede perder hasta el último segundo de escrituras (el intervalo de
   réplica).
 - Un volumen de Cloud Storage montado no sirve para SQLite (no tiene bloqueos de archivo).

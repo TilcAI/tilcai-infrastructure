@@ -608,6 +608,10 @@ Comprobado en el contenedor: `/health` con `eip155:10143`, `vault` y `vaultStell
 
 `.env.example` reordenado en 10 secciones numeradas (núcleo, relayer, submitter Stellar, RPC, contratos testnet, monitoreo, mock QR, proveedores fiat, mainnet, pruebas). Añadidas las variables de Monad Testnet que el código ya lee (`RELAYER_MONAD_TESTNET_ID`, `RPC_MONAD_TESTNET`, router, routerV2, factory y vault) con las direcciones desplegadas el 2026-10-13; las direcciones de Fuji tomadas de `deploy/.env.example`; ids de relayer de mainnet con sus valores por defecto; `HORIZON_STELLAR_MAINNET` queda en `https://horizon.stellar.org`. Las variables `BANECO_*` y `ATC_*` se conservan pero ninguna parte de `src/` las lee todavía. `ACCOUNT_FACTORY_STELLAR` y `VAULT_STELLAR` siguen vacías porque sus IDs no están en el repositorio (el `.env` local no se leyó).
 
+## 2026-11-01T20:05:00Z · OmarQV · Claude Code (claude-opus-5-5)
+
+- **Sesión:** n/d
+- **Rama:** docs/n07-single-writer (desde main)
 ## 2026-11-01T19:19:00Z · OmarQV · Claude Code (claude-opus-5-5)
 
 - **Sesión:** n/d
@@ -708,6 +712,23 @@ SDK: `tilcai.qr` (0.2.0, 82 pruebas). Optipagos: `TilcaiClient` y `TilcaiQrClien
 
 ### Prompt
 
+> vamos con el N-07
+
+### Salida
+
+Investigación de N-07 (#33), sin commit. Queda en estado NEEDS_VALIDATION: el análisis está hecho, pero el ensayo en staging no se ejecutó porque no hay un entorno autorizado. deploy/CLOUD_RUN_SINGLE_WRITER.md recoge la configuración actual, lo que dice la documentación oficial (citada) y cinco hipótesis:
+- H1: `maxScale` es por revisión y el servicio no tiene límite propio, así que en un rollout conviven dos instancias.
+- H2: la instancia vieja sigue escribiendo con su worker hasta el SIGTERM.
+- H3: dos Litestream 0.3 en la misma ruta abren generaciones distintas y el restore se queda con una sola.
+- H4: una revisión etiquetada queda encendida para siempre como segundo escritor.
+- H5: con `-if-replica-exists`, una réplica ausente arranca una base vacía que se ve sana.
+
+El documento analiza el impacto: la cadena protege el burn, el mint y el `disbursementId` repetido, pero la idempotencia de la API es local y un reintento puede pagar con otro id, acotado por los límites del vault. Incluye el protocolo E0–E5 y las mitigaciones a decidir (D-06), sin aplicar ninguna. deploy/staging/n07-writer.mjs hace escrituras sintéticas sobre el mock de QR y su verificación; se ensayó en local con una copia `VACUUM INTO` a mitad de la carga: 29 confirmadas, B conservó 14 y perdió 15. deploy/README.md ahora enlaza el análisis y prohíbe etiquetar revisiones de tilcai. No se ejecutó nada en GCP ni hubo pagos. Pendiente: staging autorizado, ensayos E1–E5, decisión D-06 y revisión de JHAMILCALI y joseemen11.
+
+## 2026-11-01T20:30:20Z · OmarQV · Claude Code (claude-opus-5-5)
+
+- **Sesión:** n/d
+- **Rama:** docs/n07-single-writer
 > Si, continua
 
 ### Salida
@@ -835,6 +856,10 @@ Documentación: [resultados y ramas](/home/saul-bms/proyectos/tilcai/documentati
 - **Repositorios:** tilcai-infrastructure
 
 ### Prompt
+
+> Si, hazlo
+
+### Salida
 
 > si
 
@@ -4250,3 +4275,17 @@ Base cambiada a main tras el merge de #43. Merge de main (467b74b). `src/apps/ap
 ### Salida
 
 Merge de main (de0205b, con credenciales #53 en la migración 8). La migración de N-11 (`monitor_sinks.gap_json`) pasa de la 8 a la 9; ninguna base desplegada tenía la 8 de N-11 porque la rama no se había mergeado. `test/unit/migration-5.test.ts` conserva la lista sacada de `MIGRATIONS`. Aparte, `/v1/monitor/stream`: el arreglo de `res.on("close")` de #44 no bastaba, porque Fastify no cierra una respuesta secuestrada y `app.close()` esperaba al cliente mientras el polling leía una base que se cerraba ("database is not open" en `api-monitor.test.ts`). Ahora un hook `preClose` termina los streams abiertos y `flush` no escribe en uno terminado; test de regresión nuevo, que falla sin el arreglo. `readiness.test.ts`: el límite de reloj del probe colgado sube de 2 s a 10 s (el timeout es 50 ms) porque fallaba con la máquina cargada.
+
+## 2026-11-04T14:29:55Z · OmarQV · Claude Code (claude-opus-5-5)
+
+- **Sesión:** 326c05ab-c025-4213-8616-d60e79d08efb
+- **Rama:** docs/n07-single-writer
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> Resuelve los conflictos y haz merge de todo
+
+### Salida
+
+Merge de main (87b64c5, con N-04, N-12, N-11, credenciales #53 y vault #48) sin conflictos. Typecheck limpio y 277/277 tests en local.
