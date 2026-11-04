@@ -10,4 +10,4 @@ const reg = new SqliteTenantRegistry(db);
 let got = 0;
 for (let i = 0; i < Number(attempts); i++) if (await reg.consumeQuota(tenantId, "operation")) got++;
 db.close();
-console.log(got);
+process.stdout.write(`${got}\n`);
