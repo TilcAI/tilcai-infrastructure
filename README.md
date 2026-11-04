@@ -60,6 +60,8 @@ payer (Fuji)                TilcAI API + worker                          Circle 
 - Un burn respalda como máximo un pago, y un nonce CCTP una sola liquidación (índices únicos).
 - El mint es idempotente por el nonce de CCTP: se reintenta sin riesgo. Nunca se crea un segundo burn para un pago existente.
 - Un burn no encontrado o una atestación que no coincide pasan a `UNCERTAIN` y no se mintean. Nunca se marcan `FAILED` sin evidencia.
+- **Liquidación atómica (N-01):** `SETTLED`, su evento y el recibo se guardan en una sola transacción SQLite (`CrosschainRepository.settle`, con control de versión). Si cualquier escritura falla, el pago sigue en `MINT_SUBMITTED` y el worker lo reintenta; no hay esquema ni migración nueva.
+  - *Anomalías históricas:* los pagos liquidados antes de este cambio podrían carecer de recibo si el proceso se interrumpió entre ambas escrituras. El worker no los vuelve a seleccionar y no se reparan automáticamente; se detectan con `SELECT p.id FROM crosschain_payments p LEFT JOIN payment_receipts r ON r.payment_id = p.id WHERE p.state = 'SETTLED' AND r.id IS NULL;` y requieren conciliación manual revisada por finanzas (contrastar `mint_tx_hash` en Stellar antes de emitir el recibo).
 
 ## Uso
 

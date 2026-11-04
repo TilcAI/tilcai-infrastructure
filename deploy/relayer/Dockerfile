@@ -16,6 +16,10 @@
 ARG RELAYER_BASE=tilcai/oz-relayer-base:local
 FROM ${RELAYER_BASE}
 
+ARG VCS_REF=unknown
+LABEL org.opencontainers.image.source="https://github.com/TilcAI/tilcai-infrastructure" \
+      org.opencontainers.image.revision="${VCS_REF}"
+
 USER root
 COPY --chown=nonroot:nonroot config/ /app/config/
 COPY --chmod=755 entrypoint.sh /app/relayer-entrypoint.sh
