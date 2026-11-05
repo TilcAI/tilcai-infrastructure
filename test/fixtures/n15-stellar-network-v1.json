@@ -1,0 +1,33 @@
+{
+  "schema": "tilcai-stellar-network-compat-v1",
+  "mappings": [
+    { "authorityV1": "stellar:testnet", "operational": "stellar:testnet" },
+    { "authorityV1": "stellar:mainnet", "operational": "stellar:pubnet" }
+  ],
+  "v1CommitmentGolden": "sha256:325433ec7a8961514346784af28b83cc1678544c14d7db4fadc7aba5469d7eba",
+  "v1Intent": {
+    "schema": "tilcai-intent-v1",
+    "id": "intent_demo",
+    "principalId": "principal_demo",
+    "agentId": "agent_demo",
+    "businessId": "business_demo",
+    "serviceId": "service_demo",
+    "quoteId": "quote_demo",
+    "orderId": "order_demo",
+    "accountRef": "account:test-buyer",
+    "quoteHash": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "purchase": {
+      "quantity": 1,
+      "amountAtomic": "8000000",
+      "network": "stellar:mainnet",
+      "assetId": "asset:test-configured",
+      "payTo": "recipient:test-merchant",
+      "termsHash": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "quoteExpiresAt": "2026-10-02T12:00:00.000Z"
+    },
+    "policyVersion": 1,
+    "authorization": { "mode": "PER_PURCHASE" },
+    "createdAt": "2026-10-02T11:00:00.000Z",
+    "expiresAt": "2026-10-02T11:30:00.000Z"
+  }
+}

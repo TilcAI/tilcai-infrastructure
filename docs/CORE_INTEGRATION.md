@@ -50,3 +50,32 @@ Backend imports compiled subpaths, keeps provider clients and transactions local
 ## Verificación local de la integración
 
 Core: 33 tests; backend: 212; SDK: 86; MCP: 7; web: 108. Typecheck pasa en los cinco proyectos de código. Builds Core/SDK/MCP/web y smoke SDK ESM/CJS pasan. La imagen backend arrancó con Core compilado y sin fuentes Core en runtime. No se ejecutaron pagos, operaciones bancarias ni despliegues en servidor. El acceso de cada repositorio en Manage Actions access requiere verificación administrativa.
+
+## N-15: identidad Stellar entre autoridad v1 y registro operativo
+
+El contrato de autoridad `tilcai-intent-v1`/`tilcai-mandate-v1` de Core acepta
+`stellar:testnet` y `stellar:mainnet`. La red entra literalmente en
+`intentCommitment` (`tilcai-intent-commitment-v1`), así que cambiarla antes de
+verificar una aprobación produciría otro hash. El registro, la API y las filas
+SQLite existentes de Infrastructure usan `stellar:testnet` y `stellar:pubnet`.
+El Relayer llama a esta última red `mainnet` en su propio campo `network`; el
+plugin x402 anuncia `stellar:pubnet`.
+
+La tabla de frontera `tilcai-stellar-network-compat-v1`, fijada en
+`test/fixtures/n15-stellar-network-v1.json`, propone estas equivalencias de
+entorno: `stellar:testnet` ↔ `stellar:testnet` y `stellar:mainnet` (Core v1) ↔
+`stellar:pubnet` (Infrastructure). `src/config/stellar-network-compat.ts`
+implementa solo la resolución explícita de IDs. Rechaza IDs desconocidos y el
+alias del otro lado; no cambia objetos firmados, compromisos, filas SQLite ni
+las redes activas. El fixture sintético fija un compromiso v1, comprobado
+contra `@tilcai/core@0.1.0`. La lectura de una fila SQLite `stellar:pubnet`
+conserva el valor original.
+
+**Decisión pendiente de Saúl y Omar:** aceptar el ID operativo canónico y el
+alcance de este mapeo para la futura integración MCP. Antes de admitir
+`stellar:mainnet` en una API pública de pagos, habrá que versionar esa frontera
+y revisar también hashes de solicitudes, idempotencia, respuestas y lectura de
+datos históricos. Los parsers de autoridad y compromisos v1 de Core permanecen
+intactos hasta acordar cualquier cambio del contrato firmado. El fixture debe
+copiarse y probarse en un PR separado de Core basado en su HEAD actualizado;
+esta rama todavía no acredita ese gate cruzado.
