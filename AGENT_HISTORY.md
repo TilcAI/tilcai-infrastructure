@@ -5007,3 +5007,17 @@ Modifiqué solo `.github/workflows/ci-cd.yml`: añadí el job `offline` para tod
 Validaciones reales: Infrastructure npm ci --ignore-scripts --offline desde copia limpia PASS; lint PASS; typecheck PASS; unit 310/310 PASS; Python preflight 5/5 PASS; evidencia archivada PASS; YAML parseable y git diff --check PASS. En dos ramas/worktrees temporales aislados, un tipo inválido produjo TS2322/exit 2 y recuperó exit 0; un test deliberado produjo 310 PASS, 1 FAIL/exit 1 y tras retirarlo 310/310/exit 0. Las ramas/worktrees temporales fueron eliminados. No se contactaron proveedores financieros.
 
 Core se probó desde archivo limpio de HEAD: npm test pasó 4 archivos; npm ci falla EUSAGE por falta de lock; npm run build/typecheck falla por scripts ausentes; tsc -p tsconfig.contracts.json falla TS2688 por falta de tipos Node. Propuse `audit/n05-core-offline-ci-gate` y PR independientes para lock, herramientas locales, scripts build/typecheck/lint y un workflow offline. Pendiente: ejecutar ambos PR checks en GitHub, confirmar acceso `packages:read` al paquete Core para forks, y revisión independiente. La CI de PR no ejecuta integración, crosschain-e2e, pagos ni deploys. No hubo commit, push, PR ni merge.
+
+## 2026-11-05T15:16:24Z · joseemen11 · ChatGPT GPT-6
+
+- **Sesión:** conversación actual de ChatGPT (n/d)
+- **Rama:** ci/disable-auto-publish-deploy
+- **Repositorios:** TilcAI/tilcai-infrastructure
+
+### Prompt
+
+> si, dale que hacemos ?
+
+### Salida
+
+Se creó la rama `ci/disable-auto-publish-deploy` desde `main` y se modificó exclusivamente `.github/workflows/ci-cd.yml` para desactivar la autenticación GHCR, publicación de imágenes y el job de despliegue a producción mediante condiciones `if: ${{ false }}`. Se conservan las pruebas offline y la construcción/comprobación de Docker, y se reducen los permisos de `verify` a lectura. Se prepara un PR para revisión y comprobación de GitHub Actions sin merge automático. No se ejecutaron despliegues ni se modificaron pagos ni contratos.
