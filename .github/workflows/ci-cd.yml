@@ -65,13 +65,15 @@ jobs:
           done
           exit 1
       - uses: docker/login-action@v3
-        if: github.ref == 'refs/heads/main'
+        # Deliberately disabled until a separately approved release change.
+        if: ${{ false }}
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Publish verified image
-        if: github.ref == 'refs/heads/main'
+        # No image publication on push, PR or workflow_dispatch.
+        if: ${{ false }}
         run: |
           docker tag tilcai-ci ghcr.io/tilcai/tilcai-api:$GITHUB_SHA
           # GHCR package permissions can lag the initial package creation.
@@ -82,11 +84,12 @@ jobs:
           exit 1
     permissions:
       contents: read
-      packages: write
+      packages: read
   deploy:
     timeout-minutes: 15
     needs: verify
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    # No production deployment on any event until explicitly re-enabled.
+    if: ${{ false }}
     runs-on: ubuntu-latest
     environment: production
     permissions:
