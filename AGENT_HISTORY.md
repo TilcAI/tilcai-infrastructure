@@ -5021,3 +5021,59 @@ Core se probó desde archivo limpio de HEAD: npm test pasó 4 archivos; npm ci f
 ### Salida
 
 Se creó la rama `ci/disable-auto-publish-deploy` desde `main` y se modificó exclusivamente `.github/workflows/ci-cd.yml` para desactivar la autenticación GHCR, publicación de imágenes y el job de despliegue a producción mediante condiciones `if: ${{ false }}`. Se conservan las pruebas offline y la construcción/comprobación de Docker, y se reducen los permisos de `verify` a lectura. Se prepara un PR para revisión y comprobación de GitHub Actions sin merge automático. No se ejecutaron despliegues ni se modificaron pagos ni contratos.
+
+## 2026-11-05T15:48:41Z · joseemen11 · Codex (GPT-6)
+
+- **Sesión:** n/d
+- **Rama:** feat/n15-stellar-network-compat
+- **Repositorios:** TilcAI/tilcai-infrastructure (modificado); TilcAI/tilcai-core (auditado sin cambios)
+
+### Prompt
+
+> # Context from my IDE setup:
+>
+> ## Active file: dev.md
+>
+> ## Open tabs:
+> - dev.md: dev.md
+>
+> ## My request:
+> dev.md vuelve a leer y ejeuctar
+
+### Salida
+
+**BLOCKED para cerrar N-15; la parte segura de Infrastructure está lista para validar.** Releí `dev.md` y la [issue #41](https://github.com/TilcAI/tilcai-infrastructure/issues/41). No hice commit, push, PR, merge, pagos, RPC ni despliegues.
+
+**Diagnóstico.** Core autoridad v1 admite `stellar:testnet` y `stellar:mainnet`; `intentCommitment` incorpora el ID literal, por lo que sustituirlo antes de verificar la aprobación altera el compromiso. Infrastructure y `tilcai-core/networks` usan `stellar:testnet`/`stellar:pubnet` en APIs y almacenamiento. Propongo conservar `pubnet` como ID operativo y traducir `mainnet` solo en la frontera con autoridad v1. Saúl y Omar deben aceptar esa decisión antes de activarla en una API pública.
+
+**Cambios en Infrastructure.** Añadí [stellar-network-compat.ts](/mnt/e/propioJOSE/stellar/tilcai-audit/tilcai-infrastructure/src/config/stellar-network-compat.ts), un mapeo estricto y versionado en ambos sentidos; [fixture N-15](/mnt/e/propioJOSE/stellar/tilcai-audit/tilcai-infrastructure/test/fixtures/n15-stellar-network-v1.json) y [prueba N-15](/mnt/e/propioJOSE/stellar/tilcai-audit/tilcai-infrastructure/test/unit/stellar-network-compat.test.ts) para testnet, mainnet/pubnet, inválidos, JSON, compromiso Core v1 y lectura SQLite de `pubnet` sin reescritura. Documenté el límite de activación en [CORE_INTEGRATION.md](/mnt/e/propioJOSE/stellar/tilcai-audit/tilcai-infrastructure/docs/CORE_INTEGRATION.md). El adaptador todavía no se conecta a rutas ni modifica contratos, redes activas o datos históricos. `dev.md` quedó intacto.
+
+**Core.** No modifiqué el clon: su HEAD local `f642c25` está detrás del `main` remoto `faa95af` y contiene cambios ajenos. La consulta Git autenticada falló dentro y fuera del sandbox; leí los archivos actuales mediante GitHub. Queda pendiente una rama y PR independientes desde el HEAD actualizado para incorporar el fixture y ejecutar sus pruebas. No prepararé cambios sobre la base obsoleta.
+
+**Validaciones reales.** Infrastructure: lint PASS, typecheck PASS, suite offline **314/314 PASS**, test focalizado PASS después del último ajuste y `git diff --check` PASS. El compromiso fijo proviene de un fixture sintético probado contra el Core 0.1.0 publicado; no acredita firmas reales ni tests ejecutados en el HEAD remoto de Core.
+
+**Pendiente de aprobación:** Saúl confirma equivalencia de red y activo; Omar confirma contrato de autoridad y frontera. Admitir `stellar:mainnet` en la API de pagos requiere revisar versionado, hashes, idempotencia y respuestas.
+
+Comandos en WSL, desde Infrastructure:
+
+```bash
+node --import tsx --test test/unit/stellar-network-compat.test.ts
+npm run lint
+npm run typecheck
+npm test
+git diff --check
+```
+
+Para preparar luego Core sin alterar su copia sucia:
+
+```bash
+git -C ../tilcai-core fetch origin main
+git -C ../tilcai-core worktree add -b feat/n15-stellar-network-compat-core /tmp/tilcai-core-n15 origin/main
+cd /tmp/tilcai-core-n15
+npm ci
+npm run build
+npm run typecheck
+npm test
+```
+
+El bloque de Core valida la base; sus pruebas N-15 aún deben añadirse.
