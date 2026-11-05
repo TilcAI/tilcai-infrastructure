@@ -4910,3 +4910,100 @@ git diff --check
 ```
 
 **Riesgo restante:** falta comprobar el comportamiento operativo con un Relayer autorizado y la revisión de Omar; esa validación no está incluida en estas pruebas offline. El cambio considera obligatoria la lectura de balance que la CLI ya realizaba, por lo que un fallo de ese endpoint ahora devuelve exit 1.
+
+## 2026-11-05T04:31:40Z · joseemen11 · Codex (GPT-6)
+
+- **Sesión:** n/d
+- **Rama:** audit/n05-offline-ci-gate
+- **Repositorios:** TilcAI/tilcai-infrastructure (modificado); TilcAI/tilcai-core (auditado sin cambios)
+
+### Prompt
+
+> # TilcAI — N-05 / H-09 — Auditoría y cierre del CI offline
+>
+> Issue: [https://github.com/TilcAI/tilcai-infrastructure/issues/31](https://github.com/TilcAI/tilcai-infrastructure/issues/31)
+>
+> Repositorio principal: `TilcAI/tilcai-infrastructure`
+>
+> Repositorio relacionado: `TilcAI/tilcai-core`
+>
+> Rama: `audit/n05-offline-ci-gate`
+>
+> ## Objetivo
+>
+> Determinar qué requisitos de N-05 ya están implementados en los workflows actuales y completar exclusivamente las brechas demostradas.
+>
+> No crear workflows duplicados ni rehacer infraestructura de CI que ya funciona.
+>
+> ## Fase 1 — Auditoría
+>
+> 1. Leer `AGENTS.md` y la issue #31 completa.
+> 2. Inspeccionar `.github/workflows/ci-cd.yml` en Infrastructure y `.github/workflows/ci.yml` en Core.
+> 3. Revisar scripts de `package.json`, lockfiles, configuración de Node y dependencias entre repositorios.
+> 4. Verificar que Core pueda instalarse, compilar y ejecutar typecheck de manera independiente.
+> 5. Comprobar si los PR ejecutan pruebas offline y fallan ante errores de TypeScript, lint o tests.
+> 6. Verificar que ninguna prueba del gate ejecute pagos, burns, RPC financieros o `crosschain-e2e.test.ts`.
+> 7. Examinar permisos, secretos, triggers, aislamiento de PR externos, condiciones de despliegue y publicación de imágenes.
+> 8. Identificar qué criterios de aceptación ya están cubiertos y cuáles siguen pendientes.
+>
+> ## Fase 2 — Implementación mínima
+>
+> Si existen brechas reales:
+>
+> - Modificar únicamente lo necesario.
+> - Conservar la CI/CD existente.
+> - No introducir dependencias nuevas sin justificarlo.
+> - Garantizar que el gate de PR sea independiente de tareas de publicación y despliegue.
+> - No cambiar el comportamiento productivo de pagos ni contratos.
+> - No activar branch protection ni cambiar secretos.
+> - No ejecutar despliegues.
+>
+> Si la implementación actual ya cubre los requisitos, no hacer cambios innecesarios. Preparar únicamente la evidencia necesaria para cerrar N-05.
+>
+> ## Fase 3 — Validación
+>
+> Preparar un procedimiento reproducible para comprobar:
+>
+> - Instalación desde lockfile.
+> - Build y typecheck de Core en aislamiento.
+> - Lint, typecheck y tests unitarios de Infrastructure.
+> - Fallo del gate cuando un test o tipo es incorrecto.
+> - Recuperación del gate después de revertir el error deliberado.
+> - Ausencia de operaciones financieras y despliegues en PR.
+>
+> La prueba negativa debe ejecutarse únicamente en una rama aislada, sin modificar `main`.
+>
+> ## Restricciones
+>
+> - Responder en español.
+> - No tocar `dev.md`.
+> - Respetar `AGENT_HISTORY.md`.
+> - No hacer commit, push, PR ni merge.
+> - No ejecutar comandos contra servicios financieros reales.
+> - No modificar configuraciones productivas sin autorización.
+> - Si se requieren cambios en Core, proponer una rama y PR independientes.
+>
+> ## Entrega
+>
+> Presentar:
+>
+> 1. Matriz de criterios N-05: CUMPLE / PARCIAL / NO CUMPLE.
+> 2. Evidencia de cada conclusión.
+> 3. Brechas reales encontradas.
+> 4. Archivos modificados, si corresponde.
+> 5. Validaciones ejecutadas y pendientes.
+> 6. Riesgos de seguridad del CI/CD.
+> 7. Comandos exactos para validación local.
+> 8. Dictamen: READY_FOR_VALIDATION, ALREADY_IMPLEMENTED o BLOCKED.
+>
+> No afirmar que N-05 está terminada sin evidencias de ambos repositorios.
+
+### Salida
+
+**READY_FOR_VALIDATION para Infrastructure; N-05 sigue abierta.** Leí AGENTS.md y la issue #31, y audité ambos HEAD. En Infrastructure, el workflow existente sí ejecutaba npm ci, lint, typecheck, unit y pruebas offline adicionales, pero omitía los PR de forks y mezclaba el gate con Docker/publicación bajo `packages:write`. En Core no existe `.github/workflows/ci.yml`; la raíz carece de lockfile y de scripts build/typecheck/lint, y `tsconfig.contracts.json` apunta a tipos de `../tilcai-web/node_modules/@types`.
+
+Modifiqué solo `.github/workflows/ci-cd.yml`: añadí el job `offline` para todos los PR, con `contents:read`, `packages:read`, checkout sin credenciales persistentes y `NODE_AUTH_TOKEN` solo en `npm ci --ignore-scripts`; dejé Docker/publicación en `verify` para eventos no PR, dependiente de `offline`, y deploy dependiente de `verify`. No añadí workflows, dependencias, secretos ni cambios productivos. `dev.md` permanece intacto. Esta entrada es el único otro cambio persistente.
+
+Validaciones reales: Infrastructure npm ci --ignore-scripts --offline desde copia limpia PASS; lint PASS; typecheck PASS; unit 310/310 PASS; Python preflight 5/5 PASS; evidencia archivada PASS; YAML parseable y git diff --check PASS. En dos ramas/worktrees temporales aislados, un tipo inválido produjo TS2322/exit 2 y recuperó exit 0; un test deliberado produjo 310 PASS, 1 FAIL/exit 1 y tras retirarlo 310/310/exit 0. Las ramas/worktrees temporales fueron eliminados. No se contactaron proveedores financieros.
+
+Core se probó desde archivo limpio de HEAD: npm test pasó 4 archivos; npm ci falla EUSAGE por falta de lock; npm run build/typecheck falla por scripts ausentes; tsc -p tsconfig.contracts.json falla TS2688 por falta de tipos Node. Propuse `audit/n05-core-offline-ci-gate` y PR independientes para lock, herramientas locales, scripts build/typecheck/lint y un workflow offline. Pendiente: ejecutar ambos PR checks en GitHub, confirmar acceso `packages:read` al paquete Core para forks, y revisión independiente. La CI de PR no ejecuta integración, crosschain-e2e, pagos ni deploys. No hubo commit, push, PR ni merge.
