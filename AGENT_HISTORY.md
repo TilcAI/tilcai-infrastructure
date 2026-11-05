@@ -4802,3 +4802,111 @@ Comparé las cuatro entradas N-03 de `HEAD` posteriores a `467b74b` por fecha, a
 `AGENT_HISTORY.md` conserva los **356 196 bytes de `origin/main` como prefijo exacto**. Después contiene las tres entradas N-03 faltantes, tomadas de `HEAD`, y el registro de este prompt. No reescribí entradas de compañeros ni dupliqué la ya publicada. La entrada de las 13:33 queda al final para respetar el historial publicado, aunque su hora sea anterior a otras entradas.
 
 Verifiqué que el archivo preparado coincide con el índice, que `git diff --check` y la comprobación de espacios del historial preparado pasan, y que no aparecen patrones de claves, tokens o credenciales en lo añadido. `dev.md` conserva su hash SHA-256 original y sigue sin seguimiento. No cambié código, dependencias ni tests. Puedes continuar manualmente con las pruebas y el commit del merge.
+
+## 2026-11-04T21:11:34Z · joseemen11 · Codex (GPT-6)
+
+- **Sesión:** n/d
+- **Rama:** fix/n13-relayer-check-exit
+- **Repositorios:** tilcai-infrastructure
+
+### Prompt
+
+> # TilcAI — N-13 / H-21 — Corregir resultado de relayer
+>
+> Trabajamos en `TilcAI/tilcai-infrastructure`, issue #39, rama `fix/n13-relayer-check-exit`, partiendo del `origin/main` actualizado.
+>
+> Objetivo: asegurar que `npm run relayer:check` devuelva exit code distinto de cero cuando falle cualquier comprobación obligatoria y exit code 0 únicamente cuando todas sean satisfactorias.
+>
+> ## 1. Auditoría inicial
+>
+> Revisa `AGENTS.md`, la issue #39 y el código real:
+>
+> - `src/apps/cli/relayer-check.ts`
+> - `src/modules/relayer/client.ts`
+> - Configuración de redes y Relayer
+> - Tests existentes y posibles consumidores de la CLI
+>
+> Comprueba qué fallos producen exit code 0, cuáles ya fallan correctamente y qué errores podrían revelar información sensible.
+>
+> ## 2. Implementación
+>
+> Corrige el manejo del estado final del comando.
+>
+> Requisitos:
+>
+> - Acumular los resultados de todos los chequeos obligatorios que puedan ejecutarse de forma segura.
+> - Salir con código distinto de cero ante cualquier FAIL.
+> - Conservar los mensajes PASS/FAIL para diagnóstico humano.
+> - Manejar errores HTTP, autenticación, transporte y respuestas inválidas.
+> - No interpretar errores del cliente como una lista válida de relayers vacía.
+> - No imprimir API keys, tokens, contraseñas ni secretos.
+> - No introducir pagos, consultas on-chain adicionales ni cambios en despliegues.
+> - Respetar el comportamiento de los chequeos condicionados por entorno.
+>
+> Priorizar modificaciones pequeñas, código limpio y funciones comprobables mediante dependencias falsas.
+>
+> ## 3. Regresiones offline
+>
+> Crear pruebas para:
+>
+> 1. Health fallido.
+> 2. API key ausente.
+> 3. x402 `/supported` ausente o inválido.
+> 4. Lista de relayers vacía.
+> 5. Relayer con ID incorrecto.
+> 6. Red incorrecta o relayer no permitido.
+> 7. Cuenta Stellar ausente.
+> 8. Error HTTP o autenticación.
+> 9. Fallos combinados, asegurando que los diagnósticos pertinentes se conservan.
+> 10. Escenario correcto con exit code 0.
+>
+> Validar stdout, stderr y exit code con fakes. No contactar ningún Relayer real, RPC, Stellar, Circle ni blockchain.
+>
+> ## 4. Restricciones
+>
+> - No modificar contratos financieros ni módulos de pagos.
+> - No incorporar funcionalidades de N-12 o N-15.
+> - No instalar herramientas globales.
+> - No modificar workflows de CI sin una necesidad demostrada.
+> - Preservar `dev.md` y cualquier trabajo local ajeno.
+> - Registrar el trabajo en `AGENT_HISTORY.md` conforme a las reglas append-only.
+> - No hacer commit, push, PR ni merge.
+>
+> ## 5. Entrega
+>
+> Responder en español con:
+>
+> - Diagnóstico inicial y causa.
+> - Archivos modificados.
+> - Decisiones técnicas.
+> - Casos de prueba nuevos.
+> - Resultados realmente ejecutados.
+> - Comandos exactos para validar en WSL.
+> - Riesgos restantes.
+> - Dictamen READY_FOR_VALIDATION o BLOCKED.
+>
+> No afirmar PASS sin haber ejecutado el comando correspondiente.
+
+### Salida
+
+**READY_FOR_VALIDATION.** Implementé la corrección de la [issue #39](https://github.com/TilcAI/tilcai-infrastructure/issues/39) sin contactar proveedores ni hacer commit, push, PR o merge.
+
+**Diagnóstico.** La CLI imprimía `FAIL` para x402, lista, red y cuenta, pero solo forzaba salida no cero si fallaba health, faltaba la API key o se lanzaba una excepción. Un error de `listRelayers()` se convertía en `[]`; además, `String(error)` y el cuerpo JSON podían mostrar datos sensibles.
+
+**Cambios.** [relayer-check.ts](/mnt/e/propioJOSE/stellar/tilcai-audit/tilcai-infrastructure/src/apps/cli/relayer-check.ts:8) fija `process.exitCode` con el resultado de [relayer-check-run.ts](/mnt/e/propioJOSE/stellar/tilcai-audit/tilcai-infrastructure/src/apps/cli/relayer-check-run.ts:25). Este acumula fallos, distingue HTTP, transporte y respuestas inválidas sin imprimir cuerpos ni mensajes crudos, y mantiene los diagnósticos `PASS`/`FAIL`. Si falta la clave, omite las consultas autenticadas; en mainnet, omite x402 cuando su plugin opcional no está configurado; el veto a relayers mainnet sigue condicionado a testnet. La consulta de cuenta Stellar solo se hace con health, red, tipo y dirección válidos. El cliente Relayer, pagos y despliegues no cambiaron.
+
+Añadí [relayer-check.test.ts](/mnt/e/propioJOSE/stellar/tilcai-audit/tilcai-infrastructure/test/unit/relayer-check.test.ts:21) y [relayer-check-fixture.ts](/mnt/e/propioJOSE/stellar/tilcai-audit/tilcai-infrastructure/test/support/relayer-check-fixture.ts:1): procesos hijos con fakes comprueban stdout, stderr y exit code para los diez grupos pedidos, incluidos fallos combinados, 401/500, respuesta parcial inválida, lista vacía y éxito 0. El secreto ficticio nunca aparece en la salida. Registré este prompt al final de [AGENT_HISTORY.md](/mnt/e/propioJOSE/stellar/tilcai-audit/tilcai-infrastructure/AGENT_HISTORY.md); `dev.md` sigue intacto y sin seguimiento.
+
+**Ejecuciones reales:** regresión final **24/24**, TypeScript y ESLint **PASS**, `git diff --check` **PASS**. La suite unitaria completa pasó **309/309** antes del último ajuste de validación de `kinds`; después de ese ajuste repetí la regresión focalizada, typecheck y lint. Usé el Node local directamente porque este entorno no tiene `npm` de Linux en PATH. No ejecuté `npm run relayer:check` contra un servicio real.
+
+En tu WSL, desde la raíz del repositorio:
+
+```bash
+node --import tsx --test test/unit/relayer-check.test.ts
+npm run lint
+npm run typecheck
+npm test
+git diff --check
+```
+
+**Riesgo restante:** falta comprobar el comportamiento operativo con un Relayer autorizado y la revisión de Omar; esa validación no está incluida en estas pruebas offline. El cambio considera obligatoria la lectura de balance que la CLI ya realizaba, por lo que un fallo de ese endpoint ahora devuelve exit 1.
