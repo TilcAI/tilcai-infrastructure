@@ -16,7 +16,7 @@ import type { MintSubmitter } from "./modules/crosschain/ports.ts";
 import { SqliteCrosschainRepository } from "./modules/crosschain/repository.ts";
 import { CrosschainPaymentService, type SourceLeg } from "./modules/crosschain/service.ts";
 import { sqliteCorrelate } from "./modules/monitor/correlate.ts";
-import { WebForwarder } from "./modules/monitor/forwarder.ts";
+import { WEB_SINK, WebForwarder } from "./modules/monitor/forwarder.ts";
 import type { Correlate } from "./modules/monitor/relayer-webhook.ts";
 import { SqliteMonitorRepository } from "./modules/monitor/repository.ts";
 import { ResourceMonitor } from "./modules/monitor/resources.ts";
@@ -105,12 +105,16 @@ export function createAppContext(name: string, env: Env = loadEnv()): AppContext
   }
   const evmSubmitter = evmSubmitters[nets.avalanche.id] ?? null;
   // The keys of TILCAI_API_KEYS belong to the legacy tenant (scope `payments`): Optipagos and optus-agentBE keep working.
-  // SQLite runs this to completion before the call returns, so the keys are in place when the context is.
-  const tenants = new SqliteTenantRegistry(db, systemClock);
-  tenants
-    .syncLegacyKeys(runtime.apiKeys)
-    .then((r) => log.info("legacy tenant keys synced", r))
-    .catch((e) => log.error("could not sync TILCAI_API_KEYS with the legacy tenant", { error: e instanceof Error ? e.message : String(e) }));
+  // A failed sync rolls back as a whole, revocations included: going on would serve keys the operator removed,
+  // so no context is built and the process stops before it listens (fail closed).
+  const tenants = new SqliteTenantRegistry(db, systemClock, env.TILCAI_ENV);
+  try {
+    log.info("legacy tenant keys synced", tenants.syncLegacyKeysSync(runtime.apiKeys));
+  } catch (e) {
+    log.error("could not sync TILCAI_API_KEYS with the legacy tenant", { error: e instanceof Error ? e.message : String(e) });
+    db.close();
+    throw new Error("TILCAI_API_KEYS could not be synced with the legacy tenant; refusing to start", { cause: e });
+  }
 
   const accounts = new SqliteSmartAccountRepository(db, systemClock);
   const stellarSubmitter = runtime.relayerApiKey && runtime.transactionsEnabled ? new RelayerStellarSubmitter(relayer, runtime.stellarRelayerId, nets.stellar) : null;
@@ -157,7 +161,7 @@ export function createAppContext(name: string, env: Env = loadEnv()): AppContext
     repo: new SqliteCrosschainRepository(db),
     evm: primaryLeg!.evm,
     stellar: new SorobanStellarCctp(nets.stellar, runtime.stellarSimulationSource || undefined),
-    iris: new IrisClient(runtime.irisApiUrl),
+    iris: new IrisClient(runtime.irisApiUrl, fetch, env.IRIS_TIMEOUT_MS),
     submitters,
     activeSubmitter: env.STELLAR_MINT_SUBMITTER,
     ...(primaryLeg!.evmSubmitter ? { evmSubmitter: primaryLeg!.evmSubmitter } : {}),
@@ -226,7 +230,14 @@ export function createAppContext(name: string, env: Env = loadEnv()): AppContext
       ...nets.evm.filter((n) => n.id !== nets.avalanche.id && vaults[n.id]).map((n) => ({ network: n.id, service: vaults[n.id]!, usdcDecimals: n.usdc.decimals })),
       ...(stellarVault ? [{ network: nets.stellar.id, service: stellarVault, usdcDecimals: nets.stellar.usdc.decimals }] : []),
     ],
-    monitor: { head: () => monitorRepo.head(), sinks: () => monitorRepo.sinks() },
+    monitor: {
+      head: () => monitorRepo.head(),
+      sinks: () => monitorRepo.sinks(),
+      oldestPendingAt: (afterSeq) => monitorRepo.oldestPendingAt(afterSeq),
+      configuredSinks: monitorSinks(runtime),
+      retentionDays: env.MONITOR_RETENTION_DAYS,
+      pendingMaxDays: env.MONITOR_PENDING_MAX_DAYS,
+    },
     now: systemClock.now,
   });
   const forwarder = runtime.monitorWebUrl
@@ -307,6 +318,11 @@ export function createAppContext(name: string, env: Env = loadEnv()): AppContext
     accountService,
     delegations: new SqliteDelegationRepository(db),
   };
+}
+
+/** The receivers of the event log configured now: their pending events are kept when the log is pruned. */
+export function monitorSinks(runtime: { monitorWebUrl: string }): string[] {
+  return runtime.monitorWebUrl ? [WEB_SINK] : [];
 }
 
 /** The fixed content of the mock's QRs: QR_MOCK_PAYLOAD, else its file, else none (random). */

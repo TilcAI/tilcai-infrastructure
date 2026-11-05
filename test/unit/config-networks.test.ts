@@ -49,6 +49,15 @@ test("testnet remains the default active route", () => {
   assert.equal(activeConfig(env).transactionsEnabled, true);
 });
 
+test("Iris timeout has a validated default and finite operational bounds", () => {
+  assert.equal(loadEnv({}).IRIS_TIMEOUT_MS, 10_000);
+  assert.equal(loadEnv({ IRIS_TIMEOUT_MS: "1000" }).IRIS_TIMEOUT_MS, 1000);
+  assert.equal(loadEnv({ IRIS_TIMEOUT_MS: "60000" }).IRIS_TIMEOUT_MS, 60_000);
+  for (const value of ["0", "999", "60001", "1.5", "NaN"]) {
+    assert.throws(() => loadEnv({ IRIS_TIMEOUT_MS: value }), /IRIS_TIMEOUT_MS/);
+  }
+});
+
 test("mainnet selects only Avalanche C-Chain and Stellar Pubnet", () => {
   const env = loadEnv(mainnetSource());
   const nets = networks(env);

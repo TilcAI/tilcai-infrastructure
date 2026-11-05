@@ -11,8 +11,34 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: false
 jobs:
+  offline:
+    timeout-minutes: 20
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: tilcai-infrastructure
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: https://npm.pkg.github.com
+          scope: "@tilcai"
+      - run: npm ci --ignore-scripts
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
+        working-directory: tilcai-infrastructure
+      - run: npm run lint && npm run typecheck && npm test && git diff --check
+        working-directory: tilcai-infrastructure
+      - name: Check Soroban preflight and archived evidence offline
+        working-directory: tilcai-infrastructure
+        run: python3 test/unit/deploy-testnet.test.py && node --test test/local/soroban-ttl/evidence.test.mjs
   verify:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    needs: offline
+    if: github.event_name != 'pull_request'
     timeout-minutes: 20
     runs-on: ubuntu-latest
     env:
@@ -21,18 +47,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           path: tilcai-infrastructure
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          registry-url: https://npm.pkg.github.com
-          scope: "@tilcai"
-      - run: npm ci
-        working-directory: tilcai-infrastructure
-      - run: npm run lint && npm run typecheck && npm test && git diff --check
-        working-directory: tilcai-infrastructure
-      - name: Check Soroban preflight and archived evidence offline
-        working-directory: tilcai-infrastructure
-        run: python3 test/unit/deploy-testnet.test.py && node --test test/local/soroban-ttl/evidence.test.mjs
       - name: Build API image
         run: |
           set -euo pipefail

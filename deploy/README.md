@@ -71,6 +71,7 @@ opcionalmente, el relayer.
 cp deploy/.env.mainnet.example deploy/.env.mainnet      # completar secretos
 docker compose -f deploy/docker-compose.mainnet.yml --env-file deploy/.env.mainnet up -d
 curl -s http://127.0.0.1:18787/health                   # env: mainnet, transactionsEnabled
+curl -s http://127.0.0.1:18787/ready?mode=transactional # 200 antes de activar transacciones
 ```
 
 `TILCAI_ENV=mainnet` exige base, claves de API, ids de relayer, RPC y router propios, y rechaza la
@@ -114,9 +115,10 @@ decide un pago por ellos.
 
 | Variable | Secreto | Notas |
 | --- | --- | --- |
-| `TILCAI_API_KEYS` | sí | Claves Bearer aceptadas, separadas por comas (`openssl rand -hex 32`). Vacía, la API solo responde desde dentro del propio contenedor: en un despliegue hay que definirla |
+| `TILCAI_API_KEYS` | sí | Claves Bearer aceptadas, separadas por comas (`openssl rand -hex 32`). Vacía, la API solo responde desde dentro del propio contenedor: en un despliegue hay que definirla. Quitar una clave la revoca al reiniciar; si esa sincronización falla, el contenedor sale con código 1 sin escuchar (log `could not sync TILCAI_API_KEYS`) |
 | `RELAYER_URL` | no | URL del relayer |
 | `RELAYER_API_KEY` | sí | La misma `API_KEY` del relayer |
+| `IRIS_TIMEOUT_MS` | no | Plazo de cada consulta HTTP a Circle Iris, incluida la lectura del cuerpo; 10000 ms por defecto, configurable entre 1000 y 60000 ms. Un timeout de attestation reprograma ese pago |
 | `CCTP_ROUTER_FUJI` | no | `TilcaiCctpRouter` desplegado; habilita los modos gasless |
 | `ACCOUNT_FACTORY_FUJI` | no | `TilcaiAccountFactory` desplegada; habilita `/v1/accounts` (fase SCA). Las cuentas las piden terceros con claves de `npm run tenant -- key` |
 | `CCTP_ROUTER_V2_FUJI` | no | `TilcaiCctpRouterV2` desplegado; habilita el modo de pago `account` |
@@ -150,7 +152,19 @@ cp deploy/.env.example deploy/.env       # completar los secretos
 docker compose -f deploy/docker-compose.yml --env-file deploy/.env up -d
 
 curl http://127.0.0.1:8787/health        # {"ok":true,"env":"testnet","relayer":"up"}
+curl http://127.0.0.1:8787/ready         # {"ready":true,"mode":"transactional","checks":[…]}
 ```
+
+**Sondas.** `/health` es la de liveness: responde 200 mientras el proceso vive, aunque el relayer
+esté caído, para que la plataforma no reinicie el contenedor por una dependencia externa. `/ready`
+es la de readiness y responde 503 cuando falta algo que el modo exige. En solo lectura exige solo
+la base. En modo transaccional exige además: que el relayer responda y acepte la clave; que cada
+relayer que usa este proceso (uno por red EVM activa y el de Stellar) exista, esté en la red y el
+tipo esperados, no esté pausado y tenga firmante; el submitter de Stellar; y, en `all-in-one`, que
+el worker siga haciendo rondas. Cada respuesta lista sus comprobaciones sin secretos y se reutiliza
+durante 5 s. No verifica roles on-chain, como que la cuenta del relayer sea la operadora del vault:
+eso sigue en `npm run mainnet:preflight` y en el acta de despliegue. Los manifiestos de Cloud Run y
+Compose siguen usando `/health`; usar `/ready` en un manifiesto requiere aprobación operativa.
 
 Los puertos 8080 (relayer) y 8787 (TilcAI) quedan en `127.0.0.1`. Para exponerlos, pon
 delante un proxy con TLS. Los datos viven en los volúmenes `tilcai-data` (SQLite) y
@@ -240,7 +254,11 @@ Límites que conviene conocer antes de elegir Cloud Run para TilcAI:
 - **Una instancia, nunca más.** Dos instancias serían dos workers y dos copias de la base.
 - **Al publicar una revisión nueva**, Cloud Run enciende la instancia nueva antes de apagar
   la anterior. Durante esos segundos conviven dos: lo que la anterior escriba después de que
-  la nueva restauró no llega a la nueva. Publica sin pagos en curso.
+  la nueva restauró no llega a la nueva. Publica sin pagos en curso. Cuánto dura esa convivencia
+  y qué conserva el restore está sin medir: ver [`CLOUD_RUN_SINGLE_WRITER.md`](CLOUD_RUN_SINGLE_WRITER.md).
+- **Nunca etiquetes revisiones de `tilcai`** (`--tag`, `--set-tags`): Cloud Run mantiene
+  encendida cada revisión etiquetada con su instancia mínima, así que su worker y su Litestream
+  seguirían escribiendo en la misma réplica que la revisión activa.
 - **Una caída brusca** puede perder hasta el último segundo de escrituras (el intervalo de
   réplica).
 - Un volumen de Cloud Storage montado no sirve para SQLite (no tiene bloqueos de archivo).
